@@ -121,7 +121,20 @@ class _TextPostCardState extends State<TextPostCard> with PostReactions<TextPost
         borderRadius: BorderRadius.circular(widget.cornerRadius),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: AppColors.cardSurface,
+            // Faint accent-gradient wash (V2 palette — BoxDecoration
+            // paints the gradient instead of a flat color when both are
+            // set, so this replaces cardSurface rather than sitting on
+            // top of it) — distinguishes the text-only card from the
+            // photo card's flat background now that it has no image of
+            // its own to carry any color.
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.electricPurple.withValues(alpha: 0.18),
+                AppColors.neonCyan.withValues(alpha: 0.10),
+              ],
+            ),
             border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
           ),
           child: Column(

@@ -55,11 +55,12 @@ import 'reaction_row.dart';
 //         generically for TextPostCard, but this card passes null.)
 //      b. The branch/department tag (e.g. "CSE"), a plain small pill in
 //         the image's top-right corner.
-//      c. Reaction (heart) + ping, bottom-right, sitting on their own
-//         small WHITE rounded backing tab (not floating directly on the
-//         photo) — the tab's outer corner matches the image's own corner
-//         radius so it reads as part of the image's corner, not a chip
-//         dropped on top.
+//      c. Reaction (heart) + ping, bottom-right, DIPPED into a rounded-rect
+//         notch cut out of the image's bottom-right corner — mirroring the
+//         persona icon's top-left dip (2a). A card-colored backing capsule
+//         with its own soft shadow sits in that notch, and the white
+//         action pill sits on top of it — the same "embedded, not a flat
+//         chip glued on top" language as the avatar's corner.
 //   3. Below the image, two DISTINCT frosted-glass surfaces (not merged
 //      into one block), stacked vertically:
 //      a. SEE OTHERS' REACTIONS — ReactionRow: a horizontally-scrollable,
@@ -210,6 +211,17 @@ class _PhotoPostCardState extends State<PhotoPostCard> with PostReactions<PhotoP
   static const double _kEntryBadgeOffsetRatio = 0.95;
   static const double _kEntryBadgeSize = 22;
 
+  // Bottom-right action-cluster notch — mirrors the top-left avatar dip
+  // above so the reaction/ping pill reads as embedded into the image's
+  // corner rather than a flat tab glued on top of it. Fixed, generous
+  // dimensions rather than measured off the pill's actual content width
+  // (which varies with the reaction count) — the same trade-off the avatar
+  // dip already makes with a fixed circle.
+  static const double _kActionNotchMargin = 4;
+  static const Size _kActionNotchSize = Size(116, 52);
+  static const double _kActionNotchRadius = 22;
+  static const double _kActionBackingGap = 5;
+
   @override
   Widget build(BuildContext context) {
     final reactions = summary ?? const ReactionSummary.empty();
@@ -277,10 +289,13 @@ class _PhotoPostCardState extends State<PhotoPostCard> with PostReactions<PhotoP
                   clipBehavior: Clip.none,
                   children: [
                     ClipPath(
-                      clipper: _TopLeftNotchClipper(
+                      clipper: _CardNotchClipper(
                         cornerRadius: widget.imageCornerRadius,
-                        notchCenter: dipCenter,
-                        notchRadius: dipRadius,
+                        topLeftNotchCenter: dipCenter,
+                        topLeftNotchRadius: dipRadius,
+                        bottomRightNotchMargin: _kActionNotchMargin,
+                        bottomRightNotchSize: _kActionNotchSize,
+                        bottomRightNotchRadius: _kActionNotchRadius,
                       ),
                       child: Stack(
                         fit: StackFit.expand,
@@ -292,48 +307,64 @@ class _PhotoPostCardState extends State<PhotoPostCard> with PostReactions<PhotoP
                               top: 10, right: 10,
                               child: BranchTag(branch: widget.branch!),
                             ),
-
-                          // White rounded backing tab, bottom-right — its
-                          // own bottom-right corner matches the image's
-                          // corner radius exactly, so it reads as part of
-                          // the image's corner rather than a chip dropped
-                          // on top of the photo.
-                          Positioned(
-                            right: 0, bottom: 0,
-                            child: Container(
-                              padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.only(
-                                  topLeft: Radius.circular(widget.imageCornerRadius),
-                                  bottomRight: Radius.circular(widget.imageCornerRadius),
-                                ),
-                              ),
-                              child: TopActionIcons(
-                                liked: reactions.myEmoji != null,
-                                likeCount: reactions.totalEmojiCount,
-                                // Uploading state now lives solely on the
-                                // reaction-entry badge (below) — the heart
-                                // is a separate, unrelated "like" control
-                                // and shouldn't freeze into a spinner while
-                                // a face-reaction upload is in flight.
-                                uploadingFaceReaction: false,
-                                onReactionTap: toggleEmojiPicker,
-                                // Face capture now has its own dedicated
-                                // entry point (the corner badge) — no
-                                // longer bundled into the heart's long
-                                // press.
-                                onReactionLongPress: null,
-                                onPingTap: () => openPing(
-                                  pingContext: widget.pingContext,
-                                  targetName: widget.pingTargetName,
-                                  glass: widget.pingGlass,
-                                ),
-                                iconColor: kClusterGray,
-                              ),
-                            ),
-                          ),
                         ],
+                      ),
+                    ),
+
+                    // Backing capsule + white action pill, bottom-right —
+                    // sits OUTSIDE the ClipPath (like the persona backing
+                    // disc above) so it floats over the notch just cut out
+                    // of the image rather than being clipped away with it.
+                    // The card-colored backing (with its own shadow) is
+                    // what makes the pill read as dipped into the corner —
+                    // a ring of separation between the photo's cut edge and
+                    // the pill's own edge — instead of a flat tab glued on
+                    // top of the photo.
+                    Positioned(
+                      right: _kActionNotchMargin,
+                      bottom: _kActionNotchMargin,
+                      child: Container(
+                        padding: const EdgeInsets.all(_kActionBackingGap),
+                        decoration: BoxDecoration(
+                          color: AppColors.cardSurface,
+                          borderRadius: BorderRadius.circular(_kActionNotchRadius - _kActionBackingGap),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              blurRadius: 6,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(_kActionNotchRadius - _kActionBackingGap * 2),
+                          ),
+                          child: TopActionIcons(
+                            liked: reactions.myEmoji != null,
+                            likeCount: reactions.totalEmojiCount,
+                            // Uploading state now lives solely on the
+                            // reaction-entry badge (below) — the heart
+                            // is a separate, unrelated "like" control
+                            // and shouldn't freeze into a spinner while
+                            // a face-reaction upload is in flight.
+                            uploadingFaceReaction: false,
+                            onReactionTap: toggleEmojiPicker,
+                            // Face capture now has its own dedicated
+                            // entry point (the corner badge) — no
+                            // longer bundled into the heart's long
+                            // press.
+                            onReactionLongPress: null,
+                            onPingTap: () => openPing(
+                              pingContext: widget.pingContext,
+                              targetName: widget.pingTargetName,
+                              glass: widget.pingGlass,
+                            ),
+                            iconColor: kClusterGray,
+                          ),
+                        ),
                       ),
                     ),
 
@@ -549,41 +580,64 @@ class _ReactionEntryBadge extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Cuts a circular notch out of a rounded rect near its top-left corner, so
-// the persona icon (and its background disc, in the widget above) appears
-// embedded in the corner rather than floating on top of it. [notchCenter]
-// is NOT locked to the box's mathematical (0,0) point — the box's own
-// corner is already rounded, so the visible content recedes away from
-// (0,0) diagonally, and a notch centered exactly there ends up mostly over
-// whatever is behind the box rather than over the box's own content. See
-// PhotoPostCard's _kDipOffsetX/_kDipOffsetY. Path.combine(difference, ...)
-// does the boolean subtraction — this is the only way to get a true
-// "bite taken out of the corner" look; simply drawing a circle on top of
-// an unmodified rounded rect would just be a circle overlapping a
-// rectangle, not a matched notch.
+// Cuts two notches out of a rounded rect: a circular one near the top-left
+// corner (the persona icon's dip) and a rounded-rect one near the
+// bottom-right corner (the action pill's dip) — so both float on their own
+// card-colored backing instead of sitting flush on top of the photo.
+// [topLeftNotchCenter] is NOT locked to the box's mathematical (0,0) point
+// — the box's own corner is already rounded, so the visible content
+// recedes away from (0,0) diagonally, and a notch centered exactly there
+// ends up mostly over whatever is behind the box rather than over the
+// box's own content. See PhotoPostCard's _kDipOffsetX/_kDipOffsetY.
+// Path.combine(difference, ...) does the boolean subtraction — this is the
+// only way to get a true "bite taken out of the corner" look; simply
+// drawing a shape on top of an unmodified rounded rect would just be an
+// overlap, not a matched notch.
 // ---------------------------------------------------------------------------
 
-class _TopLeftNotchClipper extends CustomClipper<Path> {
-  const _TopLeftNotchClipper({
+class _CardNotchClipper extends CustomClipper<Path> {
+  const _CardNotchClipper({
     required this.cornerRadius,
-    required this.notchCenter,
-    required this.notchRadius,
+    required this.topLeftNotchCenter,
+    required this.topLeftNotchRadius,
+    required this.bottomRightNotchMargin,
+    required this.bottomRightNotchSize,
+    required this.bottomRightNotchRadius,
   });
   final double cornerRadius;
-  final Offset notchCenter;
-  final double notchRadius;
+  final Offset topLeftNotchCenter;
+  final double topLeftNotchRadius;
+  final double bottomRightNotchMargin;
+  final Size bottomRightNotchSize;
+  final double bottomRightNotchRadius;
 
   @override
   Path getClip(Size size) {
     final base = Path()
       ..addRRect(RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(cornerRadius)));
-    final notch = Path()..addOval(Rect.fromCircle(center: notchCenter, radius: notchRadius));
-    return Path.combine(PathOperation.difference, base, notch);
+
+    final topLeftNotch = Path()
+      ..addOval(Rect.fromCircle(center: topLeftNotchCenter, radius: topLeftNotchRadius));
+
+    final bottomRightRect = Rect.fromLTWH(
+      size.width - bottomRightNotchMargin - bottomRightNotchSize.width,
+      size.height - bottomRightNotchMargin - bottomRightNotchSize.height,
+      bottomRightNotchSize.width,
+      bottomRightNotchSize.height,
+    );
+    final bottomRightNotch = Path()
+      ..addRRect(RRect.fromRectAndRadius(bottomRightRect, Radius.circular(bottomRightNotchRadius)));
+
+    final withTopLeft = Path.combine(PathOperation.difference, base, topLeftNotch);
+    return Path.combine(PathOperation.difference, withTopLeft, bottomRightNotch);
   }
 
   @override
-  bool shouldReclip(covariant _TopLeftNotchClipper oldClipper) =>
+  bool shouldReclip(covariant _CardNotchClipper oldClipper) =>
       oldClipper.cornerRadius != cornerRadius ||
-      oldClipper.notchCenter != notchCenter ||
-      oldClipper.notchRadius != notchRadius;
+      oldClipper.topLeftNotchCenter != topLeftNotchCenter ||
+      oldClipper.topLeftNotchRadius != topLeftNotchRadius ||
+      oldClipper.bottomRightNotchMargin != bottomRightNotchMargin ||
+      oldClipper.bottomRightNotchSize != bottomRightNotchSize ||
+      oldClipper.bottomRightNotchRadius != bottomRightNotchRadius;
 }
