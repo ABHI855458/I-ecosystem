@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Send a reaction — reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#08080a; color:#f2f2f4; font-family:'Space Grotesk',Helvetica,sans-serif; display:flex; justify-content:center; padding:40px 0; }
+  .shell { width:390px; height:780px; background:#111114; border:1px solid #1c1c22; border-radius:36px; overflow:hidden; position:relative; display:flex; flex-direction:column; }
+  .title { text-align:center; font-size:19px; font-weight:600; letter-spacing:-0.01em; padding:20px 0 8px; }
+  .sub { text-align:center; padding:0 32px; color:#9a9aa5; font-size:14px; line-height:1.5; margin-bottom:20px; }
+  .viewWrap { flex:1; display:flex; align-items:center; justify-content:center; position:relative; padding-top:4px; }
+  .view { width:248px; height:248px; border-radius:50%; overflow:hidden; border:3px solid #1c1c22; position:relative; background:#000; display:flex; align-items:center; justify-content:center; }
+  .view video, .view img { width:100%; height:100%; object-fit:cover; }
+  .view video { transform:scaleX(-1); }
+  .idle { display:flex; flex-direction:column; align-items:center; gap:8px; color:#5c5c66; padding:0 30px; text-align:center; }
+  .idle .glyph { font-size:34px; }
+  .idle .msg { font-family:'IBM Plex Mono',monospace; font-size:11px; line-height:1.5; }
+  .idle.error .msg { color:#ff8a7a; }
+  .railBlock { padding:18px 0 4px; display:flex; flex-direction:column; gap:10px; }
+  .railStack { position:relative; height:96px; display:flex; align-items:center; }
+  .rail { display:flex; align-items:center; overflow-x:auto; scroll-snap-type:x proximity;
+    mask-image:linear-gradient(90deg,transparent,#000 20%,#000 80%,transparent);
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 20%,#000 80%,transparent); }
+  .rail::-webkit-scrollbar { display:none; }
+  .rail { scrollbar-width:none; -ms-overflow-style:none; }
+  .filterRail { gap:22px; padding:20px 0; }
+  .emojiRail { gap:20px; padding:10px 0; }
+  .slot { flex:0 0 auto; cursor:pointer; scroll-snap-align:center; display:flex; align-items:center; justify-content:center; }
+  .filterSlot { width:52px; height:52px; }
+  .swatch { width:46px; height:46px; border-radius:50%; border:2px solid #23232b; }
+  .emojiSlot { width:48px; height:48px; border-radius:50%; background:#1c1c22; font-size:23px; }
+  .shutter { position:absolute; left:50%; top:50%; width:84px; height:84px; margin-left:-42px; margin-top:-42px;
+    box-sizing:border-box; border-radius:50%; border:5px solid #f2f2f4; background:#0e0e11;
+    box-shadow:0 0 0 4px rgba(10,10,12,.9), 0 10px 26px rgba(0,0,0,.55);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; }
+  .lens { width:64px; height:64px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px;
+    box-shadow:inset 0 3px 10px rgba(255,255,255,.28), inset 0 -6px 12px rgba(0,0,0,.35); transition:background .22s ease; }
+  .ring { position:absolute; left:50%; top:50%; width:66px; height:66px; margin:-33px 0 0 -33px; box-sizing:border-box;
+    border-radius:50%; border:4px solid #f2f2f4; box-shadow:0 0 0 3px rgba(242,242,244,.14); pointer-events:none; z-index:2; }
+  .filterName { text-align:center; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.08em; color:#f2f2f4; margin-top:2px; }
+  .postCap { display:flex; justify-content:center; gap:12px; padding-top:2px; }
+  .pill { padding:9px 18px; border-radius:99px; font-size:13px; font-weight:600; cursor:pointer; }
+  .pill.dark { background:#1c1c22; color:#f2f2f4; }
+  .pill.light { background:#f2f2f4; color:#0e0e11; }
+  .emojiBlock { padding:14px 0 26px; display:flex; flex-direction:column; gap:10px; }
+  .railLabel { text-align:center; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#6f6f7a; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="title">Send a reaction</div>
+  <div class="sub">Capture your own take on the reaction, then pick which one to send.</div>
+
+  <div class="viewWrap">
+    <div class="view" id="view">
+      <div class="idle" id="idle">
+        <div class="glyph" id="idleGlyph">📷</div>
+        <div class="msg" id="idleMsg">tap to open camera</div>
+      </div>
+      <video id="video" class="hidden" autoplay playsinline muted></video>
+      <img id="shot" class="hidden" alt="">
+    </div>
+    <div style="position:absolute; inset:0; cursor:pointer" id="viewTap"></div>
+  </div>
+
+  <div class="railBlock">
+    <div class="railStack">
+      <div class="rail filterRail" id="filterRail"></div>
+      <div class="shutter" id="shutter"><div class="lens" id="lens">📷</div></div>
+    </div>
+    <div class="filterName" id="filterName">Mono</div>
+    <div class="postCap hidden" id="postCap">
+      <div class="pill dark" id="retake">Retake</div>
+      <div class="pill light" id="save">Save photo</div>
+    </div>
+  </div>
+
+  <div class="emojiBlock">
+    <div class="railLabel">swipe to choose a reaction</div>
+    <div style="position:relative">
+      <div class="ring"></div>
+      <div class="rail emojiRail" id="emojiRail"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const FILTERS = [
+  { name:"None",  css:"none",                                              swatch:"#2a2a32" },
+  { name:"Warm",  css:"saturate(1.3) sepia(.28) contrast(1.05)",           swatch:"linear-gradient(160deg,#ffc531,#ff6a3d)" },
+  { name:"Cool",  css:"saturate(1.15) hue-rotate(180deg) brightness(1.05)",swatch:"linear-gradient(160deg,#35c8ff,#6366f1)" },
+  { name:"Mono",  css:"grayscale(1) contrast(1.15)",                       swatch:"linear-gradient(160deg,#e5e5e8,#5c5c66)" },
+  { name:"Faded", css:"contrast(.85) brightness(1.12) saturate(.8)",       swatch:"linear-gradient(160deg,#d9c9b8,#a08f80)" },
+  { name:"Punch", css:"saturate(1.75) contrast(1.2)",                      swatch:"linear-gradient(160deg,#ff5fa2,#7c5cff)" },
+  { name:"Night", css:"brightness(.85) saturate(1.2) hue-rotate(-15deg)",  swatch:"linear-gradient(160deg,#1e3a8a,#0f172a)" }
+];
+const EMOJIS = ["👍","❤️","😂","😍","🔥","😮","🥲","😭","🥳","💯","👏","🙌","🤯","😎","🫶","😴","🤝","✨","🙃","😤"];
+
+const state = { filter:3, reaction:3, camActive:false, hasCapture:false, camError:null, saved:false, lockUntil:0 };
+const el = {
+  filterRail: document.getElementById('filterRail'), emojiRail: document.getElementById('emojiRail'),
+  lens: document.getElementById('lens'), shutter: document.getElementById('shutter'),
+  filterName: document.getElementById('filterName'), postCap: document.getElementById('postCap'),
+  idle: document.getElementById('idle'), idleGlyph: document.getElementById('idleGlyph'), idleMsg: document.getElementById('idleMsg'),
+  video: document.getElementById('video'), shot: document.getElementById('shot'),
+  viewTap: document.getElementById('viewTap'), retake: document.getElementById('retake'), save: document.getElementById('save')
+};
+
+// ---- rails ----
+function pad(rail, half) { const d = document.createElement('div'); d.style.flex = '0 0 calc(50% - ' + half + 'px)'; rail.appendChild(d); }
+
+FILTERS.forEach((f, k) => {
+  const slot = document.createElement('div'); slot.className = 'slot filterSlot'; slot.dataset.item = '1';
+  const sw = document.createElement('div'); sw.className = 'swatch'; sw.style.background = f.swatch;
+  slot.appendChild(sw);
+  slot.addEventListener('click', () => select('filter', k));
+  el.filterRail.appendChild(slot);
+});
+EMOJIS.forEach((e, k) => {
+  const slot = document.createElement('div'); slot.className = 'slot emojiSlot'; slot.dataset.item = '1'; slot.textContent = e;
+  slot.addEventListener('click', () => select('emoji', k));
+  el.emojiRail.appendChild(slot);
+});
+el.filterRail.insertBefore(document.createElement('div'), el.filterRail.firstChild);
+el.filterRail.firstChild.style.flex = '0 0 calc(50% - 26px)';
+pad(el.filterRail, 26);
+el.emojiRail.insertBefore(document.createElement('div'), el.emojiRail.firstChild);
+el.emojiRail.firstChild.style.flex = '0 0 calc(50% - 24px)';
+pad(el.emojiRail, 24);
+
+const rail = (kind) => kind === 'filter' ? el.filterRail : el.emojiRail;
+const items = (r) => [...r.children].filter(c => c.dataset.item === '1');
+
+function centerIndex(r) {
+  const rr = r.getBoundingClientRect(), mid = rr.left + r.clientWidth / 2;
+  let best = 0, bd = Infinity;
+  items(r).forEach((e, k) => { const q = e.getBoundingClientRect(); const d = Math.abs(q.left + q.width / 2 - mid); if (d < bd) { bd = d; best = k; } });
+  return best;
+}
+
+function jumpTo(kind, k) {
+  const r = rail(kind), it = items(r)[k]; if (!it) return;
+  const rr = r.getBoundingClientRect(), q = it.getBoundingClientRect();
+  const delta = (q.left + q.width / 2) - (rr.left + r.clientWidth / 2);
+  r.scrollLeft = Math.max(0, Math.min(r.scrollLeft + delta, r.scrollWidth - r.clientWidth));
+}
+
+function animateTo(kind, k) {
+  const r = rail(kind), it = items(r)[k]; if (!it) return;
+  const rr = r.getBoundingClientRect(), q = it.getBoundingClientRect();
+  const from = r.scrollLeft;
+  const to = Math.max(0, Math.min(from + (q.left + q.width / 2) - (rr.left + r.clientWidth / 2), r.scrollWidth - r.clientWidth));
+  const t0 = performance.now(), dur = 300;
+  const step = (now) => {
+    const p = Math.min((now - t0) / dur, 1);
+    r.scrollLeft = from + (to - from) * (1 - Math.pow(1 - p, 3));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function select(kind, k) {
+  state.lockUntil = Date.now() + 650;
+  if (kind === 'filter') state.filter = k; else state.reaction = k;
+  animateTo(kind, k);
+  render();
+}
+
+['filter','emoji'].forEach(kind => rail(kind).addEventListener('scroll', () => {
+  if (Date.now() < state.lockUntil) return;
+  const k = centerIndex(rail(kind));
+  if (kind === 'filter' && k !== state.filter) { state.filter = k; render(); }
+  if (kind === 'emoji' && k !== state.reaction) { state.reaction = k; render(); }
+}, { passive:true }));
+
+// ---- camera ----
+let stream = null;
+
+async function openCamera() {
+  if (state.camActive || state.hasCapture) return;
+  state.camError = null; render();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:'user' }, audio:false });
+    el.video.srcObject = stream;
+    state.camActive = true; render();
+  } catch (err) {
+    const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+    state.camError = denied
+      ? 'Camera blocked — allow access in your browser settings'
+      : 'No camera available here. Open on a device to use it.';
+    render();
+  }
+}
+
+function capture() {
+  const v = el.video;
+  const size = Math.min(v.videoWidth || 640, v.videoHeight || 640);
+  const c = document.createElement('canvas'); c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  const sx = ((v.videoWidth || size) - size) / 2, sy = ((v.videoHeight || size) - size) / 2;
+  const f = FILTERS[state.filter];
+  if (f.css !== 'none') ctx.filter = f.css;
+  ctx.translate(size, 0); ctx.scale(-1, 1);
+  ctx.drawImage(v, sx, sy, size, size, 0, 0, size, size);
+  el.shot.src = c.toDataURL('image/jpeg', 0.9);
+  stopStream();
+  state.camActive = false; state.hasCapture = true; state.saved = false;
+  render();
+}
+
+function stopStream() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
+
+el.shutter.addEventListener('click', () => state.camActive ? capture() : openCamera());
+el.viewTap.addEventListener('click', openCamera);
+el.retake.addEventListener('click', () => { state.hasCapture = false; state.saved = false; el.shot.src = ''; render(); });
+el.save.addEventListener('click', () => {
+  if (!el.shot.src) return;
+  const a = document.createElement('a'); a.href = el.shot.src; a.download = 'reaction-' + Date.now() + '.jpg';
+  document.body.appendChild(a); a.click(); a.remove();
+  state.saved = true; render();
+  setTimeout(() => { state.saved = false; render(); }, 2000);
+});
+
+// ---- render ----
+function render() {
+  const f = FILTERS[state.filter];
+  el.lens.style.background = f.swatch === '#2a2a32' ? 'linear-gradient(160deg,#7c5cff,#4f2fd8)' : f.swatch;
+  el.lens.textContent = state.camActive ? '' : '📷';
+  el.filterName.textContent = f.name;
+  el.video.style.filter = f.css;
+
+  const showIdle = !state.camActive && !state.hasCapture;
+  el.idle.classList.toggle('hidden', !showIdle);
+  el.idle.classList.toggle('error', !!state.camError);
+  el.idleGlyph.textContent = state.camError ? '🚫' : '📷';
+  el.idleMsg.textContent = state.camError || 'tap to open camera';
+  el.video.classList.toggle('hidden', !state.camActive);
+  el.shot.classList.toggle('hidden', !state.hasCapture);
+  el.postCap.classList.toggle('hidden', !state.hasCapture);
+  el.save.textContent = state.saved ? 'Saved ✓' : 'Save photo';
+}
+
+// rest centered on a middle item, re-asserting until layout settles
+(function initCenter() {
+  jumpTo('filter', state.filter); jumpTo('emoji', state.reaction);
+  if (centerIndex(el.filterRail) !== state.filter || centerIndex(el.emojiRail) !== state.reaction) {
+    requestAnimationFrame(initCenter);
+  }
+})();
+render();
+</script>
+</body>
+</html>

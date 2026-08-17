@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Group Post Cards — reference (1–4)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#08080a; color:#f2f2f4; font-family:'Space Grotesk',Helvetica,sans-serif; }
+  .wrap { display:flex; flex-wrap:wrap; gap:28px; padding:40px; align-items:flex-start; }
+  .card { width:390px; background:#0e0e11; border:1px solid #1c1c22; border-radius:26px; padding:16px; display:flex; flex-direction:column; gap:14px; }
+  .row { display:flex; align-items:center; gap:12px; }
+  .avatars { display:flex; }
+  .av { width:34px; height:34px; border-radius:99px; border:2px solid #0e0e11; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; }
+  .av + .av { margin-left:-12px; }
+  .name { font-size:16px; font-weight:600; letter-spacing:-0.01em; }
+  .meta { font-family:'IBM Plex Mono',monospace; font-size:11px; color:#82828d; }
+  .pill { display:flex; align-items:center; gap:6px; padding:6px 12px; border-radius:99px; background:rgba(10,12,18,.66); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,.12); font-size:12px; }
+  .icon-btn { width:44px; height:44px; border-radius:99px; background:rgba(10,12,18,.62); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,.12); display:flex; align-items:center; justify-content:center; font-size:17px; }
+  .comment-avatars { display:flex; }
+  .cav { width:30px; height:30px; border-radius:99px; border:2px solid #0e0e11; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; }
+  .cav + .cav { margin-left:-10px; }
+  .comment { font-size:14px; line-height:1.45; }
+  .comment b { font-weight:600; }
+  .comment span { color:#c9c9d2; }
+  /* Card 3 — swipe stack */
+  .stack { position:relative; height:380px; display:flex; align-items:center; justify-content:center; user-select:none; }
+  .stack-face { position:relative; width:250px; height:320px; border-radius:20px; overflow:hidden; border:1px solid rgba(255,255,255,.07); display:flex; align-items:center; justify-content:center; }
+  .stack-face .fill { position:absolute; inset:0; border-radius:20px; }
+  .stack-face .label { position:relative; font-family:'IBM Plex Mono',monospace; font-size:12px; color:rgba(255,255,255,.5); text-align:center; line-height:1.5; white-space:pre-line; }
+  .stack-top { width:258px; height:330px; box-shadow:0 24px 60px rgba(0,0,0,.6); cursor:grab; touch-action:pan-y; }
+  .stack-top:active { cursor:grabbing; }
+  .stack-counter { position:absolute; top:12px; right:12px; padding:5px 10px; border-radius:99px; background:rgba(10,12,18,.66); backdrop-filter:blur(10px); font-family:'IBM Plex Mono',monospace; font-size:11px; }
+  .dots { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:-2px; }
+  .dot { height:6px; border-radius:99px; background:#33333d; transition:all .3s ease; }
+  .dot.active { width:18px; background:#f2f2f4; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 1 · Float -->
+  <div class="card">
+    <div class="row">
+      <div class="avatars">
+        <div class="av" style="background:linear-gradient(150deg,#7c5cff,#a78bfa)">S</div>
+        <div class="av" style="background:linear-gradient(150deg,#ff5fa2,#ff8fc4)">M</div>
+        <div class="av" style="background:linear-gradient(150deg,#35c8ff,#7ee0ff); color:#06202b">A</div>
+      </div>
+      <div style="flex:1; display:flex; flex-direction:column; gap:2px">
+        <div class="name">Weekend Crew 🌊</div>
+        <div class="meta">3 members · 2h · 🔥 12 wk streak</div>
+      </div>
+      <div style="color:#5e5e68; font-size:20px; letter-spacing:1px; line-height:1">···</div>
+    </div>
+
+    <div style="position:relative; height:400px; border-radius:20px; overflow:hidden; background:repeating-linear-gradient(135deg,#14202e 0 10px,#162434 10px 20px)">
+      <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:12px; color:#54687f; text-align:center; line-height:1.5">group memory<br>photo</div>
+      <div style="position:absolute; top:16px; left:16px; width:96px; height:120px; border-radius:14px; background:linear-gradient(160deg,#7c5cff,#5b3ee8); box-shadow:0 12px 30px rgba(0,0,0,.5); border:2px solid rgba(255,255,255,.14); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; transform:rotate(-4deg)">
+        <span style="font-size:22px; font-weight:600">S</span><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:rgba(255,255,255,.7)">selfie</span>
+      </div>
+      <div style="position:absolute; top:74px; right:16px; width:88px; height:110px; border-radius:14px; background:linear-gradient(160deg,#ff5fa2,#e8347f); box-shadow:0 12px 30px rgba(0,0,0,.5); border:2px solid rgba(255,255,255,.14); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; transform:rotate(5deg)">
+        <span style="font-size:22px; font-weight:600">M</span><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:rgba(255,255,255,.75)">selfie</span>
+      </div>
+      <div style="position:absolute; bottom:16px; left:24px; width:88px; height:110px; border-radius:14px; background:linear-gradient(160deg,#35c8ff,#0ea5d9); box-shadow:0 12px 30px rgba(0,0,0,.5); border:2px solid rgba(255,255,255,.14); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; transform:rotate(-6deg)">
+        <span style="font-size:22px; font-weight:600; color:#04222e">A</span><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:rgba(4,34,46,.7)">selfie</span>
+      </div>
+      <div style="position:absolute; bottom:16px; right:16px; display:flex; flex-direction:column; gap:10px">
+        <div class="icon-btn">🔔</div><div class="icon-btn">😊</div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:10px">
+      <div class="row" style="gap:10px">
+        <div class="comment-avatars">
+          <div class="cav" style="background:linear-gradient(150deg,#ff8a4c,#ff5a3c)">J</div>
+          <div class="cav" style="background:linear-gradient(150deg,#b18cff,#8b5cf6)">R</div>
+          <div class="cav" style="background:linear-gradient(150deg,#4fd0ff,#2aa9e8)">T</div>
+          <div class="cav" style="background:#1c1c22; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#a5a5b0">+4</div>
+        </div>
+        <div style="font-size:13px; color:#82828d">🔥😍💯 · 5 comments</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="comment"><b>jake_m</b> <span>this is fire 🔥</span></div>
+        <div class="comment"><b>priya.s</b> <span>wish i was there!</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 · Mosaic -->
+  <div class="card">
+    <div class="row">
+      <div class="avatars">
+        <div class="av" style="background:linear-gradient(150deg,#ffc531,#ff9f1c); color:#2a1a00">K</div>
+        <div class="av" style="background:linear-gradient(150deg,#ff6a3d,#e8431c)">L</div>
+        <div class="av" style="background:linear-gradient(150deg,#2fd18b,#0fa96b); color:#04241a">D</div>
+      </div>
+      <div style="flex:1; display:flex; flex-direction:column; gap:2px">
+        <div class="name">Rooftop Gang ☀️</div>
+        <div class="meta">4 members · 45m · 🔥 3 wk streak</div>
+      </div>
+      <div style="color:#5e5e68; font-size:20px; letter-spacing:1px; line-height:1">···</div>
+    </div>
+
+    <div style="position:relative; display:grid; grid-template-columns:1.15fr 1fr; grid-template-rows:1fr 1fr; gap:4px; height:360px; border-radius:20px; overflow:hidden">
+      <div style="grid-row:span 2; position:relative; background:repeating-linear-gradient(135deg,#151c28 0 10px,#18202d 10px 20px); display:flex; align-items:center; justify-content:center">
+        <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#54687f; text-align:center; line-height:1.5">group<br>memory</span>
+        <div class="pill" style="position:absolute; bottom:12px; left:12px">📍 Santa Monica</div>
+      </div>
+      <div style="background:linear-gradient(160deg,#ffc531,#ff9f1c); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px">
+        <span style="font-size:30px; font-weight:600; color:#2a1a00">K</span><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:rgba(42,26,0,.65)">selfie</span>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px">
+        <div style="background:linear-gradient(160deg,#ff6a3d,#e8431c); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px">
+          <span style="font-size:24px; font-weight:600">L</span><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:rgba(255,255,255,.75)">selfie</span>
+        </div>
+        <div style="background:linear-gradient(160deg,#2fd18b,#0fa96b); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px">
+          <span style="font-size:24px; font-weight:600; color:#04241a">D</span><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:rgba(4,36,26,.7)">selfie</span>
+        </div>
+      </div>
+      <div style="position:absolute; bottom:12px; right:12px; display:flex; flex-direction:column; gap:10px">
+        <div class="icon-btn">🔔</div><div class="icon-btn">😊</div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:10px">
+      <div class="row" style="gap:10px">
+        <div class="comment-avatars">
+          <div class="cav" style="background:linear-gradient(150deg,#c084fc,#f472b6)">N</div>
+          <div class="cav" style="background:linear-gradient(150deg,#ff8a4c,#ff5a3c)">P</div>
+          <div class="cav" style="background:#1c1c22; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#a5a5b0">+6</div>
+        </div>
+        <div style="font-size:13px; color:#82828d">😂❤️ · 8 comments</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="comment"><b>nina.k</b> <span>the vibes are immaculate ✨</span></div>
+        <div class="comment"><b>alex.w</b> <span>need to join next time</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 · Stack (swipeable) -->
+  <div class="card">
+    <div class="row">
+      <div class="avatars">
+        <div class="av" style="background:linear-gradient(150deg,#5eead4,#14b8a6); color:#032b26">E</div>
+        <div class="av" style="background:linear-gradient(150deg,#818cf8,#6366f1)">V</div>
+      </div>
+      <div style="flex:1; display:flex; flex-direction:column; gap:2px">
+        <div class="name">Trail Sisters 🥾</div>
+        <div class="meta">6 members · 5h · 🔥 21 wk streak</div>
+      </div>
+      <div style="color:#5e5e68; font-size:20px; letter-spacing:1px; line-height:1">···</div>
+    </div>
+
+    <div class="stack" id="swipeStack">
+      <div class="stack-face" id="face3" style="transform-origin:center"><div class="fill" id="fill3"></div></div>
+      <div class="stack-face" id="face2" style="position:absolute; transform-origin:center"><div class="fill" id="fill2"></div><span class="label" id="label2" style="color:rgba(255,255,255,.42)"></span></div>
+      <div class="stack-face stack-top" id="face1" style="position:relative; z-index:3;">
+        <div class="fill" id="fill1"></div>
+        <span class="label" id="label1"></span>
+        <div class="stack-counter" id="counter1"></div>
+        <div class="pill" style="position:absolute; bottom:12px; left:12px">📍 Mt. Tam</div>
+      </div>
+      <div style="position:absolute; bottom:4px; right:4px; z-index:4; display:flex; gap:10px">
+        <div class="icon-btn">🔔</div><div class="icon-btn">😊</div>
+      </div>
+    </div>
+    <div class="dots" id="dots3"></div>
+
+    <div style="display:flex; flex-direction:column; gap:10px">
+      <div class="row" style="gap:10px">
+        <div class="comment-avatars">
+          <div class="cav" style="background:linear-gradient(150deg,#5eead4,#14b8a6); color:#032b26">E</div>
+          <div class="cav" style="background:linear-gradient(150deg,#818cf8,#6366f1)">V</div>
+          <div class="cav" style="background:#1c1c22; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#a5a5b0">+9</div>
+        </div>
+        <div style="font-size:13px; color:#82828d">🥾💚 · 11 comments</div>
+      </div>
+      <div class="comment"><b>dana.r</b> <span>that ridge at sunrise, unreal</span></div>
+    </div>
+  </div>
+
+  <!-- 4 · Strip -->
+  <div class="card">
+    <div class="row">
+      <div class="avatars">
+        <div class="av" style="background:linear-gradient(150deg,#fb7185,#e11d48)">B</div>
+        <div class="av" style="background:linear-gradient(150deg,#facc15,#eab308); color:#2a2200">C</div>
+      </div>
+      <div style="flex:1; display:flex; flex-direction:column; gap:2px">
+        <div class="name">Sunday Kitchen 🍜</div>
+        <div class="meta">5 members · 1d · 🔥 8 wk streak</div>
+      </div>
+      <div style="color:#5e5e68; font-size:20px; letter-spacing:1px; line-height:1">···</div>
+    </div>
+
+    <div style="display:flex; gap:8px; align-items:flex-end; overflow-x:auto; padding-bottom:4px">
+      <div style="flex:0 0 132px; height:200px; border-radius:16px; background:repeating-linear-gradient(135deg,#241a1c 0 10px,#2a1e20 10px 20px); display:flex; align-items:flex-end; padding:10px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8a6b70">dish 01</div>
+      <div style="flex:0 0 150px; height:250px; border-radius:16px; background:repeating-linear-gradient(135deg,#1c2130 0 10px,#212739 10px 20px); display:flex; align-items:flex-end; padding:10px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#6b7a95">table shot</div>
+      <div style="flex:0 0 110px; height:170px; border-radius:16px; background:linear-gradient(160deg,#fb7185,#e11d48); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px">
+        <span style="font-size:24px; font-weight:600">B</span><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:rgba(255,255,255,.75)">selfie</span>
+      </div>
+      <div style="flex:0 0 110px; height:220px; border-radius:16px; background:linear-gradient(160deg,#facc15,#eab308); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px">
+        <span style="font-size:24px; font-weight:600; color:#2a2200">C</span><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:rgba(42,34,0,.65)">selfie</span>
+      </div>
+      <div style="flex:0 0 90px; height:150px; border-radius:16px; background:#15151a; border:1px dashed #2c2c34; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#6f6f7a">+3</div>
+    </div>
+
+    <div class="row">
+      <div class="pill" style="background:#15151a; border-color:#23232b; backdrop-filter:none;">📍 Ridgewood</div>
+      <div style="flex:1"></div>
+      <div class="icon-btn" style="width:40px; height:40px; background:#15151a; border-color:#23232b; backdrop-filter:none;">🔔</div>
+      <div class="icon-btn" style="width:40px; height:40px; background:#15151a; border-color:#23232b; backdrop-filter:none;">😊</div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:10px">
+      <div class="row" style="gap:10px">
+        <div class="comment-avatars">
+          <div class="cav" style="background:linear-gradient(150deg,#facc15,#eab308); color:#2a2200">C</div>
+          <div class="cav" style="background:linear-gradient(150deg,#34d399,#059669)">G</div>
+          <div class="cav" style="background:#1c1c22; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#a5a5b0">+2</div>
+        </div>
+        <div style="font-size:13px; color:#82828d">🍜🔥 · 4 comments</div>
+      </div>
+      <div class="comment"><b>mo.tan</b> <span>recipe or riot</span></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ---- Card 3: swipeable photo stack ----
+const photos = [
+  { label: "group memory\nphoto", bg: "repeating-linear-gradient(135deg,#15202c 0 10px,#182533 10px 20px)" },
+  { label: "ridge at sunrise", bg: "repeating-linear-gradient(135deg,#2a1f1a 0 10px,#31251e 10px 20px)" },
+  { label: "summit selfie", bg: "linear-gradient(160deg,#5eead4,#14b8a6)" },
+  { label: "trail switchback", bg: "repeating-linear-gradient(135deg,#1c2b2a 0 10px,#203230 10px 20px)" },
+  { label: "snack break", bg: "repeating-linear-gradient(135deg,#1a2230 0 10px,#1d2635 10px 20px)" },
+  { label: "V at the overlook", bg: "linear-gradient(160deg,#818cf8,#6366f1)" },
+  { label: "car ride home", bg: "repeating-linear-gradient(135deg,#20182c 0 10px,#251c33 10px 20px)" }
+];
+
+let i = 0, dragging = false, x0 = 0, dx = 0;
+const el = {
+  face1: document.getElementById('face1'), fill1: document.getElementById('fill1'), label1: document.getElementById('label1'), counter1: document.getElementById('counter1'),
+  face2: document.getElementById('face2'), fill2: document.getElementById('fill2'), label2: document.getElementById('label2'),
+  face3: document.getElementById('face3'), fill3: document.getElementById('fill3'),
+  dots: document.getElementById('dots3')
+};
+const at = (k) => photos[(i + k) % photos.length];
+
+function renderDots() {
+  el.dots.innerHTML = '';
+  photos.forEach((_, k) => {
+    const d = document.createElement('span');
+    d.className = 'dot' + (k === i % photos.length ? ' active' : '');
+    el.dots.appendChild(d);
+  });
+}
+
+function renderStack(withTransition) {
+  const p = Math.min(Math.abs(dx) / 140, 1);
+  const easeOn = withTransition ? 'transform .32s cubic-bezier(.22,.61,.36,1), opacity .32s ease' : 'none';
+
+  el.fill1.style.background = at(0).bg;
+  el.label1.textContent = at(0).label;
+  el.counter1.textContent = (i % photos.length + 1) + ' / ' + photos.length;
+  el.face1.style.transition = easeOn;
+  el.face1.style.transform = `translateX(${dx}px) rotate(${dx / 26}deg)`;
+  el.face1.style.opacity = Math.abs(dx) > 400 ? 0 : 1;
+
+  el.fill2.style.background = at(1).bg;
+  el.label2.textContent = at(1).label;
+  el.face2.style.transition = easeOn;
+  el.face2.style.transform = `rotate(${6 - 6 * p}deg) translateX(${24 - 24 * p}px) scale(${0.94 + 0.06 * p})`;
+
+  el.fill3.style.background = at(2).bg;
+  el.fill3.style.opacity = 0.9;
+  el.face3.style.transition = easeOn;
+  el.face3.style.transform = `rotate(${-9 + 3 * p}deg) translateX(${-26 + 8 * p}px) scale(${0.9 + 0.04 * p})`;
+
+  renderDots();
+}
+
+el.face1.addEventListener('pointerdown', (e) => {
+  el.face1.setPointerCapture(e.pointerId);
+  x0 = e.clientX; dragging = true; dx = 0;
+  renderStack(false);
+});
+el.face1.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  dx = e.clientX - x0;
+  renderStack(false);
+});
+function endDrag() {
+  if (!dragging) return;
+  dragging = false;
+  if (Math.abs(dx) > 80) {
+    const dir = dx > 0 ? 1 : -1;
+    dx = dir * 560;
+    renderStack(true);
+    setTimeout(() => {
+      i = (i + 1) % photos.length;
+      dx = 0;
+      renderStack(false);
+    }, 300);
+  } else {
+    dx = 0;
+    renderStack(true);
+  }
+}
+el.face1.addEventListener('pointerup', endDrag);
+el.face1.addEventListener('pointercancel', endDrag);
+
+renderStack(false);
+</script>
+</body>
+</html>

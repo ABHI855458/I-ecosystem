@@ -4,6 +4,15 @@
 *.pyc
 *.swp
 .DS_Store
+
+# Secrets — real values live only in .env (gitignored); .env.example
+# documents the required keys with empty placeholders.
+.env
+
+# DeepAR's native Android SDK — license-gated manual download, see
+# android/app/libs/README.md.
+android/app/libs/*.aar
+
 .atom/
 .build/
 .buildlog/

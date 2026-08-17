@@ -26,6 +26,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>I uses your camera to capture photos for posts.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>I uses your microphone when recording video.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>I uses your photo library to pick images for posts.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>I saves your reaction photos to your photo library when you tap Save.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -47,6 +55,10 @@
 			</array>
 		</dict>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
