@@ -145,7 +145,11 @@ class _HomeScreenState extends State<HomeScreen> {
     if (widget.onOpenCamera != null) {
       widget.onOpenCamera!();
     } else {
-      Navigator.of(context).push(openCameraRoute());
+      // Fallback only (widget.onOpenCamera is set by MainShell in the real
+      // app, which already accounts for the active tab itself) — kept
+      // consistent with that path rather than always defaulting Everyone.
+      Navigator.of(context)
+          .push(openCameraRoute(isAnonymous: _tabIndex == 0));
     }
   }
 

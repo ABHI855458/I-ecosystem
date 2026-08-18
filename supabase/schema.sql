@@ -1219,6 +1219,117 @@ CREATE TRIGGER trg_notify_realmoji_reaction
   EXECUTE FUNCTION notify_webhook('notify-engagement');
 
 -- ----------------------------------------
+-- RealMoji RLS (post_realmoji_reactions / user_realmojis)
+-- ----------------------------------------
+-- Both tables are created directly in the live Supabase project, not by
+-- this file (no CREATE TABLE for either exists here) — this block is
+-- documentation-only, applied via the SQL Editor, kept here so this file
+-- doesn't drift from the live DB the way it had for these two tables
+-- until this fix (security review, 2026-08-17: no RLS existed on either
+-- table at all — a client with any valid session, or the anon key
+-- depending on grants, could insert post_realmoji_reactions rows under an
+-- arbitrary user_id, or read raw rows/joins to deanonymize who reacted to
+-- an anonymous post, defeating the Anon feed's entire "no identity, ever"
+-- design). Mirrors the `reactions` table's own policy pattern above
+-- (auth.uid() via users.auth_id, posts-visibility inheritance for SELECT).
+ALTER TABLE post_realmoji_reactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_realmojis ENABLE ROW LEVEL SECURITY;
+
+-- Readable iff the underlying post is readable — inherits posts_select's
+-- own anonymous-post protection with no duplication, same trick
+-- reactions_select uses.
+CREATE POLICY "post_realmoji_reactions_select" ON post_realmoji_reactions
+  FOR SELECT USING (
+    EXISTS (SELECT 1 FROM posts p WHERE p.id = post_id)
+  );
+
+CREATE POLICY "post_realmoji_reactions_insert_own" ON post_realmoji_reactions
+  FOR INSERT WITH CHECK (
+    auth.uid() IN (SELECT auth_id FROM users WHERE id = user_id)
+  );
+
+CREATE POLICY "post_realmoji_reactions_update_own" ON post_realmoji_reactions
+  FOR UPDATE USING (
+    auth.uid() IN (SELECT auth_id FROM users WHERE id = user_id)
+  );
+
+CREATE POLICY "post_realmoji_reactions_delete_own" ON post_realmoji_reactions
+  FOR DELETE USING (
+    auth.uid() IN (SELECT auth_id FROM users WHERE id = user_id)
+  );
+
+-- Own rows always readable (RealmojiService.savedSelfies/savedSelfieUrl).
+-- Other users' rows readable ONLY when feed_scope='everyone' — required
+-- for the Everyone-feed reactor stack (RealmojiService.fetchReactors,
+-- which reads OTHER users' saved selfies to render their faces).
+-- Anonymous-scoped rows stay owner-only — THIS is the actual identity
+-- boundary: a client can no longer join user_realmojis to
+-- post_realmoji_reactions to deanonymize an anon-post reactor.
+CREATE POLICY "user_realmojis_select" ON user_realmojis
+  FOR SELECT USING (
+    auth.uid() IN (SELECT auth_id FROM users WHERE id = user_id)
+    OR feed_scope = 'everyone'
+  );
+
+CREATE POLICY "user_realmojis_insert_own" ON user_realmojis
+  FOR INSERT WITH CHECK (
+    auth.uid() IN (SELECT auth_id FROM users WHERE id = user_id)
+  );
+
+CREATE POLICY "user_realmojis_update_own" ON user_realmojis
+  FOR UPDATE USING (
+    auth.uid() IN (SELECT auth_id FROM users WHERE id = user_id)
+  );
+
+CREATE POLICY "user_realmojis_delete_own" ON user_realmojis
+  FOR DELETE USING (
+    auth.uid() IN (SELECT auth_id FROM users WHERE id = user_id)
+  );
+
+-- ----------------------------------------
+-- RealMoji storage policy (reaction-photos/realmoji/ prefix)
+-- ----------------------------------------
+-- Security review, 2026-08-17 (Vuln 2): no storage.objects policy existed
+-- anywhere for any bucket in this app — not just this one — so this is
+-- the first such policy on record here, not a mirror of an existing
+-- pattern. Path convention: realmoji/$userId/$feedScope/$emojiType.jpg
+-- (StorageService.uploadRealmojiSelfie, lib/services/storage_service.dart).
+-- storage.foldername(name) splits that into ['realmoji', '$userId',
+-- '$feedScope'] — segment [2] is the userId; writes are scoped so it must
+-- match the caller's own users.id, closing the IDOR where any
+-- authenticated client could overwrite another user's saved RealMoji
+-- selfie by uploading to their userId's path.
+--
+-- Reads are intentionally NOT restricted: this bucket is public
+-- (StorageService uses getPublicUrl), so GETs already bypass RLS by
+-- bucket design — same tradeoff every other asset bucket in this app
+-- already makes, unrelated to this fix.
+--
+-- storage.objects RLS is bucket-wide at the table level, not scoped per
+-- bucket — this policy assumes RLS is already enabled on storage.objects
+-- (Supabase's default for every project) rather than toggling it here,
+-- since forcing it on blind could start enforcing (nonexistent) policies
+-- against every other bucket (posts/profiles/personas/bucket-photos/
+-- group-icons/group-photos) and lock out uploads that currently work.
+CREATE POLICY "realmoji_selfie_insert_own" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'reaction-photos'
+    AND (storage.foldername(name))[1] = 'realmoji'
+    AND (storage.foldername(name))[2] IN (
+      SELECT id::text FROM users WHERE auth_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "realmoji_selfie_update_own" ON storage.objects
+  FOR UPDATE USING (
+    bucket_id = 'reaction-photos'
+    AND (storage.foldername(name))[1] = 'realmoji'
+    AND (storage.foldername(name))[2] IN (
+      SELECT id::text FROM users WHERE auth_id = auth.uid()
+    )
+  );
+
+-- ----------------------------------------
 -- Scheduled jobs — prompt rotation (3h) + live-activity nudge (6h)
 -- ----------------------------------------
 -- pg_cron calling an Edge Function via pg_net, rather than Supabase's

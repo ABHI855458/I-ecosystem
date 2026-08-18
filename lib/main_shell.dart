@@ -142,7 +142,7 @@ class _MainShellState extends State<MainShell>
   }
 
   void _openComposer() {
-    Navigator.of(context).push(openCameraRoute());
+    Navigator.of(context).push(openCameraRoute(isAnonymous: _isHomeAnonActive));
   }
 
   void _openPingSendSheet() {

@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../services/reaction_preset_service.dart';
 import '../../../services/reaction_service.dart';
+import '../../../services/realmoji_service.dart';
 import 'post_card.dart';
 import 'post_card_shared.dart';
 
@@ -58,8 +60,6 @@ class PersonalPostCard extends StatefulWidget {
 }
 
 class _PersonalPostCardState extends State<PersonalPostCard> with PostReactions<PersonalPostCard> {
-  static const String _kReactEmoji = '❤️';
-
   List<LikeReactor> _reactors = const [];
 
   @override
@@ -87,34 +87,61 @@ class _PersonalPostCardState extends State<PersonalPostCard> with PostReactions<
     setState(() => _reactors = reactors);
   }
 
-  Future<void> _react(String emoji) async {
-    await onEmojiSelected(widget.postId, emoji);
-    unawaited(_loadReactors());
-  }
-
   @override
   Widget build(BuildContext context) {
     final reactions = summary ?? const ReactionSummary.empty();
 
-    return PostCard(
-      handle: widget.handle,
-      place: widget.place,
-      avatar: widget.avatar,
-      backPhoto: widget.backPhoto,
-      frontPhoto: widget.frontPhoto ?? widget.backPhoto,
-      reactions: _reactors
-          .map((r) => PostCardReaction(id: r.id, handle: r.name, photo: r.avatarUrl, emoji: r.emoji))
-          .toList(),
-      reactionCount: reactions.totalEmojiCount,
-      comments: widget.comments,
-      commentCount: widget.commentCount,
-      reacted: reactions.myEmoji != null,
-      onReact: () => _react(_kReactEmoji),
-      onPickReactionEmoji: _react,
-      onOpenComments: widget.onOpenComments,
-      logo: widget.logo,
-      locked: widget.locked,
-      loading: widget.loading,
+    return Stack(
+      children: [
+        PostCard(
+          handle: widget.handle,
+          place: widget.place,
+          avatar: widget.avatar,
+          backPhoto: widget.backPhoto,
+          frontPhoto: widget.frontPhoto ?? widget.backPhoto,
+          reactions: _reactors
+              .map((r) => PostCardReaction(id: r.id, handle: r.name, photo: r.avatarUrl, emoji: r.emoji))
+              .toList(),
+          reactionCount: reactions.totalEmojiCount,
+          comments: widget.comments,
+          commentCount: widget.commentCount,
+          onOpenComments: widget.onOpenComments,
+          logo: widget.logo,
+          locked: widget.locked,
+          loading: widget.loading,
+          // Built-in disc replaced below with the SAME entry point
+          // PhotoPostCard (Anonymous)/EveryonePostCard use — same widget,
+          // same openReactionTray/showTray toggle, same RealmojiTray, just
+          // category: everyone instead of anonymous. Was previously wired
+          // to onReact/onPickReactionEmoji -> onEmojiSelected, a different,
+          // older tap=like/long-press=picker mechanism entirely.
+          showReactDisc: false,
+        ),
+        if (!widget.locked && !widget.loading)
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: PostReactionCorner(
+              allowFaceReactions: true,
+              myFaceReaction: null,
+              myEmoji: myRealmojiReaction?.glyph,
+              uploading: uploadingFaceReaction,
+              onTap: openReactionTray,
+              showTray: showPresetTray,
+              category: ReactionPresetCategory.everyone,
+              onSelect: (preset) => selectPreset(widget.postId, preset),
+              onAddNew: () => openAddPresetFlow(
+                widget.postId,
+                allowFaceReactions: true,
+              ),
+              onCaptureRealmoji: (type) => captureRealmojiAndReact(
+                widget.postId,
+                ReactionPresetCategory.everyone,
+                type,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

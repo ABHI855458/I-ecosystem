@@ -30,13 +30,19 @@ import 'deepar_filter_strip.dart';
 // Route — opaque:false, feed shows through, card slides up from bottom
 // ---------------------------------------------------------------------------
 
-Route<void> openCameraRoute() {
+/// [isAnonymous] sets the composer's STARTING mode (which lens set the
+/// camera phase shows — masks vs. fun filters+beautification — see
+/// ComposerScreen._lensSet) — the confirm screen's own Anon/Everyone toggle
+/// still lets the poster override this before sending either way. Defaults
+/// false (Everyone) for call sites with no tab context of their own.
+Route<void> openCameraRoute({bool isAnonymous = false}) {
   return PageRouteBuilder<void>(
     opaque: false,
     barrierColor: Colors.black.withValues(alpha: 0.52),
     transitionDuration: const Duration(milliseconds: 380),
     reverseTransitionDuration: const Duration(milliseconds: 260),
-    pageBuilder: (context, anim, secAnim) => const ComposerScreen(),
+    pageBuilder: (context, anim, secAnim) =>
+        ComposerScreen(testAnonymous: isAnonymous),
     transitionsBuilder: (context, anim, secAnim, child) {
       final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
       return SlideTransition(
@@ -162,6 +168,10 @@ class ComposerScreen extends StatefulWidget {
   });
 
   final ComposerPhase? testPhase;
+
+  /// Despite the name (kept as-is so existing call sites/tests need no
+  /// rename), this now also drives real production navigation —
+  /// openCameraRoute's isAnonymous forwards straight through to this.
   final bool testAnonymous;
   // Screenshot-mode-only: preloads the dual-photo confirm preview without
   // a real camera capture. See main.dart's _ScreenshotRoot.
@@ -276,13 +286,16 @@ class _ComposerScreenState extends State<ComposerScreen> {
   // ── Camera ────────────────────────────────────────────────────────────────
 
   /// Which lenses this screen offers — Anonymous posts get the face-masking
-  /// set (matches the whole point of DeepArLens.anonymousMaskOne/Two);
-  /// non-anonymous posting has no dedicated lens category of its own, so it
-  /// reuses the ping filter set as a reasonable placeholder rather than
-  /// inventing a third unbacked category.
+  /// set only (matches the whole point of DeepArLens.anonymousMaskOne/Two:
+  /// covering the poster's real face). Non-anonymous (Everyone) posting
+  /// gets every non-mask lens — both fun filters plus beautification.
   List<DeepArLens> get _lensSet => _isAnonymous
       ? const [DeepArLens.anonymousMaskOne, DeepArLens.anonymousMaskTwo]
-      : const [DeepArLens.pingFilterOne, DeepArLens.pingFilterTwo];
+      : const [
+          DeepArLens.pingFilterOne,
+          DeepArLens.pingFilterTwo,
+          DeepArLens.beautification,
+        ];
 
   Future<void> _initDeepAr() async {
     final result = await DeepArService.instance.initializeWithDefaults();
@@ -899,11 +912,14 @@ class _CaptureCard extends StatelessWidget {
                     alignment: Alignment.center,
                     children: [
                       if (cameraReady)
-                        DeepArFilterStrip(
-                          lenses: lenses,
-                          onCapture: onCapture,
-                          onActiveLabelChanged: onActiveFilterLabelChanged,
-                        ),
+                        if (kDeepArFiltersEnabled)
+                          DeepArFilterStrip(
+                            lenses: lenses,
+                            onCapture: onCapture,
+                            onActiveLabelChanged: onActiveFilterLabelChanged,
+                          )
+                        else
+                          PlainShutterButton(onCapture: onCapture),
                       Positioned(
                         left: 24,
                         child: _SmallCircleBtn(icon: Icons.arrow_back_ios_new_rounded, onTap: onClose, size: 44, iconSize: 16),

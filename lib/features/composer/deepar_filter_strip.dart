@@ -1,7 +1,48 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../services/deepar_service.dart';
+
+/// Deferred post-launch (time cost vs. core UI work, see PR/chat context) —
+/// underlying DeepAR integration (service, .deepar assets, license setup)
+/// is untouched; this just stops the filter-picker UI from being wired into
+/// any camera screen. Flip back to true to re-enable; call sites already
+/// fall back to [PlainShutterButton] when false.
+const kDeepArFiltersEnabled = false;
+
+/// Plain circular shutter — same size/position DeepArFilterStrip's own
+/// center ring occupied, for when filters are disabled (see
+/// [kDeepArFiltersEnabled]). No lens/label wiring, just capture.
+class PlainShutterButton extends StatelessWidget {
+  const PlainShutterButton({super.key, required this.onCapture});
+  final VoidCallback onCapture;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        onCapture();
+      },
+      child: Container(
+        width: 72,
+        height: 72,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 4),
+        ),
+        child: Center(
+          child: Container(
+            width: 58,
+            height: 58,
+            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // DeepArFilterStrip — center-locked, scroll-snapping filter picker + shutter.

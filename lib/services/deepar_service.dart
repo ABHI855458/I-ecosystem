@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:deepar_flutter_plus/deepar_flutter_plus.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -116,19 +117,22 @@ class DeepArService {
   /// native log line "Asset not found: .../flutter_assets/"). A native crash
   /// can't be caught by the try/catch below — Dart exception handling only
   /// covers errors that come back through the platform channel's normal
-  /// error path, not a native-side fault. None of DeepArLens's asset paths
-  /// are real files yet (see that enum's own doc) nor registered in
-  /// pubspec.yaml's assets list, so right now this always no-ops — that's
-  /// correct/expected until real .deepar files are added, not a bug.
+  /// error path, not a native-side fault. Real .deepar files now ship under
+  /// assets/deepar/ (registered in pubspec.yaml) — this check still stays,
+  /// as a cheap guard against a future typo'd/missing asset path.
+  ///
+  /// Both failure paths log via debugPrint (previously silent no-ops) —
+  /// deepar_flutter_plus's own switchFaceMask/switchFilter force-unwrap an
+  /// internal _textureId that (per its own source comment) is only set once
+  /// iOS's platform view finishes creating; a tap that lands before that
+  /// callback fires throws a null-check error that was previously
+  /// invisible here.
   Future<void> applyLens(DeepArLens lens) async {
     try {
       await rootBundle.load(lens.assetPath);
-    } catch (_) {
-      // Not a real bundled asset — do NOT call into native code with this
-      // path, it crashes rather than erroring. Silent no-op is correct
-      // here: the caller (the filter strip) already only debounces to a
-      // settled selection, there's nothing else useful to show/do for a
-      // lens with no real asset behind it yet.
+    } catch (e) {
+      debugPrint('[DeepArService.applyLens] ${lens.name}: asset not found at '
+          '${lens.assetPath} — $e');
       return;
     }
     try {
@@ -137,9 +141,9 @@ class DeepArService {
       } else {
         await controller.switchFilter(lens.assetPath);
       }
-    } catch (_) {
-      // Swallow — genuine native/runtime failures still shouldn't crash the
-      // capture screen. Caller can check controller state / retry.
+      debugPrint('[DeepArService.applyLens] ${lens.name}: switch call completed');
+    } catch (e, st) {
+      debugPrint('[DeepArService.applyLens] ${lens.name}: native switch failed — $e\n$st');
     }
   }
 
@@ -166,13 +170,8 @@ class DeepArService {
 
 /// Named lens slots for this app's two real use cases — Anonymous persona
 /// masks (face-covering, so a captured photo can't be tied to the poster's
-/// real face) and Ping's fun filters. Asset paths are placeholders: no
-/// actual .deepar effect files ship with this repo (they're binary design
-/// assets, not something to fabricate) — add real files at these paths
-/// (asset bundles registered in pubspec.yaml under flutter/assets, same as
-/// any other bundled asset) before shipping, or swap in real URLs
-/// (switchFilter/switchFaceMask both accept a remote URL and cache it, per
-/// deepar_flutter_plus's own README).
+/// real face) and Ping/Everyone's fun filters + beautification. Real
+/// .deepar files ship under assets/deepar/ (registered in pubspec.yaml).
 enum DeepArLens {
   beautification('assets/deepar/filter_beautification.deepar', isMask: false),
   anonymousMaskOne('assets/deepar/mask_anonymous_1.deepar', isMask: true),

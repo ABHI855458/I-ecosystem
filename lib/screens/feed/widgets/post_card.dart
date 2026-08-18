@@ -60,6 +60,7 @@ class PostCard extends StatefulWidget {
     this.logo,
     this.locked = false,
     this.loading = false,
+    this.showReactDisc = true,
   });
 
   final String handle;
@@ -89,6 +90,12 @@ class PostCard extends StatefulWidget {
   final String? logo;
   final bool locked;
   final bool loading;
+
+  /// False when the caller overlays its own reaction entry point instead
+  /// (PersonalPostCard, wiring PostReactionCorner/RealmojiTray — the same
+  /// mechanism PhotoPostCard/EveryonePostCard use — over this card rather
+  /// than using the built-in tap-to-like/long-press-to-pick disc below).
+  final bool showReactDisc;
 
   static const double kMediaRadius = 22;
   static const Color kAccent = Color(0xFFFF6F5E);
@@ -184,6 +191,7 @@ class _PostCardState extends State<PostCard> {
               onReactLongPress: _showReactPicker,
               reactDiscLink: _reactDiscLink,
               logo: widget.logo,
+              showReactDisc: widget.showReactDisc,
             ),
     ];
 
@@ -347,6 +355,7 @@ class _Media extends StatelessWidget {
     required this.onReactLongPress,
     required this.reactDiscLink,
     required this.logo,
+    required this.showReactDisc,
   });
 
   final String? backPhoto;
@@ -360,6 +369,7 @@ class _Media extends StatelessWidget {
   final VoidCallback onReactLongPress;
   final LayerLink reactDiscLink;
   final String? logo;
+  final bool showReactDisc;
 
   @override
   Widget build(BuildContext context) {
@@ -419,15 +429,17 @@ class _Media extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _LogoPlate(logo: logo),
-                        const SizedBox(height: 14),
-                        CompositedTransformTarget(
-                          link: reactDiscLink,
-                          child: _ReactDisc(
-                            reacted: reacted,
-                            onTap: onReactTap,
-                            onLongPress: onReactLongPress,
+                        if (showReactDisc) ...[
+                          const SizedBox(height: 14),
+                          CompositedTransformTarget(
+                            link: reactDiscLink,
+                            child: _ReactDisc(
+                              reacted: reacted,
+                              onTap: onReactTap,
+                              onLongPress: onReactLongPress,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),

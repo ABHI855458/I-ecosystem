@@ -6,7 +6,6 @@ import '../../core/glass.dart';
 import '../../features/composer/composer_screen.dart';
 import '../../services/feed_service.dart';
 import '../../services/post_service.dart';
-import '../../services/wall_service.dart';
 import 'memory_detail_screen.dart';
 import 'single_post_detail_screen.dart';
 import 'widgets/everyone_post_card.dart';
@@ -18,7 +17,6 @@ import 'widgets/single_post_card.dart';
 import 'widgets/spotlight_card.dart';
 import 'widgets/spotlight_feed_controller.dart';
 import 'widgets/spotlight_privileges_controller.dart';
-import 'widgets/wall_preview_strip.dart';
 
 class EveryoneFeedScreen extends StatefulWidget {
   const EveryoneFeedScreen({
@@ -28,19 +26,20 @@ class EveryoneFeedScreen extends StatefulWidget {
   });
 
   /// HomeScreen's own scroll-driven chrome-collapse state (shared with the
-  /// Anonymous tab's header) — the Wall preview strip collapses/reappears
-  /// in lockstep with the rest of the header (bell, reaction, toggle,
-  /// score) rather than tracking its own independent scroll delta, so
-  /// "everything hides on scroll, everything reappears at the complete
-  /// top" reads as one coordinated header, not two separate mechanisms.
+  /// Anonymous tab's header) — kept for the rest of the header (bell,
+  /// reaction, toggle, score), which still hides/reappears on scroll as one
+  /// coordinated unit. The Wall preview strip used to collapse in lockstep
+  /// with this too; it's unwired for now (deferred post-launch — see
+  /// WallService/WallPreviewStrip, both still intact, just not called from
+  /// here), so this field no longer affects it.
   final bool chromeCollapsed;
 
   /// Reserved space for HomeScreen's floating _SlimHeader (which overlays
   /// this screen via a Stack, same as AnonymousTab.topInset) — without
-  /// this, WallPreviewStrip renders at y=0 and the header (Anon/Friends
-  /// toggle pill included) paints directly on top of it instead of above
-  /// it. Defaults to 0 for the standalone screenshot-mode call sites
-  /// (main.dart) that render this screen with no floating header at all.
+  /// this, the header (Anon/Friends toggle pill included) paints directly
+  /// on top of the feed's first item instead of above it. Defaults to 0
+  /// for the standalone screenshot-mode call sites (main.dart) that render
+  /// this screen with no floating header at all.
   final double topInset;
 
   @override
@@ -56,7 +55,6 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
   // boundaries stay stable and no post gets stranded unseen by a bad
   // whole-list shuffle.
   final List<FeedItem> _pagedItems = [];
-  List<Highlight> _highlights = [];
   bool _loading = true;
   bool _loadingMore = false;
   int _offset = 0;
@@ -105,8 +103,7 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
   }
 
   /// Fetches the next page (offset-based) and appends it — call for both
-  /// the initial load and every subsequent scroll-triggered page. The Wall
-  /// highlights strip is unpaginated (fetched once, page 0 only).
+  /// the initial load and every subsequent scroll-triggered page.
   Future<void> _loadPage() async {
     if (_loadingMore) return;
     // Only throttles once a lap has actually happened (tiny real dataset
@@ -117,7 +114,6 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
       return;
     }
     _loadingMore = true;
-    final isFirstPage = _offset == 0 && _lap == 0;
 
     // try/finally: any fetch/mapping error must never leave _loadingMore
     // stuck true, or every future scroll-triggered call silently no-ops at
@@ -127,12 +123,11 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
       final results = await Future.wait([
         FeedService.instance.fetchEveryoneFeed(limit: _pageSize, offset: _offset),
         FeedService.instance.fetchGroupFeed(limit: _pageSize, offset: _offset),
-        if (isFirstPage) WallService.instance.fetchTopHighlights(),
       ]);
       if (!mounted) return;
 
-      final remote = results[0] as List<FeedItem>;
-      final group = results[1] as List<FeedItem>;
+      final remote = results[0];
+      final group = results[1];
       final localIds = _localItems.map((i) => i.postId).toSet();
       // Shuffle WITHIN this page only — keeps pagination boundaries stable
       // (a post fetched on page 2 always renders after every page-1
@@ -155,7 +150,6 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
 
       setState(() {
         _pagedItems.addAll(page);
-        if (isFirstPage) _highlights = results[2] as List<Highlight>;
         if (reachedEnd) {
           _offset = 0;
           _lap++;
@@ -233,15 +227,11 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
     // — every 3rd post — so the Moments/Bucket card UI is visually testable
     // in the feed immediately, without needing enough real Bucket data to
     // populate a live feed integration. Object, not a sealed type: this
-    // list only ever holds FeedItem, DemoMoment, or _WallStripSlot,
-    // discriminated by `is` in the itemBuilder below.
+    // list only ever holds FeedItem or DemoMoment, discriminated by `is` in
+    // the itemBuilder below. (Used to also hold a Wall-strip marker as the
+    // first slot — deferred post-launch, see WallService/WallPreviewStrip,
+    // both left intact but unwired.)
     final slots = <Object>[];
-    // The Wall strip is now a genuine first list item, not a Column sibling
-    // with its own AnimatedSize/chromeCollapsed-driven collapse — it scrolls
-    // away with everything else at the same rate, no separate animation, no
-    // snap, no phantom reserved space once scrolled past. See this widget's
-    // own build() doc below for what this replaced.
-    if (_highlights.isNotEmpty) slots.add(_WallStripSlot(_highlights));
     var momentIdx = 0;
     for (var i = 0; i < items.length; i++) {
       slots.add(items[i]);
@@ -295,9 +285,6 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
                 itemCount: slots.length,
                 itemBuilder: (context, i) {
                   final slot = slots[i];
-                  if (slot is _WallStripSlot) {
-                    return WallPreviewStrip(highlights: slot.highlights);
-                  }
                   if (slot is DemoMoment) {
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -374,19 +361,6 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
       ],
     );
   }
-}
-
-// ---------------------------------------------------------------------------
-// Wall strip slot — a plain data-holding marker, not a widget, so it can
-// sit in `slots` alongside FeedItem/DemoMoment and be discriminated by
-// `is` in itemBuilder just like them. See the Wall-strip-related comments
-// in build() above for why this replaced the old AnimatedSize/
-// chromeCollapsed-driven collapse.
-// ---------------------------------------------------------------------------
-
-class _WallStripSlot {
-  const _WallStripSlot(this.highlights);
-  final List<Highlight> highlights;
 }
 
 // ---------------------------------------------------------------------------

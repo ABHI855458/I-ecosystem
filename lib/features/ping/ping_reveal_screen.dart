@@ -349,9 +349,13 @@ class _PingCameraScreenState extends State<PingCameraScreen>
   String _activeFilterLabel = 'NO FILTER';
   final _flashKey = GlobalKey<CaptureFlashOverlayState>();
 
-  // Ping-specific lens set — DeepArLens.pingFilterOne/Two were named
-  // specifically for this screen (see deepar_service.dart).
-  static const _lensSet = [DeepArLens.pingFilterOne, DeepArLens.pingFilterTwo];
+  // Ping's lens set — both fun filters plus beautification (no masks here;
+  // masks are Anonymous-posting-only, see composer_screen.dart's _lensSet).
+  static const _lensSet = [
+    DeepArLens.pingFilterOne,
+    DeepArLens.pingFilterTwo,
+    DeepArLens.beautification,
+  ];
 
   @override
   void initState() {
@@ -838,11 +842,14 @@ class _PingCameraScreenState extends State<PingCameraScreen>
           alignment: Alignment.center,
           children: [
             if (_cameraReady)
-              DeepArFilterStrip(
-                lenses: _lensSet,
-                onCapture: _capture,
-                onActiveLabelChanged: (l) => setState(() => _activeFilterLabel = l),
-              ),
+              if (kDeepArFiltersEnabled)
+                DeepArFilterStrip(
+                  lenses: _lensSet,
+                  onCapture: _capture,
+                  onActiveLabelChanged: (l) => setState(() => _activeFilterLabel = l),
+                )
+              else
+                PlainShutterButton(onCapture: _capture),
             Positioned(
               left: 28,
               child: _GlassCamBtn(
