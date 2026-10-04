@@ -1,0 +1,11 @@
+# Copy this file to android/key.properties (same directory) and fill in
+# the real values. key.properties itself is gitignored (see
+# android/.gitignore) — it holds the actual release-signing password and
+# must never be committed.
+#
+# storeFile must be an ABSOLUTE path — Gradle resolves a relative one
+# against android/app/, not against wherever the .jks actually lives.
+storePassword=
+keyPassword=
+keyAlias=palster
+storeFile=/absolute/path/to/palster-release.jks

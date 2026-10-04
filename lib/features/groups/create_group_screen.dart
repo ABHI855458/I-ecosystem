@@ -32,6 +32,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   bool _submitting = false;
   String? _error;
 
+  /// Blurred Group Teaser feature. 'private' is the default — matching
+  /// every group made before this existed, where the only way in was an
+  /// existing member or admin adding you. 'public' is the new, explicit
+  /// opt-in: any community member can join instantly and sees every post in
+  /// full. A private group's posts still reach its community, first photo
+  /// clear and the rest blurred (group_post_audience_feed.locked).
+  String _visibility = 'private';
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -75,6 +83,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       setState(() => _error = 'Give this group a name.');
       return;
     }
+    // Explicit request: "set minimum criteria for making a group is 2
+    // members." createGroup always adds the creator as an admin member, so
+    // "2 members" means at least one OTHER person picked here — a group of
+    // just yourself ("bakchodi crew · 1") had nobody to share it with.
+    if (_members.isEmpty) {
+      setState(() => _error = 'Add at least one other person to the group.');
+      return;
+    }
 
     setState(() {
       _submitting = true;
@@ -87,6 +103,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         name: name,
         iconFile: _iconFile,
         memberUserIds: _members.keys.toList(),
+        visibility: _visibility,
       );
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -285,6 +302,55 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                             ),
                         ],
                       ),
+                    const SizedBox(height: 22),
+                    Text(
+                      // Joining is invite-only either way — this only
+                      // decides who can SEE the group's posts.
+                      'WHO SEES POSTS',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.6,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _VisibilityOption(
+                            icon: Icons.public_rounded,
+                            title: 'Public',
+                            subtitle: 'Anyone who visits the group sees its posts. Joining is still invite-only',
+                            selected: _visibility == 'public',
+                            onTap: () => setState(() => _visibility = 'public'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _VisibilityOption(
+                            icon: Icons.lock_outline_rounded,
+                            title: 'Private',
+                            subtitle: 'Only members see posts. Invite-only',
+                            selected: _visibility == 'private',
+                            onTap: () => setState(() => _visibility = 'private'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_visibility == 'public')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          // Explicit spec requirement: post-time, the
+                          // poster should know only the first photo is
+                          // public before someone joins — surfacing the
+                          // consequence here too, at the point where
+                          // public/private is actually decided.
+                          "Mark any single post Private when you post it and only members will see it.",
+                          style: GoogleFonts.inter(fontSize: 11.5, color: AppColors.textMuted, height: 1.4),
+                        ),
+                      ),
                     if (_error != null) ...[
                       const SizedBox(height: 16),
                       Text(
@@ -321,6 +387,64 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   ),
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VisibilityOption extends StatelessWidget {
+  const _VisibilityOption({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.coral.withValues(alpha: 0.10) : AppColors.cardSurface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? AppColors.coral : AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 15, color: selected ? AppColors.coral : AppColors.textMuted),
+                const SizedBox(width: 6),
+                Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? AppColors.coral : AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: GoogleFonts.inter(fontSize: 10.5, color: AppColors.textMuted, height: 1.3),
             ),
           ],
         ),

@@ -22,6 +22,20 @@ class TabBarIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Ping is the one glyph that isn't hand-drawn here. Every other ping
+    // affordance in the app — the anon card's tray disc, the group card's
+    // wave button — is Icons.waving_hand_outlined, and the tab bar was the
+    // odd one out with a stick figure, so the same control read as two
+    // different things depending on where you met it. Same glyph as those,
+    // sized and tinted like its neighbours in this bar (they are stroke
+    // icons of the same visual weight, which the outlined variant matches);
+    // it is never filled, so there's no active-state variant to reproduce.
+    if (glyph == TabGlyph.ping) {
+      return SizedBox.square(
+        dimension: size,
+        child: Icon(Icons.waving_hand_outlined, size: size, color: color),
+      );
+    }
     final CustomPainter painter = switch (glyph) {
       TabGlyph.home => _HomeIconPainter(color: color, filled: filled),
       TabGlyph.ping => _PingIconPainter(color: color),

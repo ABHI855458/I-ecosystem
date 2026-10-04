@@ -55,6 +55,7 @@ class _PhotoLightboxState extends State<_PhotoLightbox> {
           minScale: 1,
           maxScale: 4,
           child: CachedNetworkImage(
+              memCacheWidth: 1080,
             imageUrl: widget.photos[i],
             fit: BoxFit.contain,
             errorWidget: (_, _, _) => const SizedBox.shrink(),

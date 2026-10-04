@@ -6,14 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../../features/ping/ping_prompt_sheet.dart' show PingContext;
+import '../../../features/profile_v2/profile_navigation.dart';
 import '../../../services/reaction_preset_service.dart';
 import '../../../services/reaction_service.dart';
-import '../../../services/realmoji_service.dart';
+import '../../../services/realmoji_service.dart' show RealmojiTypeWire;
 import '../../../shared/score_tier.dart';
 import 'post_card_shared.dart';
-import 'reaction_row.dart';
 import 'reactor_cluster.dart';
-import 'realmoji_reactor_stack.dart';
 
 // ---------------------------------------------------------------------------
 // EveryonePostCard — the Friends/Everyone feed post card. A SEPARATE widget
@@ -31,15 +31,21 @@ import 'realmoji_reactor_stack.dart';
 //      a. Author overlay (top-left) — real avatar (2px white ring) + real
 //         name, white text with a drop shadow for legibility over the
 //         photo.
-//      b. Reaction corner (top-right) — plain PostReactionCorner, the
-//         card's one reaction entry point (default "surface" chrome).
+//      b. Reactor cluster (top-right) — the 3 most recent reactors' faces
+//         (moved here from bottom-right to make room for (d) below).
 //      c. Counter pills (bottom-left) — like + comment count, dark glass
 //         pills with a soft inset ring.
-//      d. Reactor cluster (bottom-right) — the 3 most recent reactors'
-//         faces.
+//      d. Ping + Reaction, STACKED vertically (bottom-right) — the same
+//         PostPingButton/PostReactionCorner PhotoPostCard's tray uses on
+//         the Anonymous feed, reflowed into a Column here (no notch/tray
+//         geometry to lay them out along). This is the card's ONLY
+//         reaction UI now — see item 2 below.
 //   2. Caption block — below the photo, on the card's own white
 //      background: small real avatar, real name, caption body, then
-//      hashtags in a muted color.
+//      hashtags in a muted color, then a comment-only link row ("View all
+//      N comments"). The below-post RealMoji selfie stack and "who
+//      reacted" face-reaction row that used to live here are REMOVED —
+//      superseded by the stacked corner icons in 1d.
 //
 // Reaction data is real throughout (ReactionSummary via PostReactions,
 // same mixin PhotoPostCard/TextPostCard use) — the "like" here is a single
@@ -52,8 +58,9 @@ import 'realmoji_reactor_stack.dart';
 // slow or fails — it fails closed to an empty list, per
 // ReactionService.fetchRecentReactors's own doc.
 //
-// No ping wiring on this card — that was a tray-only affordance tied to the
-// (now removed) notch/dip design and was never part of this feed's spec.
+// Ping wiring uses PostReactions.openPing (same mixin method PhotoPostCard/
+// TextPostCard call) with PingContext.everyone and the poster's real
+// username as the target.
 // ---------------------------------------------------------------------------
 
 class EveryonePostCard extends StatefulWidget {
@@ -62,6 +69,7 @@ class EveryonePostCard extends StatefulWidget {
     required this.postId,
     required this.media,
     required this.username,
+    required this.userId,
     this.avatarUrl,
     this.caption,
     this.commentCount = 0,
@@ -73,6 +81,8 @@ class EveryonePostCard extends StatefulWidget {
     this.hasError = false,
     this.groupName,
     this.communityTag,
+    this.showReactionsViewer = false,
+    this.showActionRail = true,
   });
 
   /// Reactions are fetched/written keyed on this — must be stable and
@@ -87,6 +97,11 @@ class EveryonePostCard extends StatefulWidget {
   /// The poster's REAL username — this feed shows real identity, unlike
   /// the Anonymous feed's persona-only PhotoPostCard.
   final String username;
+
+  /// The poster's `users.id` — global profile routing (avatar/name tap
+  /// opens their profile) resolves against this, Friends/Everyone feed
+  /// only. See features/profile_v2/profile_navigation.dart.
+  final String userId;
 
   /// The poster's REAL profile photo. Null falls back to a plain person
   /// glyph.
@@ -114,6 +129,16 @@ class EveryonePostCard extends StatefulWidget {
   /// individual post.
   final String? communityTag;
 
+  /// Item #1 — the public "who reacted" viewer (pill + dropdown +
+  /// top-right ReactorCluster) is gone from every feed card; this instead
+  /// renders PostReactionsSection (author-only "Reactions" list) below the
+  /// caption. Only ever true on the post author's own profile.
+  final bool showReactionsViewer;
+
+  /// Ping + RealMoji corner. False on the poster's own profile (item #1),
+  /// true everywhere else, including someone else's profile.
+  final bool showActionRail;
+
   /// Outer card radius — spec default 34px.
   final double cornerRadius;
 
@@ -138,17 +163,43 @@ class _EveryonePostCardState extends State<EveryonePostCard> with PostReactions<
 
   List<LikeReactor> _reactors = const [];
 
-  /// RealMoji reactor selfies for the bottom stack (realmoji_picker.dart /
-  /// realmoji_reactor_stack.dart) — a separate system from the like-pill's
-  /// `reactions` table above (post_realmoji_reactions), loaded independently
-  /// so a failure here never blocks the existing like/comment UI.
-  List<RealmojiReaction> _realmojiReactors = const [];
-
   /// Increment-only counter that retriggers the heart's pop animation (see
   /// _LikePill.didUpdateWidget) — bumped on every tap, including repeat
   /// likes/unlikes, so the pop replays every time rather than only on a
   /// false->true edge.
   int _popKey = 0;
+
+  /// The feed's own Scrollable — grabbed via Scrollable.maybeOf, not a
+  /// NotificationListener, because this card is a PAGE INSIDE that
+  /// Scrollable's PageView, not an ancestor of it. A NotificationListener
+  /// only ever catches notifications bubbling up from its own descendants;
+  /// it can't intercept ones dispatched by something hosting it. Holding
+  /// the ScrollPosition directly and listening to it sidesteps that
+  /// entirely — same mechanism DesignSoloCard already uses for the exact
+  /// same dropdown.
+  ScrollPosition? _scrollPosition;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newPosition = Scrollable.maybeOf(context)?.position;
+    if (newPosition != _scrollPosition) {
+      _scrollPosition?.removeListener(_onAncestorScroll);
+      _scrollPosition = newPosition;
+      _scrollPosition?.addListener(_onAncestorScroll);
+    }
+  }
+
+  void _onAncestorScroll() {
+    // Reserved for future ancestor-scroll dismissal — the reactions strip
+    // it used to close (item #1) is gone from this card.
+  }
+
+  @override
+  void dispose() {
+    _scrollPosition?.removeListener(_onAncestorScroll);
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -156,7 +207,6 @@ class _EveryonePostCardState extends State<EveryonePostCard> with PostReactions<
     if (!widget.isLoading && !widget.hasError) {
       loadReactionSummary(widget.postId);
       unawaited(_loadReactors());
-      unawaited(_loadRealmojiReactors());
       unawaited(loadMyRealmojiReaction(widget.postId));
     }
   }
@@ -169,7 +219,6 @@ class _EveryonePostCardState extends State<EveryonePostCard> with PostReactions<
     if (justBecameReady || old.postId != widget.postId) {
       loadReactionSummary(widget.postId);
       unawaited(_loadReactors());
-      unawaited(_loadRealmojiReactors());
       unawaited(loadMyRealmojiReaction(widget.postId));
     }
   }
@@ -180,15 +229,35 @@ class _EveryonePostCardState extends State<EveryonePostCard> with PostReactions<
     setState(() => _reactors = reactors);
   }
 
-  Future<void> _loadRealmojiReactors() async {
-    try {
-      final reactors = await RealmojiService.instance.fetchReactors(widget.postId);
-      if (!mounted) return;
-      setState(() => _realmojiReactors = reactors);
-    } catch (e, st) {
-      debugPrint('[EveryonePostCard] fetchReactors(${widget.postId}) failed: $e\n$st');
-    }
-  }
+  /// Opens this post's comment section, reactor row and all.
+  ///
+  /// BUG FIX (reported: "when i go to my profile and click on reactions or
+  /// any others, the post which i am allowed to view, it shall open in a
+  /// row in comment section").
+  ///
+  /// Both reaction affordances on this card used to go somewhere else:
+  /// ReactorCluster's faces navigated to the tapped REACTOR'S profile
+  /// (openProfile), abandoning the post entirely, and PostReactionsSection
+  /// only toggled an inline expander. DesignSoloCard — the card every
+  /// non-memory post on a profile uses — already routes its reaction chip
+  /// here instead ("PROFILE opens the comments sheet, reactor strip and
+  /// all"), so the two profile surfaces disagreed purely by post type:
+  /// tapping reactions on a photo post opened the comments, tapping them
+  /// on a Memory jumped to a stranger's profile.
+  ///
+  /// Reactor identity is safe to pass here for the same reason it is in
+  /// DesignSoloCard: this only renders when [EveryonePostCard.
+  /// showReactionsViewer] is true, which profile_posts_list.dart sets on a
+  /// profile page and never in a feed.
+  void _openReactionsInComments() => showPostCommentsSheet(
+    context,
+    postId: widget.postId,
+    isGroup: false,
+    reactors: _reactors,
+    // `reactions` in build() is a local alias for this same value; read the
+    // mixin's `summary` directly since this runs outside build().
+    reactionCount: (summary ?? const ReactionSummary.empty()).totalReactionCount,
+  );
 
   Future<void> _toggleLike() async {
     setState(() => _popKey++);
@@ -207,17 +276,6 @@ class _EveryonePostCardState extends State<EveryonePostCard> with PostReactions<
     final reactions = summary ?? const ReactionSummary.empty();
     final liked = reactions.myEmoji == _kLikeEmoji;
     final parsedCaption = _parseCaption(widget.caption);
-
-    // Others' face reactions only — excludes the viewer's own, same
-    // reasoning PhotoPostCard's own computation uses (their own reaction
-    // already shows on the PostReactionCorner entry button above).
-    final otherFaceReactions = reactions.myFaceReaction == null
-        ? reactions.faceReactions
-        : reactions.faceReactions
-            .where((r) => r.userId != reactions.myFaceReaction!.userId)
-            .toList();
-    final showReactionsRow = otherFaceReactions.isNotEmpty ||
-        (loadingSummary && summary == null);
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 520),
@@ -269,83 +327,80 @@ class _EveryonePostCardState extends State<EveryonePostCard> with PostReactions<
                             Positioned(
                               top: 13,
                               left: 13,
-                              child: Row(
-                                children: [
-                                  ScoreGlowRing(
-                                    score: scoreForUser(widget.username),
-                                    size: 34,
-                                    borderWidth: 2,
-                                    child: widget.avatarUrl == null
-                                        ? _avatarFallback(34)
-                                        : CachedNetworkImage(
-                                            imageUrl: widget.avatarUrl!,
-                                            width: 34,
-                                            height: 34,
-                                            fit: BoxFit.cover,
-                                            placeholder: (_, _) => _avatarFallback(34),
-                                            errorWidget: (_, _, _) => _avatarFallback(34),
-                                          ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    widget.username,
-                                    style: GoogleFonts.figtree(
-                                      fontSize: 14.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                      shadows: [
-                                        Shadow(
-                                          color: Colors.black.withValues(alpha: 0.35),
-                                          blurRadius: 6,
-                                          offset: const Offset(0, 1),
-                                        ),
-                                      ],
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => openProfile(context, widget.userId),
+                                child: Row(
+                                  children: [
+                                    ScoreGlowRing(
+                                      score: scoreForUser(widget.username),
+                                      size: 34,
+                                      borderWidth: 2,
+                                      child: widget.avatarUrl == null
+                                          ? _avatarFallback(34)
+                                          : CachedNetworkImage(
+              memCacheWidth: 102,
+                                              imageUrl: widget.avatarUrl!,
+                                              width: 34,
+                                              height: 34,
+                                              fit: BoxFit.cover,
+                                              placeholder: (_, _) => _avatarFallback(34),
+                                              errorWidget: (_, _, _) => _avatarFallback(34),
+                                            ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // Reaction entry — plain top-right corner
-                            // button (surface style, the default every
-                            // other call site uses), not a tray cutout.
-                            // This icon stays exactly where it already was
-                            // (per explicit correction: no new icon
-                            // anywhere on the post) — only its tray content
-                            // is repointed, from the old
-                            // ReactionPresetService-backed
-                            // ReactionPresetTray to RealmojiTray
-                            // (user_realmojis-backed). See
-                            // PostReactions.selectPreset /
-                            // captureRealmojiAndReact.
-                            Positioned(
-                              top: 13,
-                              right: 13,
-                              child: PostReactionCorner(
-                                allowFaceReactions: true,
-                                myFaceReaction: null,
-                                myEmoji: myRealmojiReaction?.glyph,
-                                uploading: uploadingFaceReaction,
-                                onTap: openReactionTray,
-                                showTray: showPresetTray,
-                                category: ReactionPresetCategory.everyone,
-                                onSelect: (preset) =>
-                                    selectPreset(widget.postId, preset),
-                                onAddNew: () => openAddPresetFlow(
-                                  widget.postId,
-                                  allowFaceReactions: true,
-                                ),
-                                onCaptureRealmoji: (type) => captureRealmojiAndReact(
-                                  widget.postId,
-                                  ReactionPresetCategory.everyone,
-                                  type,
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      widget.username,
+                                      style: GoogleFonts.figtree(
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                        shadows: [
+                                          Shadow(
+                                            color: Colors.black.withValues(alpha: 0.35),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 1),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
 
+                            // Recent-reactors cluster — item #1: this IS
+                            // a "who reacted" viewer (reactor avatars), so
+                            // it's now gated the same as PostReactionsSection
+                            // below rather than always shown in the feed.
+                            if (widget.showReactionsViewer)
+                              Positioned(
+                                top: 13,
+                                right: 13,
+                                child: ReactorCluster(
+                                  reactors: _reactors
+                                      .map((r) => ReactorInfo(
+                                            id: r.id,
+                                            name: r.name,
+                                            avatarUrl: r.avatarUrl,
+                                          ))
+                                      .toList(),
+                                  totalCount: reactions.totalEmojiCount,
+                                  // Opens THIS POST's comments (reactor row
+                                  // included) rather than navigating to the
+                                  // tapped reactor's profile — see
+                                  // _openReactionsInComments.
+                                  onReactorTap: (_) =>
+                                      _openReactionsInComments(),
+                                ),
+                              ),
+
+                            // Item #1: the public PostReactionsPill that
+                            // used to sit here is gone — like/comment pills
+                            // only.
                             Positioned(
                               left: 13,
-                              bottom: 13,
+                              bottom: 14,
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -364,20 +419,63 @@ class _EveryonePostCardState extends State<EveryonePostCard> with PostReactions<
                               ),
                             ),
 
-                            Positioned(
-                              right: 10,
-                              bottom: 16,
-                              child: ReactorCluster(
-                                reactors: _reactors
-                                    .map((r) => ReactorInfo(
-                                          id: r.id,
-                                          name: r.name,
-                                          avatarUrl: r.avatarUrl,
-                                        ))
-                                    .toList(),
-                                totalCount: reactions.totalEmojiCount,
+
+                            // Ping + Reaction, stacked vertically —
+                            // bottom-right, same PostPingButton/
+                            // PostReactionCorner PhotoPostCard's tray uses
+                            // (Anonymous feed), just reflowed into a Column
+                            // instead of that tray's Row, and using plain
+                            // fixed offsets instead of the notch's traced
+                            // geometry (this card has no notch). Reaction
+                            // tray content unchanged from before — same
+                            // RealmojiTray wiring (selectPreset/
+                            // captureRealmojiAndReact/onAddNew), just moved.
+                            // Ping + Reaction, stacked vertically —
+                            // bottom-right. Hidden on the poster's own
+                            // profile (showActionRail false) — item #1.
+                            if (widget.showActionRail)
+                              Positioned(
+                                right: 13,
+                                bottom: 14,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    PostPingButton(
+                                      onTap: () => openPing(
+                                        pingContext: PingContext.everyone,
+                                        targetName: widget.username,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 22),
+                                    PostReactionCorner(
+                                      // §2/§A3: 34dp per spec — was missing
+                                      // here, silently falling back to this
+                                      // widget's own 26dp default while every
+                                      // other card (Personal/Group) passes 34.
+                                      size: 34,
+                                      allowFaceReactions: true,
+                                      myFaceReaction: null,
+                                      myEmoji: myRealmojiReaction?.glyph,
+                                      uploading: uploadingFaceReaction,
+                                      onTap: openReactionTray,
+                                      onClose: closePresetTray,
+                                      showTray: showPresetTray,
+                                      category: ReactionPresetCategory.everyone,
+                                      onSelect: (preset) =>
+                                          selectPreset(widget.postId, preset),
+                                      onAddNew: () => openAddPresetFlow(
+                                        widget.postId,
+                                        allowFaceReactions: true,
+                                      ),
+                                      onCaptureRealmoji: (type) => captureRealmojiAndReact(
+                                        widget.postId,
+                                        ReactionPresetCategory.everyone,
+                                        type,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -385,42 +483,33 @@ class _EveryonePostCardState extends State<EveryonePostCard> with PostReactions<
                   ),
                 ),
 
+                // "Reactions" — item #1's poster-only viewer, replacing the
+                // public pill/dropdown that used to sit here. Only ever
+                // true on the author's own profile.
+                if (widget.showReactionsViewer)
+                  PostReactionsSection(
+                    reactors: _reactors,
+                    totalCount: reactions.totalEmojiCount,
+                    onOpen: _openReactionsInComments,
+                  ),
+
                 _CaptionBlock(
                   avatarUrl: widget.avatarUrl,
                   username: widget.username,
+                  userId: widget.userId,
                   body: parsedCaption.body,
                   hashtags: parsedCaption.hashtags,
                   groupName: widget.groupName,
                   communityTag: widget.communityTag,
                 ),
 
-                // RealMoji reactor selfie stack (realmoji_service.dart /
-                // realmoji_reactor_stack.dart) — entry point ('+') lives at
-                // the top-right corner overlay above now, not here; this
-                // row is purely the "who's reacted" display. Never renders
-                // an empty slot — RealmojiReactorStack itself collapses to
-                // nothing when there are no reactors, but the Padding
-                // wrapping it would still cost 4px of dead space, so the
-                // whole thing is gated here instead.
-                if (_realmojiReactors.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 4),
-                    child: RealmojiReactorStack(reactors: _realmojiReactors),
-                  ),
-
-                // Others' face reactions, beside "View all N comments" —
-                // same adjacency rule PhotoPostCard/TextPostCard's own
-                // _ReactionsAndCommentsRow follows on the Anonymous feed.
-                // The reaction ENTRY point stays in the top-right corner
-                // above — this row is purely the "who reacted" display,
-                // additive alongside the reactor-cluster/like-pill
-                // overlaid on the photo itself.
+                // Below-post reaction displays (RealMoji selfie stack +
+                // the "who reacted" face-reaction row) removed — superseded
+                // by the stacked Ping/Reaction corner icons above, which
+                // are now this card's only reaction UI. Comment link only.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
-                  child: _FriendsReactionsAndCommentsRow(
-                    showReactionsRow: showReactionsRow,
-                    otherFaceReactions: otherFaceReactions,
-                    reactionsLoading: loadingSummary && summary == null,
+                  child: _CommentLinkRow(
                     commentCount: widget.commentCount,
                     onCommentTap: widget.onCommentTap,
                   ),
@@ -678,6 +767,7 @@ class _CaptionBlock extends StatelessWidget {
   const _CaptionBlock({
     required this.avatarUrl,
     required this.username,
+    required this.userId,
     required this.body,
     required this.hashtags,
     this.groupName,
@@ -686,6 +776,7 @@ class _CaptionBlock extends StatelessWidget {
 
   final String? avatarUrl;
   final String username;
+  final String userId;
   final String body;
   final List<String> hashtags;
   final String? groupName;
@@ -700,18 +791,22 @@ class _CaptionBlock extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipOval(
-            child: SizedBox(
-              width: _kAvatarSize,
-              height: _kAvatarSize,
-              child: avatarUrl == null
-                  ? _avatarFallback(_kAvatarSize)
-                  : CachedNetworkImage(
-                      imageUrl: avatarUrl!,
-                      fit: BoxFit.cover,
-                      placeholder: (_, _) => _avatarFallback(_kAvatarSize),
-                      errorWidget: (_, _, _) => _avatarFallback(_kAvatarSize),
-                    ),
+          GestureDetector(
+            onTap: () => openProfile(context, userId),
+            child: ClipOval(
+              child: SizedBox(
+                width: _kAvatarSize,
+                height: _kAvatarSize,
+                child: avatarUrl == null
+                    ? _avatarFallback(_kAvatarSize)
+                    : CachedNetworkImage(
+              memCacheWidth: 1080,
+                        imageUrl: avatarUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (_, _) => _avatarFallback(_kAvatarSize),
+                        errorWidget: (_, _, _) => _avatarFallback(_kAvatarSize),
+                      ),
+              ),
             ),
           ),
           const SizedBox(width: 11),
@@ -807,80 +902,58 @@ class _CaptionBlock extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// _FriendsReactionsAndCommentsRow — others' face reactions beside "View all
-// N comments", mirroring PhotoPostCard/TextPostCard's own
-// _ReactionsAndCommentsRow on the Anonymous feed. No SimpleReactionCorner
-// here — Friends/Everyone's reaction ENTRY point stays in the card's
-// top-right corner (PostReactionCorner, unchanged); this row is purely the
-// "who reacted" display, collapsing to comments-alone when empty.
+// _CommentLinkRow — "View all N comments" / "Add a comment…". Used to also
+// carry a "who reacted" face-reaction row beside it (as
+// _FriendsReactionsAndCommentsRow) — removed, since the stacked Ping/
+// Reaction corner icons overlaid on the photo are now this card's only
+// reaction UI (see EveryonePostCard.build).
 // ---------------------------------------------------------------------------
 
-class _FriendsReactionsAndCommentsRow extends StatelessWidget {
-  const _FriendsReactionsAndCommentsRow({
-    required this.showReactionsRow,
-    required this.otherFaceReactions,
-    required this.reactionsLoading,
+class _CommentLinkRow extends StatelessWidget {
+  const _CommentLinkRow({
     required this.commentCount,
     required this.onCommentTap,
   });
 
-  final bool showReactionsRow;
-  final List<FaceReaction> otherFaceReactions;
-  final bool reactionsLoading;
   final int commentCount;
   final VoidCallback? onCommentTap;
 
-  static const double _kThumbSize = 28;
-
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        if (showReactionsRow) ...[
-          Expanded(
-            child: SizedBox(
-              height: _kThumbSize,
-              child: ReactionRow(
-                reactions: otherFaceReactions,
-                isLoading: reactionsLoading,
-                thumbSize: _kThumbSize,
-                embedded: true,
+    // `mainAxisSize: MainAxisSize.min` used to shrink this Row (and the
+    // GestureDetector wrapping it) down to just the icon+text's own width,
+    // so only that small link was tappable, not the rest of the row's
+    // horizontal space. `HitTestBehavior.opaque` only makes the DETECTOR's
+    // own bounds fully hittable — it does nothing to grow those bounds — so
+    // the fix is width, not hit-test behavior: drop `.min` and give the row
+    // a SizedBox forcing it to span the full available width, making the
+    // whole comment-section box tappable, not just the label.
+    return GestureDetector(
+      onTap: onCommentTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: double.infinity,
+        child: Row(
+          children: [
+            const Icon(
+              Icons.mode_comment_outlined,
+              size: 15,
+              color: Color(0xFFA6A09B),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              commentCount > 0
+                  ? 'View all $commentCount comments'
+                  : 'Add a comment…',
+              style: GoogleFonts.figtree(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFFA6A09B),
               ),
             ),
-          ),
-          Container(
-            width: 1,
-            height: 20,
-            margin: const EdgeInsets.symmetric(horizontal: 10),
-            color: const Color(0xFF14110F).withValues(alpha: 0.08),
-          ),
-        ],
-        GestureDetector(
-          onTap: onCommentTap,
-          behavior: HitTestBehavior.opaque,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.mode_comment_outlined,
-                size: 15,
-                color: Color(0xFFA6A09B),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                commentCount > 0
-                    ? 'View all $commentCount comments'
-                    : 'Add a comment…',
-                style: GoogleFonts.figtree(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w500,
-                  color: const Color(0xFFA6A09B),
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

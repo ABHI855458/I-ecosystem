@@ -72,13 +72,21 @@ class _ReactionPickerPopupState extends State<ReactionPickerPopup> {
         scale: bouncing ? 1.4 : 1.0,
         duration: const Duration(milliseconds: 260),
         curve: Curves.elasticOut,
+        // Fixed width/height + BoxShape.circle instead of symmetric padding
+        // + borderRadius — that combination sized itself off the emoji
+        // glyph's own (non-square) text metrics, so these never actually
+        // came out as circles. Matches every other reaction chip in the
+        // app (PresetAvatar, RealmojiTray's chips, etc.), all a plain fixed
+        // circle.
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
+            shape: BoxShape.circle,
             color: kQuickReactionColors[idx].withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(16),
           ),
-          child: Text(kQuickReactionEmojis[idx], style: const TextStyle(fontSize: 22)),
+          child: Text(kQuickReactionEmojis[idx], style: const TextStyle(fontSize: 20)),
         ),
       ),
     );

@@ -114,6 +114,50 @@ class DemoContent {
       localOnly: true,
       createdAt: DateTime.now().subtract(const Duration(minutes: 6)),
     ),
+    // Multi-photo demos, exercising the swipeable carousel (Item 1). Photos
+    // go entirely into photoUrls, not split with photoUrl: FeedItem.
+    // fromLocalPost only ever prepends photoPath (a LOCAL pre-upload file)
+    // ahead of photoUrls, never photoUrl (a REMOTE url) — a demo post has
+    // no photoPath, so leaving the cover in photoUrl here would silently
+    // drop it from the carousel. resolvePostPhotos then reads photoUrls
+    // exclusively once it's non-empty (post_photo_carousel.dart:169-173),
+    // so the full list below, with the cover as element 0, is what
+    // actually renders.
+    LocalPost(
+      id: 'demo-post-10',
+      userId: 'demo_priya',
+      username: 'priya_n',
+      branch: 'Design',
+      visibility: 'everyone',
+      caption: 'Studio crit day — swipe for the whole board 🎨',
+      photoUrls: [
+        'https://picsum.photos/seed/i-app-studio-1/900/1125',
+        'https://picsum.photos/seed/i-app-studio-2/900/1125',
+        'https://picsum.photos/seed/i-app-studio-3/900/1125',
+        'https://picsum.photos/seed/i-app-studio-4/900/1125',
+      ],
+      localOnly: true,
+      createdAt: DateTime.now().subtract(const Duration(minutes: 40)),
+    ),
+    LocalPost(
+      id: 'demo-post-9',
+      userId: 'demo_marcus',
+      username: 'marcus_l',
+      branch: 'Journalism',
+      visibility: 'everyone',
+      caption: 'Spring formal recap — all the fits 📸',
+      photoUrls: [
+        'https://picsum.photos/seed/i-app-formal-recap-1/900/1125',
+        'https://picsum.photos/seed/i-app-formal-recap-2/900/1125',
+        'https://picsum.photos/seed/i-app-formal-recap-3/900/1125',
+        'https://picsum.photos/seed/i-app-formal-recap-4/900/1125',
+        'https://picsum.photos/seed/i-app-formal-recap-5/900/1125',
+        'https://picsum.photos/seed/i-app-formal-recap-6/900/1125',
+        'https://picsum.photos/seed/i-app-formal-recap-7/900/1125',
+      ],
+      localOnly: true,
+      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+    ),
   ];
 
   /// DEMO/PLACEHOLDER group posts for the Everyone feed — group_posts data
@@ -146,6 +190,26 @@ class DemoContent {
       caption: 'Golden hour shoot from the roof deck 📷',
       photoUrl: 'https://picsum.photos/seed/i-app-group-photo/900/1125',
       createdAt: DateTime.now().subtract(const Duration(hours: 14)),
+    ),
+    // Multi-photo group demo — FeedItem has no photoUrl/photoUrls split
+    // (unlike LocalPost), so the full list goes straight into `photos`;
+    // resolvePostPhotos reads that directly, cover included as element 0.
+    FeedItem(
+      postId: 'demo-group-post-3',
+      type: 'single',
+      userId: 'demo_group_hike',
+      username: 'zoe_p',
+      groupName: 'Outdoors Club',
+      communityTag: 'Recreation',
+      caption: 'Sunrise summit — worth the 4am alarm ⛰️',
+      photos: [
+        'https://picsum.photos/seed/i-app-group-hike-1/900/1125',
+        'https://picsum.photos/seed/i-app-group-hike-2/900/1125',
+        'https://picsum.photos/seed/i-app-group-hike-3/900/1125',
+        'https://picsum.photos/seed/i-app-group-hike-4/900/1125',
+        'https://picsum.photos/seed/i-app-group-hike-5/900/1125',
+      ],
+      createdAt: DateTime.now().subtract(const Duration(hours: 3)),
     ),
   ];
 

@@ -57,74 +57,9 @@ class MemoryDetailScreen extends StatelessWidget {
                     ),
             ),
             const SizedBox(height: 16),
-            _ActionRow(item: item),
             const SizedBox(height: 16),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ActionRow extends StatefulWidget {
-  const _ActionRow({required this.item});
-  final FeedItem item;
-
-  @override
-  State<_ActionRow> createState() => _ActionRowState();
-}
-
-class _ActionRowState extends State<_ActionRow> {
-  bool _liked = false;
-  int _likes = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              setState(() {
-                _liked = !_liked;
-                _likes += _liked ? 1 : -1;
-              });
-            },
-            child: Row(
-              children: [
-                Icon(
-                  _liked ? Icons.favorite : Icons.favorite_border,
-                  color: _liked ? const Color(0xFFE1306C) : Colors.white54,
-                  size: 22,
-                ),
-                if (_likes > 0) ...[
-                  const SizedBox(width: 4),
-                  Text(
-                    '$_likes',
-                    style: TextStyle(
-                      color: _liked ? const Color(0xFFE1306C) : Colors.white54,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 20),
-          GestureDetector(
-            onTap: () {},
-            child: const Icon(Icons.chat_bubble_outline,
-                color: Colors.white54, size: 22),
-          ),
-          const Spacer(),
-          GestureDetector(
-            onTap: () {},
-            child: const Icon(Icons.share_outlined,
-                color: Colors.white54, size: 22),
-          ),
-        ],
       ),
     );
   }

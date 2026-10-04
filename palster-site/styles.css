@@ -1,0 +1,185 @@
+:root{
+    --bg:#0B0B0D;
+    --bg-raised:#131317;
+    --paper:#F7F5F1;
+    --paper-line:#E4E0D6;
+    --ink:#1A1810;
+    --ink-soft:#5C584E;
+    --text:#F5F4F1;
+    --text-dim:#A9A49A;
+    --text-dimmer:#7D7A74;
+    --hair:rgba(255,255,255,0.10);
+    --magenta:#C81E96;
+    --purple:#5A2DB9;
+    --cyan:#29D3E8;
+    --radius:20px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Manrope',-apple-system,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    line-height:1.5;
+  }
+  a{color:inherit;}
+  img{max-width:100%; display:block;}
+  .wrap{max-width:1040px; margin:0 auto; padding:0 28px;}
+
+  /* ---------- NAV ---------- */
+  header{
+    position:sticky; top:0; z-index:50;
+    background:rgba(11,11,13,0.82); backdrop-filter:blur(16px) saturate(160%);
+    border-bottom:1px solid var(--hair);
+  }
+  .nav{display:flex; align-items:center; justify-content:space-between; padding:16px 28px; max-width:1040px; margin:0 auto;}
+  .brand{display:flex; align-items:center; gap:10px; text-decoration:none;}
+  .brand img{width:32px; height:32px; border-radius:8px;}
+  .brand span{font-weight:800; font-size:20px; letter-spacing:-0.02em;}
+  nav.links{display:flex; gap:28px; font-size:14px; font-weight:600; color:var(--text-dim);}
+  nav.links a{text-decoration:none;}
+  nav.links a:hover{color:var(--text);}
+
+  /* ---------- HERO ---------- */
+  .hero{padding:96px 0 80px; position:relative; overflow:hidden;}
+  .hero::before{
+    content:''; position:absolute; top:-200px; right:-200px; width:600px; height:600px;
+    background:radial-gradient(circle, rgba(90,45,185,0.35), transparent 65%);
+    pointer-events:none;
+  }
+  .hero::after{
+    content:''; position:absolute; bottom:-260px; left:-180px; width:560px; height:560px;
+    background:radial-gradient(circle, rgba(41,211,232,0.18), transparent 65%);
+    pointer-events:none;
+  }
+  .hero-inner{position:relative; z-index:1; max-width:640px;}
+  .hero h1{
+    font-size:56px; font-weight:800; line-height:1.05; letter-spacing:-0.02em; margin:0 0 22px;
+  }
+  .hero h1 .g{
+    background:linear-gradient(100deg,var(--magenta),var(--purple) 55%, var(--cyan));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .hero p.lede{font-size:19px; color:var(--text-dim); max-width:520px; margin:0 0 36px;}
+  .cta-row{display:flex; gap:14px; flex-wrap:wrap;}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:14px 26px; border-radius:999px; font-weight:700; font-size:15px; text-decoration:none;
+    border:1px solid transparent;
+  }
+  .btn-primary{background:var(--text); color:var(--ink);}
+  .btn-ghost{border-color:var(--hair); color:var(--text);}
+  .pill-note{margin-top:22px; font-size:13px; color:var(--text-dimmer); font-weight:600;}
+
+  /* ---------- PHILOSOPHY ---------- */
+  .philosophy{padding:70px 0; border-top:1px solid var(--hair);}
+  .philosophy .kicker{font-size:14px; color:var(--cyan); font-weight:700; margin:0 0 14px;}
+  .philosophy h2{font-size:32px; font-weight:800; letter-spacing:-0.01em; max-width:620px; line-height:1.3; margin:0 0 20px;}
+  .philosophy p{font-size:17px; color:var(--text-dim); max-width:640px; margin:0 0 16px;}
+
+  /* ---------- FEATURES ---------- */
+  .features{padding:60px 0 90px;}
+  .features h2{font-size:28px; font-weight:800; margin:0 0 40px;}
+  .flist{display:grid; grid-template-columns:1fr 1fr; gap:2px; background:var(--hair); border:1px solid var(--hair); border-radius:var(--radius); overflow:hidden;}
+  .fitem{background:var(--bg-raised); padding:30px 28px;}
+  .fitem h3{font-size:17px; font-weight:800; margin:0 0 8px;}
+  .fitem p{font-size:14.5px; color:var(--text-dim); margin:0; line-height:1.55;}
+  @media(max-width:640px){.flist{grid-template-columns:1fr;}}
+
+  /* ---------- WHO ---------- */
+  .who{padding:70px 0; border-top:1px solid var(--hair); display:flex; gap:40px; align-items:flex-start; flex-wrap:wrap;}
+  .who .col{flex:1; min-width:260px;}
+  .who h2{font-size:26px; font-weight:800; margin:0 0 14px;}
+  .who p{color:var(--text-dim); font-size:15.5px; margin:0;}
+  .badge{
+    display:inline-block; padding:6px 14px; border-radius:999px; border:1px solid var(--hair);
+    font-size:12.5px; font-weight:700; color:var(--cyan); margin-bottom:14px;
+  }
+
+  /* ---------- LEGAL SECTION (paper) ---------- */
+  .legal-section{background:var(--paper); color:var(--ink); padding:80px 0 100px;}
+  .legal-section .wrap{max-width:760px;}
+  .legal-nav{
+    display:flex; gap:10px; flex-wrap:wrap; margin-bottom:48px;
+    border-bottom:1px solid var(--paper-line); padding-bottom:22px;
+  }
+  .legal-nav a{
+    text-decoration:none; font-size:13.5px; font-weight:700; color:var(--ink-soft);
+    padding:8px 16px; border-radius:999px; border:1px solid var(--paper-line);
+  }
+  .legal-nav a:hover{color:var(--ink); border-color:var(--ink-soft);}
+  .doc{margin-bottom:70px; scroll-margin-top:90px;}
+  .doc:last-child{margin-bottom:0;}
+  .doc h2{font-size:26px; font-weight:800; margin:0 0 6px; letter-spacing:-0.01em;}
+  .doc .updated{font-size:13px; color:var(--ink-soft); margin:0 0 28px; font-weight:600;}
+  .doc h3{font-size:16px; font-weight:800; margin:30px 0 10px;}
+  .doc p, .doc li{font-size:15.5px; color:#2A281F; line-height:1.7;}
+  .doc ul{padding-left:20px; margin:10px 0;}
+  .doc a.inline{color:var(--purple); font-weight:700; text-decoration:underline;}
+  .doc .callout{
+    background:#EFEBE0; border-left:3px solid var(--purple); padding:14px 18px; border-radius:8px;
+    font-size:14.5px; margin:18px 0;
+  }
+
+  /* ---------- FOOTER ---------- */
+  footer{background:var(--paper); color:var(--ink); border-top:1px solid var(--paper-line); padding:36px 0;}
+  footer .wrap{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;}
+  footer .fbrand{font-weight:800; font-size:15px;}
+  footer .fmeta{font-size:13px; color:var(--ink-soft);}
+  footer .fmeta a{text-decoration:underline; font-weight:600;}
+
+  @media(max-width:640px){
+    .hero h1{font-size:40px;}
+    .nav .links{display:none;}
+  }
+
+/* ---------------------------------------------------------------------------
+   Document pages (/privacy, /eula, /delete-account).
+   These previously lived as anchor sections inside the single-page site and
+   as a SECOND, differently-styled standalone pair (system font, #00f5ff
+   accent). Consolidated here onto the landing page's own tokens — Manrope,
+   the paper/ink surface, the magenta-purple-cyan accent set — so all four
+   pages are visibly one site rather than two.
+--------------------------------------------------------------------------- */
+.doc-page{ padding:64px 0 96px; }
+.doc-page .wrap{ max-width:760px; }
+.doc-page h1{ font-size:clamp(30px,5vw,42px); line-height:1.1; margin:0 0 8px; letter-spacing:-0.02em; }
+.doc-page .updated{ color:var(--text-dimmer); font-size:14px; margin:0 0 36px; }
+.doc-card{
+  background:var(--paper); color:var(--ink);
+  border:1px solid var(--paper-line); border-radius:var(--radius);
+  padding:36px 34px; margin-bottom:18px;
+}
+.doc-card h2{
+  font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.08em;
+  color:var(--purple); margin:0 0 14px;
+}
+.doc-card h3{ font-size:17px; margin:22px 0 8px; color:var(--ink); }
+.doc-card p{ color:var(--ink-soft); margin:0 0 13px; font-size:15.5px; line-height:1.7; }
+.doc-card ul{ margin:0 0 13px; padding-left:20px; color:var(--ink-soft); font-size:15.5px; line-height:1.7; }
+.doc-card li{ margin-bottom:8px; }
+.doc-card strong{ color:var(--ink); }
+.doc-card a{ color:var(--purple); font-weight:600; }
+.doc-lede{
+  background:var(--bg-raised); border:1px solid var(--hair);
+  border-radius:var(--radius); padding:24px 26px; margin-bottom:18px;
+}
+.doc-lede p{ color:var(--text-dim); margin:0; font-size:16px; line-height:1.7; }
+.steps{ counter-reset:step; list-style:none; padding:0; margin:0 0 13px; }
+.steps li{
+  counter-increment:step; position:relative; padding-left:42px;
+  margin-bottom:14px; color:var(--ink-soft); font-size:15.5px; line-height:1.7;
+}
+.steps li::before{
+  content:counter(step); position:absolute; left:0; top:1px;
+  width:26px; height:26px; border-radius:50%;
+  background:linear-gradient(135deg,var(--magenta),var(--purple));
+  color:#fff; font-weight:800; font-size:13px;
+  display:flex; align-items:center; justify-content:center;
+}
+.callout{
+  border-left:3px solid var(--cyan);
+  background:rgba(41,211,232,0.07);
+  padding:16px 18px; border-radius:0 12px 12px 0; margin:0 0 13px;
+}
+.callout p{ margin:0; }

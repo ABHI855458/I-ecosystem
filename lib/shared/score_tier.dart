@@ -3,11 +3,24 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../core/supabase_config.dart';
+import '../services/current_user_service.dart';
+
 // ---------------------------------------------------------------------------
 // Tier definitions
 // ---------------------------------------------------------------------------
 
-enum ScoreTier { lurker, active, prominent, legend }
+/// The 7 levels of the COMBINED score (anon + ping), server-side truth in
+/// `users.level` (generated from `users.total_score` — see
+/// 20260907020000_combined_score_levels_decay.sql). Kept in this file under
+/// the old ScoreTier name so the dozen existing render sites keep compiling;
+/// what changed is that there are seven of them, they are driven by the
+/// combined total rather than the anon half alone, and the thresholds match
+/// level_for_score() in Postgres exactly.
+///
+/// If these thresholds and that SQL function ever disagree, the SQL wins —
+/// it is what decay re-evaluates a user's level against.
+enum ScoreTier { ghost, rookie, contender, elite, ace, dominator, legend }
 
 class ScoreTierInfo {
   const ScoreTierInfo({
@@ -27,45 +40,79 @@ class ScoreTierInfo {
   final double glowAlpha;
   final int minScore;
   final int? maxScore;
+
+  /// 1-7, matching `users.level`.
+  int get levelNumber => tier.index + 1;
 }
 
 const _tiers = [
   ScoreTierInfo(
-    tier: ScoreTier.lurker,
-    title: 'Lurker',
-    color: Color(0xFF405DE6), // Instagram blue — subtle ring
-    glowBlur: 6,
-    glowAlpha: 0.35,
+    tier: ScoreTier.ghost,
+    title: 'Ghost',
+    color: Color(0xFF6E6E75),
+    glowBlur: 4,
+    glowAlpha: 0.25,
     minScore: 0,
-    maxScore: 50,
+    maxScore: 99,
   ),
   ScoreTierInfo(
-    tier: ScoreTier.active,
-    title: 'Active',
-    color: Color(0xFF833AB4), // Instagram purple — moderate ring
-    glowBlur: 12,
+    tier: ScoreTier.rookie,
+    title: 'Rookie',
+    color: Color(0xFF405DE6),
+    glowBlur: 8,
+    glowAlpha: 0.38,
+    minScore: 100,
+    maxScore: 299,
+  ),
+  ScoreTierInfo(
+    tier: ScoreTier.contender,
+    title: 'Contender',
+    color: Color(0xFF5B51D8),
+    glowBlur: 13,
     glowAlpha: 0.50,
-    minScore: 51,
-    maxScore: 150,
+    minScore: 300,
+    maxScore: 699,
   ),
   ScoreTierInfo(
-    tier: ScoreTier.prominent,
-    title: 'Prominent',
-    color: Color(0xFFE1306C), // Instagram pink — bright pulsing ring
-    glowBlur: 22,
+    tier: ScoreTier.elite,
+    title: 'Elite',
+    color: Color(0xFF833AB4),
+    glowBlur: 18,
+    glowAlpha: 0.60,
+    minScore: 700,
+    maxScore: 1499,
+  ),
+  ScoreTierInfo(
+    tier: ScoreTier.ace,
+    title: 'Ace',
+    color: Color(0xFFC13584),
+    glowBlur: 23,
     glowAlpha: 0.70,
-    minScore: 151,
-    maxScore: 400,
+    minScore: 1500,
+    maxScore: 2999,
+  ),
+  ScoreTierInfo(
+    tier: ScoreTier.dominator,
+    title: 'Dominator',
+    color: Color(0xFFE1306C),
+    glowBlur: 28,
+    glowAlpha: 0.80,
+    minScore: 3000,
+    maxScore: 5999,
   ),
   ScoreTierInfo(
     tier: ScoreTier.legend,
     title: 'Legend',
-    color: Color(0xFFF77737), // Instagram orange — full-gradient shimmer
-    glowBlur: 32,
-    glowAlpha: 0.90,
-    minScore: 401,
+    color: Color(0xFFF77737),
+    glowBlur: 34,
+    glowAlpha: 0.92,
+    minScore: 6000,
   ),
 ];
+
+/// The display name of a level, without needing its score.
+String titleForTier(ScoreTier tier) =>
+    _tiers.firstWhere((t) => t.tier == tier).title;
 
 ScoreTierInfo tierInfoForScore(int score) {
   for (final t in _tiers.reversed) {
@@ -116,28 +163,68 @@ int scoreForUser(String username) => userScores[username] ?? 60;
 
 // ---------------------------------------------------------------------------
 // ViewerScoreService — the CURRENT VIEWER's own anon score, as a single
-// live global value. Distinct from [userScores]/[scoreForUser] above,
-// which look up any OTHER user's (demo) score for the per-post tier-glow
-// ring — this is specifically "my own score," shown as a persistent
-// indicator in the app's top header (see main_shell.dart's _AnonScoreBadge)
-// and bumped by interactions across the app (currently: reacting to a
-// post — see PostReactions.onEmojiSelected/selectPreset in
-// post_card_shared.dart). Seeded from the same dummy score table so it
-// starts consistent with whatever Profile already shows for this user.
+// live global value. Distinct from [userScores]/[scoreForUser] above, which
+// look up any OTHER user's (demo) score for the per-post tier-glow ring —
+// this is specifically "my own score," shown as a persistent indicator in
+// the app's top header (see home_screen.dart's Anon-tab badge).
+//
+// Backed by `users.total_score` — the generated sum of the anon and ping
+// halves (see 20260907020000_combined_score_levels_decay.sql). It was
+// glow_score alone, i.e. the anon half only, which is what made the app show
+// two competing numbers in different places.
+//
+// Historically: `users.glow_score` — +25 for an anon post,
+// +5 to the author whenever someone comments/reacts/(first-)views it (see
+// migration 20260904190000_scoring_and_report_status.sql's triggers +
+// record_post_view RPC). No client-side `add()` any more: every one of
+// those actions is server-scored, so the only thing this service does is
+// refetch the real number. Callers refresh() wherever the Anon tab becomes
+// visible or a real scoring action just happened.
 // ---------------------------------------------------------------------------
 
 class ViewerScoreService {
-  ViewerScoreService._() : score = ValueNotifier(scoreForUser(_viewerUsername));
+  ViewerScoreService._() : score = ValueNotifier(0);
   static final ViewerScoreService instance = ViewerScoreService._();
 
-  // Matches profile_screen.dart's own hardcoded demo identity
-  // ('@abhishek_patel') — this app has no other notion of "the current
-  // user" to key off of yet.
-  static const _viewerUsername = 'abhishek_patel';
-
+  /// The viewer's COMBINED score (`users.total_score` = anon + ping), not
+  /// the anon half. Every surface shows this one number now.
   final ValueNotifier<int> score;
 
-  void add(int amount) => score.value += amount;
+  /// The viewer's level, 1-7, straight from `users.level`. Server-generated
+  /// from total_score, so it survives decay dropping someone a level
+  /// without the client recomputing anything.
+  final ValueNotifier<int> level = ValueNotifier(1);
+
+  /// +2 for the first app open of the day. Idempotent SERVER-side
+  /// (record_daily_open checks users.last_open_at against current_date), so
+  /// calling it on every launch — or twice, cold start plus resume — can
+  /// never pay twice. Refreshes afterwards only when it actually awarded.
+  Future<void> recordDailyOpen() async {
+    try {
+      final awarded = await supabase.rpc('record_daily_open');
+      if ((awarded as num?)?.toInt() == 2) await refresh();
+    } catch (_) {
+      // Never blocks launch — a missed +2 is not worth surfacing.
+    }
+  }
+
+  Future<void> refresh() async {
+    try {
+      final id = await CurrentUserService.instance.resolveId();
+      final row = await supabase
+          .from('users')
+          .select('total_score, level')
+          .eq('id', id)
+          .maybeSingle();
+      final value = (row?['total_score'] as num?)?.toInt();
+      if (value != null) score.value = value;
+      final lvl = (row?['level'] as num?)?.toInt();
+      if (lvl != null) level.value = lvl;
+    } catch (_) {
+      // No session yet, or a dropped request — leave whatever was already
+      // showing rather than snap it to 0.
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +333,11 @@ class _ScoreGlowRingState extends State<ScoreGlowRing>
   void _setupAnimations(int score) {
     final tier = tierInfoForScore(score).tier;
 
-    if (tier == ScoreTier.prominent || tier == ScoreTier.legend) {
+    // Pulse from Elite (level 4) up — the old 4-tier model pulsed from
+    // 'prominent', which was its 3rd of 4; Elite is the equivalent point on
+    // the 7-level ladder (the halfway mark, where the ring starts earning
+    // attention).
+    if (tier.index >= ScoreTier.elite.index) {
       _pulseCtrl = AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 2200),

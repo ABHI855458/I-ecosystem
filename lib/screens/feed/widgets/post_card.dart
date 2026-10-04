@@ -61,6 +61,8 @@ class PostCard extends StatefulWidget {
     this.locked = false,
     this.loading = false,
     this.showReactDisc = true,
+    this.showBuiltInEngagement = true,
+    this.headerTrailing,
   });
 
   final String handle;
@@ -97,7 +99,21 @@ class PostCard extends StatefulWidget {
   /// than using the built-in tap-to-like/long-press-to-pick disc below).
   final bool showReactDisc;
 
-  static const double kMediaRadius = 22;
+  /// False when the caller renders its own reaction-summary pill + comment
+  /// card externally instead (PersonalPostCard, using the shared
+  /// PostReactionsPill/PostCommentCard from post_card_shared.dart, per
+  /// design-refs/design_handoff_post_card_feed 2). Skips the built-in
+  /// below-photo reaction row and comment link/preview so this card is just
+  /// header + media — the caller overlays/appends everything else itself.
+  final bool showBuiltInEngagement;
+
+  /// Rendered at the right edge of the header row, replacing the default
+  /// "···" dots — the Live-presence pill (LivePresencePill,
+  /// post_card_shared.dart) in the redesigned card. Null keeps the old dots.
+  final Widget? headerTrailing;
+
+  // §2: media corner radius 26dp.
+  static const double kMediaRadius = 26;
   static const Color kAccent = Color(0xFFFF6F5E);
   static const Color kText = Color(0xFFF5F5F7);
   static const Color kMediaPlaceholder = Color(0xFF17171B);
@@ -176,7 +192,7 @@ class _PostCardState extends State<PostCard> {
     if (widget.loading) return const _LoadingCard();
 
     final children = <Widget>[
-      _AuthorRow(handle: widget.handle, place: widget.place, avatar: widget.avatar),
+      _AuthorRow(handle: widget.handle, place: widget.place, avatar: widget.avatar, trailing: widget.headerTrailing),
       widget.locked
           ? const _LockedMedia()
           : _Media(
@@ -195,7 +211,7 @@ class _PostCardState extends State<PostCard> {
             ),
     ];
 
-    if (!widget.locked) {
+    if (!widget.locked && widget.showBuiltInEngagement) {
       children.add(
         _expandedReactions
             ? _ReactionScroller(
@@ -232,6 +248,7 @@ class _PostCardState extends State<PostCard> {
 Widget _avatarPhoto(String? url) {
   if (url == null || url.isEmpty) return Container(color: PostCard.kMediaPlaceholder);
   return CachedNetworkImage(
+              memCacheWidth: 1080,
     imageUrl: url,
     fit: BoxFit.cover,
     errorWidget: (_, _, _) => Container(color: PostCard.kMediaPlaceholder),
@@ -252,18 +269,20 @@ List<Widget> _withGaps(List<Widget> children, double gap) {
 // ---------------------------------------------------------------------------
 
 class _AuthorRow extends StatelessWidget {
-  const _AuthorRow({required this.handle, required this.place, required this.avatar});
+  const _AuthorRow({required this.handle, required this.place, required this.avatar, this.trailing});
 
   final String handle;
   final String? place;
   final String? avatar;
+  final Widget? trailing;
 
   static const double _kAvatarSize = 42;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      // §2 header padding: 12 top / 14 side / 11 bottom.
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 11),
       child: Row(
         children: [
           ClipOval(
@@ -274,6 +293,7 @@ class _AuthorRow extends StatelessWidget {
               child: avatar == null
                   ? const Icon(Icons.person, size: 22, color: Color(0xFF5A5A60))
                   : CachedNetworkImage(
+              memCacheWidth: 1080,
                       imageUrl: avatar!,
                       width: _kAvatarSize,
                       height: _kAvatarSize,
@@ -288,50 +308,56 @@ class _AuthorRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
+                // §4: username is the one Nunito display use — 700/15.5dp.
                 Text(
                   handle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.nunito(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.015 * 14.5,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.015 * 15.5,
                     color: PostCard.kText,
                   ),
                 ),
+                // §4: date line is Inter 500/12.5dp @ .5 alpha, NOT Nunito —
+                // was wrongly sharing the username's display font.
                 if (place != null && place!.isNotEmpty)
                   Text(
                     place!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.nunito(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFFF5F5F7).withValues(alpha: 0.42),
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFFF5F5F7).withValues(alpha: 0.5),
                     ),
                   ),
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(3, (i) {
-                return Padding(
-                  padding: EdgeInsets.only(left: i == 0 ? 0 : 3),
-                  child: Container(
-                    width: 3.5,
-                    height: 3.5,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFFF5F5F7).withValues(alpha: 0.45),
+          if (trailing != null)
+            trailing!
+          else
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(3, (i) {
+                  return Padding(
+                    padding: EdgeInsets.only(left: i == 0 ? 0 : 3),
+                    child: Container(
+                      width: 3.5,
+                      height: 3.5,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFF5F5F7).withValues(alpha: 0.45),
+                      ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                }),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -377,7 +403,13 @@ class _Media extends StatelessWidget {
     final insetUrl = frontIsLarge ? backPhoto : frontPhoto;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      // Feed.dc.html: photo margin 0 12px (was 8) — isolated from the
+      // draggable inset's own positioning (real _Media state only), which
+      // is computed relative to this box's size via insetOffsetFor(), not
+      // hardcoded against this padding value. Applied uniformly to the
+      // locked/loading placeholder states too so they stay the same size
+      // as the real photo.
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: AspectRatio(
         aspectRatio: 3 / 4,
         child: ClipRRect(
@@ -422,27 +454,26 @@ class _Media extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Positioned(
-                    right: 12,
-                    bottom: 12,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _LogoPlate(logo: logo),
-                        if (showReactDisc) ...[
-                          const SizedBox(height: 14),
-                          CompositedTransformTarget(
-                            link: reactDiscLink,
-                            child: _ReactDisc(
-                              reacted: reacted,
-                              onTap: onReactTap,
-                              onLongPress: onReactLongPress,
-                            ),
-                          ),
-                        ],
-                      ],
+                  // _LogoPlate (the "c." app-branding watermark) removed —
+                  // it sat in this exact bottom-right corner, colliding
+                  // with PersonalPostCard's own reaction cluster overlay
+                  // there, and no caller ever actually passes a real
+                  // `logo` image (grepped — always null), so it only ever
+                  // rendered its literal "c." text fallback. Not part of
+                  // this spec; explicit removal request.
+                  if (showReactDisc)
+                    Positioned(
+                      right: 12,
+                      bottom: 12,
+                      child: CompositedTransformTarget(
+                        link: reactDiscLink,
+                        child: _ReactDisc(
+                          reacted: reacted,
+                          onTap: onReactTap,
+                          onLongPress: onReactLongPress,
+                        ),
+                      ),
                     ),
-                  ),
                 ],
               );
             },
@@ -457,6 +488,7 @@ class _Media extends StatelessWidget {
     return Container(
       color: PostCard.kMediaPlaceholder,
       child: CachedNetworkImage(
+              memCacheWidth: 1080,
         imageUrl: url,
         fit: BoxFit.cover,
         width: double.infinity,
@@ -467,6 +499,9 @@ class _Media extends StatelessWidget {
   }
 }
 
+// Unreferenced since the card header stopped drawing a logo plate. Kept
+// rather than deleted, same convention as the rest of this file.
+// ignore: unused_element
 class _LogoPlate extends StatelessWidget {
   const _LogoPlate({required this.logo});
   final String? logo;
@@ -485,7 +520,8 @@ class _LogoPlate extends StatelessWidget {
       child: logo != null
           ? ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: CachedNetworkImage(imageUrl: logo!, width: 40, height: 40, fit: BoxFit.cover),
+              child: CachedNetworkImage(
+              memCacheWidth: 120,imageUrl: logo!, width: 40, height: 40, fit: BoxFit.cover),
             )
           : Text.rich(
               TextSpan(
@@ -980,7 +1016,13 @@ class _LockedMedia extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      // Feed.dc.html: photo margin 0 12px (was 8) — isolated from the
+      // draggable inset's own positioning (real _Media state only), which
+      // is computed relative to this box's size via insetOffsetFor(), not
+      // hardcoded against this padding value. Applied uniformly to the
+      // locked/loading placeholder states too so they stay the same size
+      // as the real photo.
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: AspectRatio(
         aspectRatio: 3 / 4,
         child: ClipRRect(
@@ -1049,7 +1091,13 @@ class _LoadingCard extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          // Feed.dc.html: photo margin 0 12px (was 8) — isolated from the
+      // draggable inset's own positioning (real _Media state only), which
+      // is computed relative to this box's size via insetOffsetFor(), not
+      // hardcoded against this padding value. Applied uniformly to the
+      // locked/loading placeholder states too so they stay the same size
+      // as the real photo.
+      padding: const EdgeInsets.symmetric(horizontal: 12),
           child: AspectRatio(
             aspectRatio: 3 / 4,
             child: DecoratedBox(

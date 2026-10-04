@@ -8,10 +8,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 class CameraPrefsService {
   static const _kDualCameraEnabled = 'dual_camera_enabled';
 
-  /// Defaults to off — dual capture is opt-in.
+  /// Defaults to ON — dual capture (back, then front as a top-left PiP) is
+  /// the app's default capture mode; the toggle in the capture card turns it
+  /// off. Anyone who explicitly set it keeps their choice, since only the
+  /// unset fallback changed.
   static Future<bool> loadDualCameraEnabled() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_kDualCameraEnabled) ?? false;
+    return prefs.getBool(_kDualCameraEnabled) ?? true;
   }
 
   static Future<void> setDualCameraEnabled(bool value) async {

@@ -1,0 +1,57 @@
+-- Moments: who sees the photo, and whose profile it appears on.
+-- Applied live as `moment_reveal_rules`; full statements in the Supabase
+-- migration ledger.
+--
+-- CONFIRMED RULES
+--   * The POSTER never sees a reveal gate on their own moment.
+--   * Anyone who has REPLIED stops seeing the gate, permanently — replying
+--     is the price of entry, paid once, not per visit.
+--   * Once EXPIRED (24h, FeedService.momentVisibleWindow) the gate is gone
+--     for everyone. An archive you must contribute to in order to read is
+--     just a locked door.
+--   * So the gate only ever applies to a LIVE moment, for someone who is
+--     neither poster nor replier — the friends feed. That is the one place
+--     it does any work.
+--   * A moment you replied to appears on YOUR profile, with every reply so
+--     far. Removing it = deleting your own reply, which
+--     moment_replies_delete_own already permits.
+--   * Replies may be anonymous or real-name (moment_replies.is_anonymous
+--     already existed). Identity is stripped server-side for an anonymous
+--     reply rather than trusted to each client.
+--
+-- OBJECTS
+--   moment_is_revealed(post_id)      -> the gate, one definition
+--   moment_replies_for(post_id)      -> replies, gated + identity-stripped
+--   my_moment_contributions(limit)   -> moments I replied to, for my profile
+--
+-- VERIFIED LIVE (rolled back), all four branches:
+--   owner, live moment            -> revealed  true
+--   owner, expired                -> revealed  true
+--   non-owner, live, not replied  -> revealed  FALSE   (the gate)
+--   non-owner, expired            -> revealed  true
+--   non-owner, live, AFTER reply  -> revealed true, 1 reply visible,
+--                                    1 moment on their profile
+--
+-- LATER CORRECTIONS (both applied live):
+--
+-- 1. moment_replies_for() was DROPPED. get_moment_replies() already did the
+--    same job with BETTER anonymous masking (it keeps the replier's
+--    anon_name, and returns your own id on your own anonymous reply). It
+--    was taught the one rule it lacked — expiry — and now calls
+--    moment_is_revealed() so there is exactly one definition of the gate.
+--
+-- 2. my_moment_contributions() was DROPPED. my_contributed_moment_ids() +
+--    FeedService.fetchContributedMoments() already existed, and the
+--    profile's Moments tab already merged contributed moments in, tagged
+--    kind:'contributed'. The "a moment you replied to appears on your
+--    profile" rule was ALREADY implemented. Verified equal on a user with
+--    real replies: both paths return 3. The existing one additionally
+--    models the anonymous/real-name split the profile depends on (an
+--    anonymous contribution belongs in the Anon tab, not beside your name),
+--    which the new one did not.
+--
+-- What actually remained to fix was in the CLIENT: LockedRepliesScreen
+-- inferred "unlocked" from `replies.isNotEmpty`, conflating "you may look"
+-- with "there is something to look at" — so a moment with no replies yet
+-- showed the Add-yours gate to its own poster. It now asks
+-- moment_is_revealed() directly.

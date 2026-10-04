@@ -8,6 +8,7 @@
 # Secrets — real values live only in .env (gitignored); .env.example
 # documents the required keys with empty placeholders.
 .env
+fcm-secrets.env
 
 # DeepAR's native Android SDK — license-gated manual download, see
 # android/app/libs/README.md.
@@ -52,3 +53,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local Netlify folder
+.netlify

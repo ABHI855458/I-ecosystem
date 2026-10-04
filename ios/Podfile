@@ -1,5 +1,8 @@
 # Uncomment this line to define a global platform for your project
-platform :ios, '14.0'
+# FACE MASK FILTER: bumped from 14.0 — google_mlkit_face_detection's iOS
+# pod hard-requires 15.5+. Revert to 14.0 if the feature is removed AND
+# nothing else added since then also needs 15.5+.
+platform :ios, '15.5'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'

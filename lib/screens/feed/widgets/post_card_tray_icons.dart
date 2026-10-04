@@ -116,6 +116,60 @@ class StickFigureGlyphPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+/// Ping icon for the "surface" (dark-circle button) style — ported literally
+/// from the live design source's own SVG (Feed.dc.html): `<svg width="24"
+/// height="24" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13.2"
+/// stroke="rgba(255,255,255,.9)" stroke-width="1.5"/><circle cx="16"
+/// cy="10.6" r="1.9" fill="#fff"/><path d="M10 14.2c1.9.85 3.9 1.28 6 1.28
+/// s4.1-.43 6-1.28M16 15.48v3.7M16 19.18l-2.6 4.4M16 19.18l2.6 4.4"
+/// stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>` — a
+/// cheering figure (curved raised-arms sweep), NOT a straight-limbed stick
+/// figure. Distinct from [StickFigureGlyphPainter] above, which is the OLDER
+/// 19×20 Anon-tray glyph (no outer ring, black-on-white) — this is what
+/// PostPingButton's default `TrayIconVisualStyle.surface` branch paints on
+/// its own #131315 circle.
+class PingRingGlyphPainter extends CustomPainter {
+  const PingRingGlyphPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 32, size.height / 32);
+
+    final ring = Paint()
+      ..color = Colors.white.withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawCircle(const Offset(16, 16), 13.2, ring);
+
+    canvas.drawCircle(const Offset(16, 10.6), 1.9, Paint()..color = Colors.white);
+
+    final body = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round;
+
+    // "M10 14.2 c1.9,.85 3.9,1.28 6,1.28 s4.1,-.43 6,-1.28" — the raised-arms
+    // shoulder sweep, as two cubics (absolute coords, converted from the
+    // SVG's relative c/s commands).
+    final arms = Path()
+      ..moveTo(10, 14.2)
+      ..cubicTo(11.9, 15.05, 13.9, 15.48, 16, 15.48)
+      ..cubicTo(18.1, 15.48, 20.1, 15.05, 22, 14.2);
+    canvas.drawPath(arms, body);
+
+    canvas.drawLine(const Offset(16, 15.48), const Offset(16, 19.18), body);
+    canvas.drawLine(const Offset(16, 19.18), const Offset(13.4, 23.58), body);
+    canvas.drawLine(const Offset(16, 19.18), const Offset(18.6, 23.58), body);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 /// Reaction (add-a-reaction) icon — spec section 4.2: solid black circle,
 /// minimal white smiley (two dot eyes + a small curved mouth — NOT a wide
 /// arc following the circle's own edge, which reads as an arch over the
@@ -157,6 +211,46 @@ class ReactionGlyphPainter extends CustomPainter {
       const Offset(20.2, 3.6),
       strokeWhite,
     );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// RealMoji idle glyph — ported literally from Feed.dc.html's not-reacted
+/// SVG: `<svg width="21" height="21" viewBox="0 0 24 24" stroke="#1a1a1a"
+/// stroke-width="1.9"><circle cx="12" cy="12" r="9.2"/><path d="M8.4 14.2
+/// c.9 1.2 2.1 1.8 3.6 1.8 s2.7-.6 3.6-1.8"/><circle cx="9" cy="10" r=".9"
+/// fill="#1a1a1a"/><circle cx="15" cy="10" r=".9" fill="#1a1a1a"/></svg>` —
+/// replaces the generic Icons.sentiment_satisfied_outlined Material icon
+/// that was standing in for it on [PostReactionButton]'s white idle circle.
+class RealMojiSmileyPainter extends CustomPainter {
+  const RealMojiSmileyPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 24, size.height / 24);
+
+    final stroke = Paint()
+      ..color = const Color(0xFF1A1A1A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.9
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawCircle(const Offset(12, 12), 9.2, stroke);
+
+    final mouth = Path()
+      ..moveTo(8.4, 14.2)
+      ..cubicTo(9.3, 15.4, 10.5, 16.0, 12.0, 16.0)
+      ..cubicTo(13.5, 16.0, 14.7, 15.4, 15.6, 14.2);
+    canvas.drawPath(mouth, stroke);
+
+    final fill = Paint()..color = const Color(0xFF1A1A1A);
+    canvas.drawCircle(const Offset(9, 10), 0.9, fill);
+    canvas.drawCircle(const Offset(15, 10), 0.9, fill);
+
     canvas.restore();
   }
 

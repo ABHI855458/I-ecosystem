@@ -110,6 +110,7 @@ class _HighlightTile extends StatelessWidget {
                   AspectRatio(
                     aspectRatio: 1,
                     child: CachedNetworkImage(
+              memCacheWidth: 1080,
                       imageUrl: highlight.photos.first,
                       fit: BoxFit.cover,
                       errorWidget: (_, _, _) => Container(color: Colors.black12),

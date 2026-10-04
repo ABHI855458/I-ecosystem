@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/image_compress.dart';
@@ -28,20 +30,72 @@ import 'storage_service.dart';
 // no reason to duplicate the mapping.
 // ---------------------------------------------------------------------------
 
-enum RealmojiType { like, joy, surprise, love, laughter, instant }
+/// Every reaction a RealMoji can be. Declaration order IS display order in
+/// the tray and the library grid.
+///
+/// Mirrors `emoji_type_enum` in Postgres exactly — the wire value is the
+/// enum NAME, so adding one here without the matching
+/// `alter type ... add value` (see 20260906180000_more_emoji_types.sql)
+/// makes every reaction with it fail the insert.
+enum RealmojiType {
+  like,
+  love,
+  joy,
+  laughter,
+  surprise,
+  fire,
+  heartEyes,
+  cool,
+  cry,
+  clap,
+  wink,
+  party,
+  mindBlown,
+  shy,
+  angry,
+  skull,
+  hundred,
+  instant,
+}
 
 extension RealmojiTypeWire on RealmojiType {
-  String get wire => name;
+  /// The Postgres enum label. Dart's lowerCamelCase names and the DB's
+  /// snake_case labels only diverge for the two-word ones, so those are
+  /// mapped explicitly rather than left to `name`.
+  String get wire => switch (this) {
+        RealmojiType.heartEyes => 'heart_eyes',
+        RealmojiType.mindBlown => 'mind_blown',
+        _ => name,
+      };
+
+  /// Short human label, shown under the photo in the RealMoji library.
+  String get label => switch (this) {
+        RealmojiType.heartEyes => 'heart eyes',
+        RealmojiType.mindBlown => 'mind blown',
+        _ => name,
+      };
 
   /// Display glyph — the schema stores the enum name, not an emoji
   /// character, so every UI surface needs this mapping in exactly one
   /// place.
   String get glyph => switch (this) {
         RealmojiType.like => '👍',
-        RealmojiType.joy => '😂',
-        RealmojiType.surprise => '😮',
         RealmojiType.love => '❤️',
+        RealmojiType.joy => '😂',
         RealmojiType.laughter => '🤣',
+        RealmojiType.surprise => '😮',
+        RealmojiType.fire => '🔥',
+        RealmojiType.heartEyes => '😍',
+        RealmojiType.cool => '😎',
+        RealmojiType.cry => '😭',
+        RealmojiType.clap => '👏',
+        RealmojiType.wink => '😉',
+        RealmojiType.party => '🥳',
+        RealmojiType.mindBlown => '🤯',
+        RealmojiType.shy => '🥹',
+        RealmojiType.angry => '😡',
+        RealmojiType.skull => '💀',
+        RealmojiType.hundred => '💯',
         RealmojiType.instant => '⚡',
       };
 }
@@ -55,6 +109,15 @@ RealmojiType realmojiTypeFromWire(String wire) =>
 /// anything repointing that pipe at RealMoji needs to convert back.
 RealmojiType realmojiTypeFromGlyph(String glyph) =>
     RealmojiType.values.firstWhere((t) => t.glyph == glyph, orElse: () => RealmojiType.like);
+
+/// One RealMoji reaction on an ANONYMOUS post, stripped of identity — the
+/// reaction's photo and which emoji it was, and deliberately nothing else.
+class AnonReactionFace {
+  const AnonReactionFace({required this.type, required this.imageUrl});
+
+  final RealmojiType type;
+  final String? imageUrl;
+}
 
 /// One reaction on a post, for the Everyone feed's reactor-selfie stack.
 /// [selfieUrl] is null if the reactor's saved user_realmojis row is somehow
@@ -100,7 +163,11 @@ class RealmojiService {
   // reacting or opens the camera first.
   final Map<String, String?> _savedCache = {};
 
-  String _cacheKey(String feedScope, RealmojiType emojiType) => '$feedScope:${emojiType.wire}';
+  /// One RealMoji set for both feeds (explicit request, 2026-10-01): every
+  /// read and write uses this scope, whichever feed asked.
+  static const kOneScope = 'everyone';
+
+  String _cacheKey(String feedScope, RealmojiType emojiType) => '$kOneScope:${emojiType.wire}';
 
   /// All of the caller's saved selfies for [feedScope] in one query — the
   /// picker row prefetches this once on open so all 6 options can render
@@ -108,6 +175,7 @@ class RealmojiService {
   /// separate round trips. Populates the same cache savedSelfieUrl reads,
   /// so a subsequent per-emoji lookup is free.
   Future<Map<RealmojiType, String>> savedSelfies({required String feedScope}) async {
+    feedScope = kOneScope;
     final userId = await CurrentUserService.instance.resolveId();
     final rows = await _sb
         .from('user_realmojis')
@@ -141,6 +209,7 @@ class RealmojiService {
     required RealmojiType emojiType,
     bool forceRefresh = false,
   }) async {
+    feedScope = kOneScope;
     final key = _cacheKey(feedScope, emojiType);
     if (!forceRefresh && _savedCache.containsKey(key)) return _savedCache[key];
 
@@ -160,14 +229,19 @@ class RealmojiService {
   }
 
   /// Fast path — a saved selfie already exists, so this just writes the
-  /// reaction event using it. No upload, no camera.
+  /// reaction event using it. No upload, no camera. [groupPostId] routes
+  /// this at a group_posts row instead of a posts row (mutually exclusive
+  /// with [postId] — see the group_post_id migration on
+  /// post_realmoji_reactions).
   Future<void> reactWithSaved({
-    required String postId,
+    String? postId,
+    String? groupPostId,
     required RealmojiType emojiType,
   }) async {
     final userId = await CurrentUserService.instance.resolveId();
     await _sb.from('post_realmoji_reactions').insert({
       'post_id': postId,
+      'group_post_id': groupPostId,
       'user_id': userId,
       'emoji_type': emojiType.wire,
     });
@@ -183,6 +257,7 @@ class RealmojiService {
     required RealmojiType emojiType,
     required File selfie,
   }) async {
+    feedScope = kOneScope;
     final userId = await CurrentUserService.instance.resolveId();
     final compressed = await compressForThumbnail(selfie);
 
@@ -196,15 +271,32 @@ class RealmojiService {
       throw StateError('RealMoji selfie upload failed');
     }
 
-    await _sb.from('user_realmojis').upsert(
-      {
-        'user_id': userId,
-        'feed_scope': feedScope,
-        'emoji_type': emojiType.wire,
-        'image_url': url,
-      },
-      onConflict: 'user_id,feed_scope,emoji_type',
-    );
+    // .select() is mandatory on this project: an RLS refusal comes back as
+    // ZERO ROWS AND NO ERROR, so a save that was rejected looked exactly
+    // like one that worked — the screen would reload, find nothing new, and
+    // silently show the old RealMoji. Reported as "the retaken photo isn't
+    // getting saved". The upload above already threw on ITS failure; this
+    // makes the row write equally honest.
+    //
+    // A retake is the case that matters most here: it conflicts on
+    // (user_id, feed_scope, emoji_type), so the upsert takes its UPDATE
+    // path — a different policy from the INSERT that the first-ever save
+    // uses, and therefore able to fail on its own.
+    final rows = await _sb
+        .from('user_realmojis')
+        .upsert(
+          {
+            'user_id': userId,
+            'feed_scope': feedScope,
+            'emoji_type': emojiType.wire,
+            'image_url': url,
+          },
+          onConflict: 'user_id,feed_scope,emoji_type',
+        )
+        .select('id');
+    if (rows.isEmpty) {
+      throw StateError("Couldn't save that RealMoji.");
+    }
     _savedCache[_cacheKey(feedScope, emojiType)] = url;
     return url;
   }
@@ -216,36 +308,41 @@ class RealmojiService {
   /// any reader joining the two (the reactor stack) never sees a dangling
   /// reaction with no selfie to show.
   Future<void> captureAndReact({
-    required String postId,
+    String? postId,
+    String? groupPostId,
     required String feedScope,
     required RealmojiType emojiType,
     required File selfie,
   }) async {
     await captureSelfieOnly(feedScope: feedScope, emojiType: emojiType, selfie: selfie);
 
-    await reactWithSaved(postId: postId, emojiType: emojiType);
+    await reactWithSaved(postId: postId, groupPostId: groupPostId, emojiType: emojiType);
   }
 
   /// Retake: deletes the old storage object + user_realmojis row (per the
   /// explicit requirement, rather than relying on upsert to silently
   /// overwrite) and clears the cache entry so the next picker tap re-opens
   /// the camera instead of instant-reacting with the stale URL.
-  Future<void> retake({
+  /// BUG FIX: this used to delete the old storage object + user_realmojis
+  /// row UP FRONT, before the camera even opened. RealmojiLibraryScreen's
+  /// own _capture returns immediately, without calling captureSelfieOnly at
+  /// all, the moment the camera result comes back null — which is exactly
+  /// what happens when the user cancels. So cancelling a retake destroyed
+  /// the existing RealMoji with nothing to replace it: total loss from
+  /// backing out of the camera, one further symptom of the same underlying
+  /// report as the mislabeled/silent upload logging fixed alongside this.
+  ///
+  /// Now purely a client-side cache clear: [captureSelfieOnly]'s own upsert
+  /// (`onConflict: user_id,feed_scope,emoji_type`) already overwrites the
+  /// same storage path and row on a SUCCESSFUL new capture — nothing here
+  /// needs to pre-delete anything for that to work. Clearing the cache
+  /// entry is still necessary so the picker re-opens the camera on the next
+  /// tap instead of instant-reacting with the (still valid, still saved)
+  /// old photo.
+  void retake({
     required String feedScope,
     required RealmojiType emojiType,
-  }) async {
-    final userId = await CurrentUserService.instance.resolveId();
-    await StorageService.deleteRealmojiSelfie(
-      userId: userId,
-      feedScope: feedScope,
-      emojiType: emojiType.wire,
-    );
-    await _sb
-        .from('user_realmojis')
-        .delete()
-        .eq('user_id', userId)
-        .eq('feed_scope', feedScope)
-        .eq('emoji_type', emojiType.wire);
+  }) {
     _savedCache.remove(_cacheKey(feedScope, emojiType));
   }
 
@@ -256,11 +353,12 @@ class RealmojiService {
   /// express "this reactor's selfie for THIS emoji_type" — fetch the
   /// reaction rows, then batch-fetch the matching selfies and zip them
   /// client-side.
-  Future<List<RealmojiReaction>> fetchReactors(String postId) async {
-    final reactionRows = await _sb
+  Future<List<RealmojiReaction>> fetchReactors(String? postId, {String? groupPostId}) async {
+    var query = _sb
         .from('post_realmoji_reactions')
-        .select('id, user_id, emoji_type, created_at, users(name)')
-        .eq('post_id', postId)
+        .select('id, user_id, emoji_type, created_at, users(name)');
+    query = groupPostId != null ? query.eq('group_post_id', groupPostId) : query.eq('post_id', postId!);
+    final reactionRows = await query
         .order('created_at', ascending: false)
         .timeout(const Duration(seconds: 8));
 
@@ -303,6 +401,107 @@ class RealmojiService {
   /// anon_reaction_counts view directly rather than post_realmoji_reactions
   /// itself, so there is no code path in this feed that can even see a
   /// user_id, let alone render one.
+  /// The RealMoji FACES on an anonymous post — photo + emoji, no identity.
+  ///
+  /// Backed by the anon_post_reaction_faces RPC (20260906190000), which is
+  /// what makes this possible at all: post_realmoji_reactions stays closed
+  /// for anonymous posts so raw rows can never hand out a reactor -> user
+  /// map, and the RPC returns only the emoji and the selfie url.
+  ///
+  /// [AnonReactionFace.imageUrl] is null when the reactor has since retaken
+  /// that RealMoji away — render the glyph alone rather than dropping the
+  /// reaction, or the strip would disagree with the count beside it.
+  Future<List<AnonReactionFace>> fetchAnonReactionFaces(String postId) async {
+    try {
+      final rows = await _sb
+          .rpc('anon_post_reaction_faces', params: {'p_post_id': postId})
+          .timeout(const Duration(seconds: 8));
+      return [
+        for (final r in (rows as List))
+          AnonReactionFace(
+            type: realmojiTypeFromWire(
+              (r as Map)['emoji_type'] as String? ?? 'like',
+            ),
+            imageUrl: r['image_url'] as String?,
+          ),
+      ];
+    } catch (e, st) {
+      debugPrint('[RealmojiService.fetchAnonReactionFaces] $postId failed: $e\n$st');
+      return const [];
+    }
+  }
+
+  /// The top viewers' faces on an anonymous post — for the seen-count chip.
+  /// Explicit request, with a screenshot circling three plain decorative
+  /// dots: "attach real dp of the people there, top 3 if not 2".
+  ///
+  /// NOT the same trust boundary as [fetchAnonReactionFaces] above. A
+  /// reaction is a voluntary act; viewing is passive (recordView fires on
+  /// scroll, no consent gesture) — returning a viewer's REAL profile photo
+  /// here would let an anon post's author see the actual faces of everyone
+  /// who merely scrolled past it. The RPC (anon_post_seen_faces) mirrors
+  /// the reaction-face precedent instead: a viewer contributes a face only
+  /// if they've saved a feed_scope='anonymous' RealMoji selfie (their own
+  /// affirmative choice to have an anon-feed face at all) — never their
+  /// user id, real name, or real profile_photo_url. A viewer with no anon
+  /// selfie contributes nothing; the chip's own decorative-dot fallback
+  /// covers that, same as it always has.
+  Future<List<String>> fetchAnonPostSeenFaces(String postId, {int limit = 3}) async {
+    try {
+      final rows = await _sb
+          .rpc('anon_post_seen_faces', params: {'p_post_id': postId, 'p_limit': limit})
+          .timeout(const Duration(seconds: 8));
+      return [
+        for (final r in (rows as List))
+          if (((r as Map)['photo_url'] as String?) != null) r['photo_url'] as String,
+      ];
+    } catch (e, st) {
+      debugPrint('[RealmojiService.fetchAnonPostSeenFaces] $postId failed: $e\n$st');
+      return const [];
+    }
+  }
+
+  /// Batched twin of [fetchAnonPostSeenFaces] — one round trip for a whole
+  /// page of posts instead of one RPC per post.
+  ///
+  /// BUG FIX: _hydrateCounts (anon_feed_screen.dart) used to fan out
+  /// fetchAnonPostSeenFaces per-post via Future.wait, all fired at once.
+  /// Each has an 8s timeout; past ~4 concurrent calls on a real network the
+  /// rest started timing out and failing soft to [], so the seen pill fell
+  /// back to decorative dots on any post beyond the first few. Reported as
+  /// "if more than 4 it's not showing the dp in the pill". The engagement
+  /// fetch got the same batching treatment already
+  /// (20260907120000_anon_feed_engagement_batch) — this closes the gap.
+  ///
+  /// Fails soft to an empty map: a missing entry just means that post keeps
+  /// the decorative-dot fallback, never a broken feed.
+  Future<Map<String, List<String>>> fetchAnonPostSeenFacesBatch(
+    List<String> postIds, {
+    int limit = 3,
+  }) async {
+    if (postIds.isEmpty) return {};
+    try {
+      final rows = await _sb
+          .rpc('anon_post_seen_faces_batch', params: {
+            'p_post_ids': postIds,
+            'p_limit': limit,
+          })
+          .timeout(const Duration(seconds: 10));
+      final out = <String, List<String>>{};
+      for (final raw in (rows as List)) {
+        final row = raw as Map;
+        final pid = row['post_id'] as String?;
+        final url = row['photo_url'] as String?;
+        if (pid == null || url == null) continue;
+        (out[pid] ??= []).add(url);
+      }
+      return out;
+    } catch (e, st) {
+      debugPrint('[RealmojiService.fetchAnonPostSeenFacesBatch] failed: $e\n$st');
+      return {};
+    }
+  }
+
   Future<List<AnonRealmojiCount>> fetchAnonCounts(String postId) async {
     final rows = await _sb
         .from('anon_reaction_counts')
@@ -325,12 +524,11 @@ class RealmojiService {
   /// their OWN row (RLS-scoped to auth.uid()), not exposing anyone's
   /// identity to anyone else — see AnonRealmojiCounts' doc for the rule
   /// this does NOT violate.
-  Future<RealmojiType?> myReaction(String postId) async {
+  Future<RealmojiType?> myReaction(String? postId, {String? groupPostId}) async {
     final userId = await CurrentUserService.instance.resolveId();
-    final row = await _sb
-        .from('post_realmoji_reactions')
-        .select('emoji_type')
-        .eq('post_id', postId)
+    var query = _sb.from('post_realmoji_reactions').select('emoji_type');
+    query = groupPostId != null ? query.eq('group_post_id', groupPostId) : query.eq('post_id', postId!);
+    final row = await query
         .eq('user_id', userId)
         .order('created_at', ascending: false)
         .limit(1)
@@ -340,7 +538,86 @@ class RealmojiService {
     return realmojiTypeFromWire(row['emoji_type'] as String);
   }
 
+  /// Reaction + comment data for a WHOLE PAGE of anon posts in one call.
+  ///
+  /// Replaces the per-post fan-out of fetchAnonCounts + myReaction +
+  /// CommentService.fetchCount + fetchAnonReactionFaces, which cost 3-4
+  /// requests per post — 60-80 for a 20-post page, throttled to 4 at a time
+  /// so it didn't time out, and therefore ~15-20 sequential waves before the
+  /// last card lost its skeleton.
+  ///
+  /// Same visibility rule as before: the RPC applies post_engagement_visible
+  /// per post, so a post whose engagement the caller can't see comes back
+  /// empty exactly as the individual queries returned empty.
+  ///
+  /// Fails soft to an empty map — callers keep their nulls, so the cards go
+  /// on showing skeletons rather than fabricating zeros.
+  Future<Map<String, AnonPostEngagement>> fetchAnonEngagement(
+    List<String> postIds,
+  ) async {
+    if (postIds.isEmpty) return const {};
+    try {
+      final rows = await _sb
+          .rpc('anon_feed_engagement', params: {'p_post_ids': postIds})
+          .timeout(const Duration(seconds: 10));
+      final out = <String, AnonPostEngagement>{};
+      for (final r in (rows as List)) {
+        final m = Map<String, dynamic>.from(r as Map);
+        final id = m['post_id'] as String?;
+        if (id == null) continue;
+        out[id] = AnonPostEngagement(
+          commentCount: (m['comment_count'] as num?)?.toInt() ?? 0,
+          myReaction: m['my_reaction'] == null
+              ? null
+              : realmojiTypeFromWire(m['my_reaction'] as String),
+          counts: [
+            for (final c in (m['counts'] as List? ?? const []))
+              AnonRealmojiCount(
+                emojiType: realmojiTypeFromWire(
+                  (c as Map)['emoji_type'] as String? ?? 'like',
+                ),
+                count: (c['count'] as num?)?.toInt() ?? 0,
+              ),
+          ],
+          faces: [
+            for (final f in (m['faces'] as List? ?? const []))
+              AnonReactionFace(
+                type: realmojiTypeFromWire(
+                  (f as Map)['emoji_type'] as String? ?? 'like',
+                ),
+                imageUrl: f['image_url'] as String?,
+              ),
+          ],
+        );
+      }
+      return out;
+    } catch (e, st) {
+      debugPrint('[RealmojiService.fetchAnonEngagement] failed: $e\n$st');
+      return const {};
+    }
+  }
+
   /// Clears the saved-selfie cache — call on sign-out, same convention as
   /// ReactionPresetService.reset().
   void reset() => _savedCache.clear();
+}
+
+/// One post's worth of [RealmojiService.fetchAnonEngagement].
+class AnonPostEngagement {
+  const AnonPostEngagement({
+    required this.commentCount,
+    required this.myReaction,
+    required this.counts,
+    required this.faces,
+  });
+
+  final int commentCount;
+
+  /// The CALLER's own reaction, or null. Same field myReaction() returned.
+  final RealmojiType? myReaction;
+  final List<AnonRealmojiCount> counts;
+  final List<AnonReactionFace> faces;
+
+  /// Total reactions across every emoji — what the card shows as the count.
+  int get totalReactions => counts.fold<int>(0, (a, c) => a + c.count);
 }

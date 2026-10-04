@@ -35,11 +35,34 @@ class SpotlightFeedController {
   ValueNotifier<double> focusNotifierFor(String postId) =>
       _focusNotifiers.putIfAbsent(postId, () => ValueNotifier(0));
 
+  // Every mounted card per post. A Rewind lap can put two cards for the same
+  // post on screen at once. With one key per post, the first card to
+  // unmount disposed the focus notifier the other was still listening to,
+  // and the survivor stopped being tracked.
+  final Map<String, List<GlobalKey>> _extraKeys = {};
+
   void registerCard(String postId, GlobalKey key) {
-    _cardKeys[postId] = key;
+    final existing = _cardKeys[postId];
+    if (existing == null) {
+      _cardKeys[postId] = key;
+    } else {
+      (_extraKeys[postId] ??= []).add(key);
+    }
   }
 
-  void unregisterCard(String postId) {
+  void unregisterCard(String postId, [GlobalKey? key]) {
+    final extras = _extraKeys[postId];
+    if (key != null && extras != null && extras.remove(key)) {
+      if (extras.isEmpty) _extraKeys.remove(postId);
+      return;
+    }
+    if (extras != null && extras.isNotEmpty) {
+      // The primary copy left; promote a surviving copy and keep the
+      // shared notifier alive.
+      _cardKeys[postId] = extras.removeAt(0);
+      if (extras.isEmpty) _extraKeys.remove(postId);
+      return;
+    }
     _cardKeys.remove(postId);
     _focusNotifiers.remove(postId)?.dispose();
   }

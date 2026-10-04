@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../features/ping/ping_prompt_sheet.dart' show PingContext;
+import '../../../services/presence_service.dart';
 import '../../../services/reaction_preset_service.dart';
 import '../../../services/reaction_service.dart';
 import '../../../services/realmoji_service.dart';
@@ -61,6 +63,17 @@ class PersonalPostCard extends StatefulWidget {
 
 class _PersonalPostCardState extends State<PersonalPostCard> with PostReactions<PersonalPostCard> {
   List<LikeReactor> _reactors = const [];
+  bool _showLiveDropdown = false;
+  List<PresenceUser> _present = const [];
+
+  // Closes the live dropdown when the enclosing feed scrolls — per explicit
+  // request ("vanish... when scrolling"). Scrollable.of walks UP the tree
+  // from this widget's own context to find the ancestor feed's Scrollable
+  // (the ListView/PageView in everyone_feed_screen.dart), so this works
+  // regardless of this card's position in that list — unlike a
+  // NotificationListener, which would need to be an ANCESTOR of the
+  // Scrollable to catch its notifications, not a descendant like this card.
+  ScrollPosition? _scrollPosition;
 
   @override
   void initState() {
@@ -68,7 +81,30 @@ class _PersonalPostCardState extends State<PersonalPostCard> with PostReactions<
     if (!widget.loading && !widget.locked) {
       loadReactionSummary(widget.postId);
       unawaited(_loadReactors());
+      unawaited(PresenceService.instance.touch(postId: widget.postId));
+      unawaited(_loadPresence());
     }
+  }
+
+  Future<void> _loadPresence() async {
+    final entries = await PresenceService.instance.fetchPresence(postId: widget.postId);
+    if (!mounted) return;
+    setState(() => _present = entries.map(PresenceUser.fromEntry).toList());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newPosition = Scrollable.maybeOf(context)?.position;
+    if (newPosition != _scrollPosition) {
+      _scrollPosition?.removeListener(_onAncestorScroll);
+      _scrollPosition = newPosition;
+      _scrollPosition?.addListener(_onAncestorScroll);
+    }
+  }
+
+  void _onAncestorScroll() {
+    if (_showLiveDropdown) setState(() => _showLiveDropdown = false);
   }
 
   @override
@@ -81,6 +117,12 @@ class _PersonalPostCardState extends State<PersonalPostCard> with PostReactions<
     }
   }
 
+  @override
+  void dispose() {
+    _scrollPosition?.removeListener(_onAncestorScroll);
+    super.dispose();
+  }
+
   Future<void> _loadReactors() async {
     final reactors = await ReactionService.instance.fetchRecentReactors(widget.postId, limit: 5);
     if (!mounted) return;
@@ -91,55 +133,127 @@ class _PersonalPostCardState extends State<PersonalPostCard> with PostReactions<
   Widget build(BuildContext context) {
     final reactions = summary ?? const ReactionSummary.empty();
 
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        PostCard(
-          handle: widget.handle,
-          place: widget.place,
-          avatar: widget.avatar,
-          backPhoto: widget.backPhoto,
-          frontPhoto: widget.frontPhoto ?? widget.backPhoto,
-          reactions: _reactors
-              .map((r) => PostCardReaction(id: r.id, handle: r.name, photo: r.avatarUrl, emoji: r.emoji))
-              .toList(),
-          reactionCount: reactions.totalEmojiCount,
-          comments: widget.comments,
-          commentCount: widget.commentCount,
-          onOpenComments: widget.onOpenComments,
-          logo: widget.logo,
-          locked: widget.locked,
-          loading: widget.loading,
-          // Built-in disc replaced below with the SAME entry point
-          // PhotoPostCard (Anonymous)/EveryonePostCard use — same widget,
-          // same openReactionTray/showTray toggle, same RealmojiTray, just
-          // category: everyone instead of anonymous. Was previously wired
-          // to onReact/onPickReactionEmoji -> onEmojiSelected, a different,
-          // older tap=like/long-press=picker mechanism entirely.
-          showReactDisc: false,
+        Stack(
+          children: [
+            PostCard(
+              handle: widget.handle,
+              place: widget.place,
+              avatar: widget.avatar,
+              backPhoto: widget.backPhoto,
+              frontPhoto: widget.frontPhoto ?? widget.backPhoto,
+              logo: widget.logo,
+              locked: widget.locked,
+              loading: widget.loading,
+              showReactDisc: false,
+              // Engagement (reactions pill/strip, comment card) now renders
+              // externally below, via the shared post_card_shared.dart
+              // widgets — same components GroupPostCard uses, per the
+              // Everyone/Group interaction-parity design.
+              showBuiltInEngagement: false,
+              headerTrailing: (!widget.locked && !widget.loading)
+                  ? LivePresencePill(
+                      present: _present,
+                      onTap: () {
+                        setState(() => _showLiveDropdown = !_showLiveDropdown);
+                        if (_showLiveDropdown) unawaited(_loadPresence());
+                      },
+                    )
+                  : null,
+            ),
+            if (!widget.locked && !widget.loading) ...[
+              // REVERTED to top:62 — see turn note: Feed.dc.html's top:12
+              // is relative to the PHOTO's own position:relative div, but
+              // this Stack wraps the whole PostCard (header + photo), so a
+              // literal top:12 lands inside the header row instead,
+              // covering the avatar/username entirely (confirmed via
+              // screenshot). top:62 was a deliberate approximation of the
+              // header's height for this different Stack structure, not a
+              // bug — flagged back rather than guessing a replacement.
+              if (_showLiveDropdown) ...[
+                // Outside-tap dismiss barrier. NOT Positioned.fill — that
+                // combined with a childless GestureDetector triggered a
+                // real layout crash loop here (RenderOpacity/RenderStack/
+                // RenderIgnorePointer "NEEDS-LAYOUT", confirmed by removing
+                // it and watching the exception spam stop), almost
+                // certainly colliding with SpotlightCard's own internal
+                // Opacity/IgnorePointer wrappers one level up. Positioned
+                // with explicit left/right/top/bottom: 0 sizes identically
+                // to .fill but apparently doesn't trip the same interaction
+                // — kept as a distinct, explicit box instead of the
+                // convenience constructor.
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _showLiveDropdown = false),
+                    behavior: HitTestBehavior.opaque,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+                Positioned(
+                  top: 62,
+                  right: 12,
+                  child: LivePresenceDropdown(present: _present),
+                ),
+              ],
+              // The floating reactions avatar-pill that used to sit here
+              // (bottom-left, faces + count, tapping it toggled a strip)
+              // is REMOVED — explicit request: "remove this thing and let
+              // the existing below drop down is enough." The REACTED row
+              // beneath the card (PostReactionsSection) already shows the
+              // same faces and count, and expands to the full list, so this
+              // was the same information twice, once floating over the
+              // photo.
+
+              // Ping + RealMoji now bottom-RIGHT, stacked VERTICALLY
+              // (Column, gap 12) per Feed.dc.html's own "right action
+              // rail" — was a horizontal Row pinned bottom-left.
+              Positioned(
+                right: 13,
+                bottom: 14,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PostPingButton(onTap: () => openPing(pingContext: PingContext.everyone, targetName: widget.handle)),
+                    const SizedBox(height: 22),
+                    PostReactionCorner(
+                      // §2: 34dp per spec — this widget's own default (26)
+                      // stays untouched since the Anon feed's tray relies
+                      // on it with no override of its own.
+                      size: 34,
+                      allowFaceReactions: true,
+                      myFaceReaction: null,
+                      myEmoji: myRealmojiReaction?.glyph,
+                      uploading: uploadingFaceReaction,
+                      onTap: openReactionTray,
+                      onClose: closePresetTray,
+                      showTray: showPresetTray,
+                      category: ReactionPresetCategory.everyone,
+                      onSelect: (preset) => selectPreset(widget.postId, preset),
+                      onAddNew: () => openAddPresetFlow(widget.postId, allowFaceReactions: true),
+                      onCaptureRealmoji: (type) => captureRealmojiAndReact(
+                        widget.postId,
+                        ReactionPresetCategory.everyone,
+                        type,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
         ),
         if (!widget.locked && !widget.loading)
-          Positioned(
-            right: 12,
-            bottom: 12,
-            child: PostReactionCorner(
-              allowFaceReactions: true,
-              myFaceReaction: null,
-              myEmoji: myRealmojiReaction?.glyph,
-              uploading: uploadingFaceReaction,
-              onTap: openReactionTray,
-              showTray: showPresetTray,
-              category: ReactionPresetCategory.everyone,
-              onSelect: (preset) => selectPreset(widget.postId, preset),
-              onAddNew: () => openAddPresetFlow(
-                widget.postId,
-                allowFaceReactions: true,
-              ),
-              onCaptureRealmoji: (type) => captureRealmojiAndReact(
-                widget.postId,
-                ReactionPresetCategory.everyone,
-                type,
-              ),
-            ),
+          PostCommentCard(
+            postId: widget.postId,
+            reactors: _reactors,
+            reactionCount: reactions.totalReactionCount,
           ),
       ],
     );

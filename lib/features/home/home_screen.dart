@@ -3,26 +3,67 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import '../../shared/slight_swipe_settle.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/constants.dart';
-import '../../features/notifications/notifications_screen.dart';
+import '../../features/profile_v2/my_profile_screen.dart' show openCreateChooser;
+import '../../features/profile_v2/profile_v2_icons.dart' show PV2Icons;
+import '../../services/daily_prompt_service.dart';
 import '../../screens/feed/everyone_feed_screen.dart';
 import '../../screens/feed/widgets/post_card_shared.dart'
     show ReactionLibraryButton, openReactionLibrary;
 import '../../shared/feed_notif_bar.dart';
 import '../../shared/score_tier.dart';
 import '../composer/composer_screen.dart';
-import 'anonymous_tab.dart';
+import 'anon_feed_v2/anon_feed_screen.dart';
+import 'anon_feed_v2/anon_feed_tokens.dart';
 
 // ---------------------------------------------------------------------------
 // HomeScreen
 // ---------------------------------------------------------------------------
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.onOpenCamera, this.onAnonActiveChanged});
 
-  final VoidCallback? onOpenCamera;
+/// Deep-link request for Home's inner tab: 0 = Dip (anonymous), 1 = Friends.
+/// Set by MainShell when a notification should land on a specific side;
+/// HomeScreen consumes it and resets it to null.
+final ValueNotifier<int?> homeTabRequest = ValueNotifier<int?>(null);
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({
+    super.key,
+    this.onOpenCamera,
+    this.onAnonActiveChanged,
+    this.onCommentsOpenChanged,
+    this.onFriendsOverscrollUpdate,
+    this.onFriendsOverscrollEnd,
+    this.debugInitialTab,
+  });
+
+  /// Takes the prompt being answered, when the camera is opened from a
+  /// prompt bar rather than the plain camera button — plus which community
+  /// and `daily_prompts` row that prompt came from, so the resulting post
+  /// can be attributed without an extra manual picker step.
+  final void Function([
+    String? answeringPrompt,
+    String? answeringCommunityId,
+    String? answeringPromptId,
+  ])? onOpenCamera;
+  final int? debugInitialTab;
+
+  /// Fired continuously (including with 0) while sitting on the Friends/
+  /// Everyone page (this screen's own inner PageView's last page) with the
+  /// raw, undamped pixel amount the drag has pulled past that boundary —
+  /// MainShell mirrors this 1:1 onto its outer tab-swipe PageController via
+  /// jumpTo so the outer Ping page visually tracks the finger in real time,
+  /// instead of only reacting once the gesture ends (which was the cause of
+  /// the old two-stage/hitchy transition).
+  final ValueChanged<double>? onFriendsOverscrollUpdate;
+
+  /// Fired once the drag that produced [onFriendsOverscrollUpdate] ends —
+  /// MainShell decides commit-to-Ping vs spring-back-to-Friends from the
+  /// last value it was given.
+  final VoidCallback? onFriendsOverscrollEnd;
 
   /// Fired whenever the Anonymous vs Everyone/Friends sub-page (this
   /// screen's own horizontal PageView) changes — MainShell uses this to
@@ -30,14 +71,25 @@ class HomeScreen extends StatefulWidget {
   /// original floating spot; every other page sits lower, Instagram-style).
   final ValueChanged<bool>? onAnonActiveChanged;
 
+  /// Bubbled straight from AnonFeedScreenV2's own onCommentsOpenChanged —
+  /// see that widget's doc for why the tab bar can't just paint over the
+  /// comments sheet on its own.
+  final ValueChanged<bool>? onCommentsOpenChanged;
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _pageController = PageController();
+  // Friends first (explicit request: "first let there be friends feed then
+  // anon feed") — Home now lands on the Everyone/Friends page (index 1) by
+  // default; Dip (0) is still there, one swipe/toggle-tap away. Internal
+  // numbering is unchanged (0 = Dip, 1 = Friends — see homeTabRequest's own
+  // doc), so every existing `_tabIndex == 0` check below still means Dip.
+  late final _pageController =
+      PageController(initialPage: widget.debugInitialTab ?? 1);
   final _notifController = FeedNotifController();
-  int _tabIndex = 0;
+  int _tabIndex = 1;
   // Starts COMPACT, not expanded — a bare "at rest at pixels<=0" check
   // can't tell "just loaded, never scrolled" apart from "scrolled down
   // then explicitly back up to the top", and per _onScrollNotification's
@@ -45,6 +97,12 @@ class _HomeScreenState extends State<HomeScreen> {
   // the second one should — see _hasScrolledPastThreshold below, which
   // gates that re-expand until a real scroll-down has actually happened.
   bool _chromeCollapsed = true;
+
+  /// Combined score of the author of the anon post currently on screen —
+  /// reported up by AnonFeedScreenV2. The header badge used to render the
+  /// VIEWER's own score on every post, which told you nothing about the
+  /// post you were looking at.
+  int _activeAuthorScore = 0;
 
   // Bell + reaction-adder row's own collapse state — deliberately NOT
   // _chromeCollapsed. That flag starts collapsed=true on cold start (see
@@ -55,8 +113,12 @@ class _HomeScreenState extends State<HomeScreen> {
   // the same threshold below.
   bool _bellCollapsed = false;
   bool _hasScrolledPastThreshold = false;
-  bool _cameraTriggered = false;
   String _selectedCommunity = 'All';
+
+  // (no per-drag boolean needed any more — see _onScrollNotification's
+  // horizontal branch, which now recomputes the live overscroll amount
+  // fresh from metrics.pixels/maxScrollExtent on every tick instead of
+  // latching a one-shot flag.)
 
   // Real reserved space for the feed's top inset, replacing the old
   // "just the status bar" constant — measured once, from the header's own
@@ -88,12 +150,48 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.debugInitialTab != null) _tabIndex = widget.debugInitialTab!;
+    // Landing on Friends (the default since 2026-09-30): open with the
+    // header EXPANDED, exactly as switching to Friends does (_switchTab).
+    // It used to start collapsed, and _headerExpandedHeight was only ever
+    // measured on a switch — so a cold start on Friends reserved the
+    // guessed (topPadding + 200) instead, a big empty band above the
+    // first post with no Dip/Friends toggle showing.
+    if (_tabIndex == 1) _chromeCollapsed = false;
     _updateNotifSuppression();
+    // BUG FIX (repeat report — "tab bar again and again overlapping the
+    // peek prompt"): every OTHER _tabIndex change (the toggle-pill tap in
+    // _switchTab, the inner PageView's own onPageChanged) already calls
+    // widget.onAnonActiveChanged — this initial one never did. MainShell's
+    // _isHomeAnonActive starts hardcoded to `true` and this screen's own
+    // _tabIndex starts at 0 (also Anon), so the two usually agree by
+    // coincidence — except when widget.debugInitialTab lands this screen
+    // on Friends (or any future path that changes the initial tab), which
+    // silently left MainShell's flag on its stale default. MainShell then
+    // renders the tab bar at its LOWER, non-Anon position while this
+    // screen is actually showing Anon content underneath it — exactly the
+    // overlap being reported. One authoritative call here, matching
+    // whatever _tabIndex actually resolved to above, closes the gap.
+    //
+    // Deferred to a post-frame callback: this initState runs while
+    // MainShell is still building ITS OWN first frame (HomeScreen is
+    // constructed inside MainShell's own initState, as one of its
+    // _screens) — calling MainShell's setState synchronously from here
+    // hits "setState() or markNeedsBuild() called during build" the
+    // instant this screen mounts. Every other call site (the toggle-pill
+    // tap, the inner PageView's onPageChanged) fires later, well outside
+    // any build phase, which is why only this one needed deferring.
+    homeTabRequest.addListener(_onHomeTabRequested);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onAnonActiveChanged?.call(_tabIndex == 0);
+      if (widget.debugInitialTab != null) _pageController.jumpToPage(widget.debugInitialTab!);
       final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
       if (box != null && box.hasSize && mounted) {
         setState(() => _headerBaselineHeight = box.size.height);
       }
+      // See the Friends-landing note above — measure the real header now
+      // rather than waiting for a tab switch that may never come.
+      if (_tabIndex == 1) _captureExpandedHeightOnce();
     });
   }
 
@@ -110,6 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    homeTabRequest.removeListener(_onHomeTabRequested);
     _pageController.dispose();
     _notifController.dispose();
     super.dispose();
@@ -123,6 +222,13 @@ class _HomeScreenState extends State<HomeScreen> {
   // queued and surfaces once the chrome collapses or the user leaves the tab.
   void _updateNotifSuppression() {
     _notifController.setSuppressed(_tabIndex == 0 && !_chromeCollapsed);
+  }
+
+  void _onHomeTabRequested() {
+    final i = homeTabRequest.value;
+    if (i == null) return;
+    homeTabRequest.value = null;
+    if (mounted) _switchTab(i);
   }
 
   void _switchTab(int index) {
@@ -141,15 +247,23 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openCamera() {
+  void _openCamera([
+    String? answeringPrompt,
+    String? answeringCommunityId,
+    String? answeringPromptId,
+  ]) {
     if (widget.onOpenCamera != null) {
-      widget.onOpenCamera!();
+      widget.onOpenCamera!(answeringPrompt, answeringCommunityId, answeringPromptId);
     } else {
       // Fallback only (widget.onOpenCamera is set by MainShell in the real
       // app, which already accounts for the active tab itself) — kept
       // consistent with that path rather than always defaulting Everyone.
-      Navigator.of(context)
-          .push(openCameraRoute(isAnonymous: _tabIndex == 0));
+      Navigator.of(context).push(openCameraRoute(
+        isAnonymous: _tabIndex == 0,
+        answeringPrompt: answeringPrompt,
+        answeringCommunityId: answeringCommunityId,
+        answeringPromptId: answeringPromptId,
+      ));
     }
   }
 
@@ -164,7 +278,19 @@ class _HomeScreenState extends State<HomeScreen> {
   // horizontal PageView) doesn't trigger this.
   static const double _kCollapseThreshold = 8;
 
-  bool _onScrollNotification(ScrollNotification notification) {
+  /// Multiplier undoing BouncingScrollPhysics' overscroll friction, so the
+  /// Friends→Ping bridge tracks the finger instead of lagging far behind
+  /// it. Empirically the iOS damping leaves roughly a third of the real
+  /// movement at the distances this bridge cares about.
+  static const double _kOverscrollGain = 2.8;
+
+  /// [tab] is the index of the page that OWNS the scrollable this came
+  /// from (see _TabScrollScope). Notifications from the page you're not
+  /// looking at are dropped — the inactive page keeps its scroll position
+  /// and keeps reporting it, which is exactly what used to re-collapse the
+  /// header right after a tab switch expanded it.
+  bool _onScrollNotification(int tab, ScrollNotification notification) {
+    if (tab != _tabIndex) return false;
     if (notification.metrics.axis == Axis.vertical) {
       final pixels = notification.metrics.pixels;
       bool? collapsed;
@@ -196,24 +322,64 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    // Pull-down-to-camera: iOS overscroll (pixels go negative)
-    if (!_cameraTriggered &&
-        notification is ScrollUpdateNotification &&
-        notification.metrics.pixels < -80) {
-      _cameraTriggered = true;
-      _openCamera();
-    }
-    // Pull-down-to-camera: Android overscroll notification
-    if (!_cameraTriggered &&
-        notification is OverscrollNotification &&
-        notification.overscroll > 80) {
-      _cameraTriggered = true;
-      _openCamera();
-    }
-    if (notification is ScrollEndNotification) {
-      _cameraTriggered = false;
-    }
+    // Pull-down-to-camera removed: the camera never opens on its own
+    // (explicit request) — only from the camera button.
+    return false;
+  }
 
+  /// The Friends→Ping boundary bridge — split out from
+  /// [_onScrollNotification] and wired to a NotificationListener wrapping
+  /// the PageView itself, not the per-page _TabScrollScope ones.
+  ///
+  /// BUG FOUND while chasing "swiping from friends feed to ping page isn't
+  /// happening": this bridge logic (onFriendsOverscrollUpdate/End) had been
+  /// dead since the PageView's own outer NotificationListener was removed
+  /// (see the "No NotificationListener around the whole PageView any more"
+  /// comment above, on _TabScrollScope's own fix for a DIFFERENT bug —
+  /// stale vertical notifications from the inactive page). That removal
+  /// was correct for vertical scroll notifications, but it also meant
+  /// nothing was left ABOVE the PageView to see the PageView's OWN
+  /// horizontal drag notifications — a NotificationListener only sees
+  /// notifications bubbling up from ITS OWN descendants, and _TabScrollScope
+  /// sits INSIDE the PageView's children, not around the PageView itself.
+  /// The horizontal branch this method now holds was accordingly
+  /// unreachable at its old call site — every "you're dragging past
+  /// Friends" tick was silently discarded.
+  ///
+  /// Restoring this as its own OUTER listener (rather than re-adding the
+  /// single shared one that caused the original bug) keeps the two fixes
+  /// independent: this only ever looks at Axis.horizontal notifications,
+  /// which a vertical feed's own ListView never produces, so it cannot
+  /// resurrect the stale-vertical-notification bug the removal fixed.
+  bool _onPageViewNotification(ScrollNotification notification) {
+    // depth == 0: only THIS PageView's own drag. A post's photo carousel
+    // (a nested horizontal PageView) bubbles its notifications up here too,
+    // and its overscroll past the last photo was read as "swiping off the
+    // Friends page" — the page jumped to Ping instead of the card moving.
+    // The pager is reversed (Friends left, Dip right), so the page next to
+    // Ping is now DIP (index 0), and swiping past it is an overscroll
+    // below minScrollExtent.
+    if (notification.metrics.axis == Axis.horizontal &&
+        notification.depth == 0 &&
+        _tabIndex == 0) {
+      if (notification is OverscrollNotification ||
+          notification is ScrollUpdateNotification) {
+        final over = notification.metrics.minScrollExtent -
+            notification.metrics.pixels;
+        // Un-damped before it's reported. BouncingScrollPhysics applies
+        // heavy friction past the edge, so `over` is a small fraction of
+        // how far the finger actually travelled — the outer Ping page
+        // crawled while the finger moved, and reaching the commit
+        // threshold took an unreasonable drag. Reported as "swiping from
+        // friends to ping is difficult". _kOverscrollGain restores roughly
+        // 1:1 finger tracking.
+        widget.onFriendsOverscrollUpdate
+            ?.call(over > 0 ? over * _kOverscrollGain : 0);
+      }
+      if (notification is ScrollEndNotification) {
+        widget.onFriendsOverscrollEnd?.call();
+      }
+    }
     return false;
   }
 
@@ -236,10 +402,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final topPadding = MediaQuery.of(context).padding.top;
 
     return Scaffold(
-      // Anonymous = white, Friends = black (confirmed inversion) — see
-      // _SlimHeader/_FeedToggle for how the always-visible top chrome
-      // (shared across both tabs) adapts to whichever is currently active.
-      backgroundColor: _tabIndex == 0 ? Colors.white : AppColors.background,
+      // Always black now — the old "Anonymous = white" backdrop is stale:
+      // AnonFeedScreenV2 (the current Anon page) already paints its own
+      // solid dark ColoredBox(AnonFeedColors.screenBg) over the full
+      // screen, so this Scaffold-level color was never actually visible
+      // except during a PageView drag — _tabIndex only updates on
+      // onPageChanged (page-settle), so mid-swipe this backdrop lagged a
+      // frame behind and the white flashed through at the page edges.
+      backgroundColor: AppColors.background,
       // Stack, not Column: the header (toggle + prompt composer + viewer-
       // activity toast) used to be laid out ABOVE the feed in a Column,
       // which meant the feed's available height shrank and grew as that
@@ -264,10 +434,37 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Stack(
         children: [
           Positioned.fill(
+            // No NotificationListener around the whole PageView any more.
+            // Both pages stay alive across a horizontal swipe, so a single
+            // listener here couldn't tell WHICH page a vertical scroll
+            // notification came from: a scrolled-down Anon feed kept
+            // emitting its own offset after you swiped to Friends, which
+            // re-collapsed the chrome (and with it the Anon/Friends pill)
+            // a frame after onPageChanged had just expanded it — the
+            // reported "Friends pill isn't visible when I scroll anon then
+            // swipe over". Each page now reports under its own index and
+            // _onScrollNotification ignores whichever one isn't active.
+            //
+            // This OUTER listener is back, but scoped to the PageView's own
+            // horizontal notifications only (see _onPageViewNotification's
+            // own doc) — the Friends→Ping bridge needs an ancestor of the
+            // PageView to see its scroll events at all, which nothing was
+            // providing after the listener above was removed.
             child: NotificationListener<ScrollNotification>(
-              onNotification: _onScrollNotification,
+              onNotification: _onPageViewNotification,
               child: PageView(
                 controller: _pageController,
+                // Explicit request: "even a slight swipe shall move the
+                // page." Stock PageScrollPhysics only commits the turn
+                // past the halfway point, or on a release velocity above
+                // its own tolerance — a short, slow drag springs back,
+                // which read as the swipe being ignored.
+                physics: const _SlightSwipePageScrollPhysics(),
+                // Friends first, then Dip: reversed lays page 1 (Friends)
+                // out on the LEFT and page 0 (Dip) on the right, so the
+                // swipe order is Friends → Dip → Ping. Indices are
+                // unchanged (0 = Dip, 1 = Friends) everywhere else.
+                reverse: true,
                 onPageChanged: (i) {
                   setState(() {
                     _tabIndex = i;
@@ -278,30 +475,142 @@ class _HomeScreenState extends State<HomeScreen> {
                   widget.onAnonActiveChanged?.call(i == 0);
                 },
                 children: [
-                  AnonymousTab(
-                    selectedCommunity: _selectedCommunity,
-                    onNotify: _notifController.push,
-                    // Falls back to a hand-estimated baseline (status bar +
-                    // bell row + compact prompt composer, the header's
-                    // smallest/always-present form) for the handful of
-                    // frames before _headerBaselineHeight's real measurement
-                    // lands — see initState.
-                    topInset: _headerBaselineHeight ?? (topPadding + 96),
+                  // _headerBaselineHeight is null for exactly the first
+                  // frame (it's set from initState's addPostFrameCallback,
+                  // one frame after this first builds) — landing directly
+                  // on this tab used to paint that ENTIRE first frame with
+                  // the hand-estimated (topPadding + 96) fallback instead of
+                  // the real measured height. Since this is a single fixed-
+                  // height page, a wrong topInset shifts its bottom peek/
+                  // prompt block down under the tab bar for that one frame
+                  // — imperceptible as a layout value, but the reported
+                  // symptom ("tab bar covers the peeking prompt on cold
+                  // landing, fixed after navigating away and back") is
+                  // exactly that one wrong frame catching a screenshot/
+                  // glance before the very next frame silently corrects it.
+                  // A same-color placeholder for that single frame (instead
+                  // of ever painting the feed with a guessed inset) removes
+                  // the bad frame entirely rather than trying to guess it
+                  // more accurately.
+                  if (_headerBaselineHeight == null)
+                    const ColoredBox(color: AnonFeedColors.screenBg)
+                  else
+                    _TabScrollScope(
+                      tab: 0,
+                      onNotification: _onScrollNotification,
+                      child: AnonFeedScreenV2(
+                      topInset: _headerBaselineHeight!,
+                      // Wires this screen's own "Friends" toggle chip to the
+                      // SAME real tab-switch mechanism _SlimHeader's
+                      // _FeedToggle used to drive for both tabs — see
+                      // _switchTab's own doc. _SlimHeader no longer renders
+                      // its own toggle on the Anon tab (activeTab == 0); this
+                      // screen's header owns that role now.
+                      onSwitchToFriends: () => _switchTab(1),
+                      onCommentsOpenChanged: widget.onCommentsOpenChanged,
+                      // Same entry point as _SlimHeader's own "Respond"
+                      // action below (onRespondTap: _openCamera) — the
+                      // prompt bar is just another way in.
+                      onOpenCamera: _openCamera,
+                      onActiveAuthorScoreChanged: (score) {
+                        if (score != _activeAuthorScore) {
+                          setState(() => _activeAuthorScore = score);
+                        }
+                      },
+                    ),
                   ),
-                  EveryoneFeedScreen(
+                  _TabScrollScope(
+                    tab: 1,
+                    onNotification: _onScrollNotification,
+                    child: EveryoneFeedScreen(
                     chromeCollapsed: _chromeCollapsed,
                     // Unlike AnonymousTab (frozen compact baseline only —
                     // see that call site's own doc), this reserves whichever
-                    // of the header's two settled heights currently applies,
+                    // of the header's settled heights currently applies,
                     // since _switchTab/onPageChanged always land here with
                     // the header EXPANDED — a frozen compact-only inset
                     // under-reserves and lets the header cover
                     // WallPreviewStrip. See _headerExpandedHeight's doc.
-                    topInset: _chromeCollapsed
-                        ? (_headerBaselineHeight ?? (topPadding + 96))
-                        : (_headerExpandedHeight ?? (topPadding + 200)),
+                    //
+                    // THREE states now, not two — _chromeCollapsed==true
+                    // used to map straight to _headerBaselineHeight (the
+                    // bell/plus row's own height, measured at cold start
+                    // when bellCollapsed is still false) regardless of
+                    // scroll position, which meant that once a real scroll
+                    // pushed _bellCollapsed true too (same 8px threshold,
+                    // _onScrollNotification), the bell row had already
+                    // hidden itself but this reservation never shrank to
+                    // match — a permanent dead gap at the true top of the
+                    // screen no amount of scrolling could fill. Added the
+                    // _bellCollapsed branch so once BOTH flags are true
+                    // (the real "scrolled past threshold" state — they
+                    // always flip together past initial cold load, see
+                    // _onScrollNotification), the reservation shrinks to
+                    // just the safe-area inset instead of staying frozen
+                    // at the bell row's height.
+                    // CONSTANT now — always the expanded header's height.
+                    // Switching between three values as the chrome
+                    // collapsed made the feed's own top padding shrink
+                    // mid-scroll, sliding every post ~150px under the
+                    // finger ("glitching, fluctuating"). The header
+                    // collapses OVER the content instead, and since it
+                    // re-expands only at the very top — exactly where this
+                    // full inset is visible — nothing is ever covered.
+                    topInset: _headerExpandedHeight ?? (topPadding + 200),
+                    // The "Friends" toggle switches to the real friends
+                    // feed (accepted friends OR shared community-audience,
+                    // deduped) rather than the everyone/explore feed this
+                    // screen renders by default.
+                    audience: FeedAudience.friends,
+                    ),
                   ),
                 ],
+              ),
+            ),
+          ),
+          // ── Status-bar scrim ────────────────────────────────────────
+          // The feed fills the whole body and the header floats over it
+          // (see the Stack note above), so once you scroll, post content
+          // travels up THROUGH the status-bar band. With nothing painted
+          // there it showed raw card innards — a post's comment composer
+          // and the next post's header, clipped into a black strip above
+          // the Friends pill. That is the "black strip".
+          //
+          // The header itself deliberately has no backdrop ("the
+          // self-contained circle treatment reads fine floating over
+          // either sub-tab's background") and that is still true for the
+          // circles; what was missing is cover for the band ABOVE them,
+          // which is exactly the height the OS draws its clock into.
+          //
+          // A fade rather than a hard bar: an opaque block would read as a
+          // second app bar and reintroduce the dead gap the topInset
+          // comment above describes fixing. Ignores pointers so it can
+          // never eat a tap meant for the feed or the bell row.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            // Softened: it was SOLID for the top 62% of the band, which read
+            // as a black bar cut across whatever photo was scrolling under
+            // the clock ("why is black there"). Now a see-through fade —
+            // 55% at the very top, clear by the bottom, over a slightly
+            // taller band — so content visibly flows up under the status
+            // bar while the clock stays legible.
+            height: topPadding + 24,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      AppColors.background.withValues(alpha: 0.55),
+                      AppColors.background.withValues(alpha: 0.25),
+                      AppColors.background.withValues(alpha: 0),
+                    ],
+                    stops: const [0, 0.5, 1],
+                  ),
+                ),
               ),
             ),
           ),
@@ -316,8 +625,11 @@ class _HomeScreenState extends State<HomeScreen> {
               onTabSwitch: _switchTab,
               collapsed: _chromeCollapsed,
               bellCollapsed: _bellCollapsed,
+              authorScore: _activeAuthorScore,
               selectedCommunity: _selectedCommunity,
               onCommunityChanged: (c) => setState(() => _selectedCommunity = c),
+              // Responding to the daily prompt carries that prompt into
+              // the composer as the post's peek-bar heading.
               onRespondTap: _openCamera,
               notifController: _notifController,
             ),
@@ -414,6 +726,7 @@ class _SlimHeader extends StatefulWidget {
     required this.onTabSwitch,
     required this.collapsed,
     required this.bellCollapsed,
+    this.authorScore = 0,
     required this.selectedCommunity,
     required this.onCommunityChanged,
     required this.onRespondTap,
@@ -441,9 +754,23 @@ class _SlimHeader extends StatefulWidget {
   /// at the complete top including the very first frame; hidden once
   /// scrolled past the same threshold.
   final bool bellCollapsed;
+
+  /// Combined score of the author of the anon post on screen. 0 renders
+  /// nothing — see the badge's own guard.
+  final int authorScore;
   final String selectedCommunity;
   final ValueChanged<String> onCommunityChanged;
-  final VoidCallback onRespondTap;
+  /// Called with the prompt being answered — text, community id, prompt
+  /// id — the header owns all three (_SlimHeaderState._promptBar), so it
+  /// hands them over rather than making HomeScreen reach into another
+  /// widget's state for them. Same 3-argument shape
+  /// AnonFeedScreenV2.onOpenCamera already uses, so both feeds' prompt
+  /// bars feed the same camera entry point identically.
+  final void Function([
+    String? answeringPrompt,
+    String? answeringCommunityId,
+    String? answeringPromptId,
+  ]) onRespondTap;
 
   /// Hosts the merged viewer-activity toast (FeedNotifHost) — pulled in
   /// here (rather than a HomeScreen-level Column sibling, as before) so the
@@ -467,7 +794,45 @@ class _SlimHeaderState extends State<_SlimHeader>
   late final Animation<double> _liveAnim;
   Timer? _liveTimer;
 
-  static const _dailyPrompt = "What's something you've never told anyone here?";
+  /// The FRIENDS feed's prompt bar.
+  ///
+  /// Was a hardcoded constant — one sentence, identical for every user,
+  /// every community and every hour of the day. That is why the seeded
+  /// library "wasn't showing up in the prompt bar": nothing on this screen
+  /// ever asked the server for a prompt. Only the anon feed was wired.
+  ///
+  /// Now scored server-side per window (prompt_bar_for_user, feed scope
+  /// 'everyone') via the SAME PromptBarController the anon feed uses — one
+  /// cycling/impression/response-count implementation, not two that could
+  /// drift. The fallback below is kept as the offline/failed-fetch text so
+  /// the bar is never blank.
+  static const _fallbackPrompt =
+      "What's something you've never told anyone here?";
+
+  late final PromptBarController _promptBar;
+
+  /// What the bar renders. Server prompt (whichever the 5s cycle has
+  /// reached) when there is one, the constant otherwise.
+  String get _dailyPrompt => _promptBar.active?.text ?? _fallbackPrompt;
+
+  void _onPromptBarChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Passes the prompt actually on screen — text, community id, prompt id
+  /// — to whichever camera entry point is answering it, same as the anon
+  /// feed's own _AnonHeader does. Without the id/communityId, a tap here
+  /// would post with no `prompt_id`, and the resulting post's response
+  /// would never attach to (or count toward) the specific prompt the
+  /// person was actually shown.
+  void _respond() {
+    final active = _promptBar.active;
+    widget.onRespondTap(
+      _dailyPrompt,
+      active != null && active.communityId.isNotEmpty ? active.communityId : null,
+      active != null && active.id.isNotEmpty ? active.id : null,
+    );
+  }
 
   @override
   void initState() {
@@ -477,11 +842,19 @@ class _SlimHeaderState extends State<_SlimHeader>
       duration: const Duration(milliseconds: 900),
     );
     _liveAnim = CurvedAnimation(parent: _liveCtrl, curve: Curves.easeInOut);
+    _promptBar = PromptBarController(feedScope: 'everyone')
+      ..addListener(_onPromptBarChanged);
+    unawaited(_promptBar.load());
     _fireLivePulse();
     _liveTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) => _fireLivePulse(),
     );
+    // Real Anon Score badge (below, Row for activeTab==0) needs a fresh
+    // fetch whenever the Anon tab is actually being looked at — cheapest
+    // real-data approach without a live subscription, matching how the
+    // Ping page's own score refetches on load rather than streaming.
+    if (widget.activeTab == 0) ViewerScoreService.instance.refresh();
   }
 
   void _fireLivePulse() {
@@ -490,16 +863,21 @@ class _SlimHeaderState extends State<_SlimHeader>
     });
   }
 
-  void _openNotifications() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
-    );
+  @override
+  void didUpdateWidget(_SlimHeader old) {
+    super.didUpdateWidget(old);
+    if (widget.activeTab == 0 && old.activeTab != 0) {
+      ViewerScoreService.instance.refresh();
+    }
   }
 
   @override
   void dispose() {
     _liveCtrl.dispose();
     _liveTimer?.cancel();
+    _promptBar
+      ..removeListener(_onPromptBarChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -529,13 +907,59 @@ class _SlimHeaderState extends State<_SlimHeader>
             _CollapsibleChrome(
               collapsed: widget.bellCollapsed,
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                // Reduced from 10 — real, non-negative space (not a paint
+                // transform or a negative-inset hack, both of which broke
+                // badly here: Transform.translate got clipped by
+                // _CollapsibleChrome's own internal ClipRect below, and
+                // negative EdgeInsets crash outright via Padding's
+                // isNonNegative assertion). This recovers part of the gap
+                // toward Anon's original tighter spacing safely; closing
+                // the rest precisely would need restructuring this and the
+                // toggle block into a Stack+Positioned pair, which risks
+                // breaking the toggle block's own collapse-to-zero scroll
+                // animation (it currently sizes that Stack via its own
+                // real, unpositioned height) — not attempted here.
+                padding: const EdgeInsets.only(bottom: 2),
                 child: Row(
                   children: [
-                    _HeaderBellButton(onTap: _openNotifications),
+                    // Swapped with MyProfileScreen's own banner (explicit
+                    // request): "viewed by / pinned" now lives on the feed
+                    // page, and notifications moved to Profile instead —
+                    // see MyProfileScreen's own chrome list for the bell's
+                    // new home. Self-contained, same drop-in the profile
+                    // banner already used it as (own count fetch, own
+                    // bottom-sheet) — no extra wiring needed here.
+                    // Friends feed: "+" to post (Duo / Group chooser) in
+                    // place of the viewed-by eye — explicit request,
+                    // 2026-10-01; the "+" left the profile banner for this,
+                    // and the eye still lives on the profile banner. The
+                    // Dip (anon) tab keeps the eye.
+                    // "+" on BOTH tabs now (explicit request, 2026-10-01 —
+                    // anon too); the viewed-by eye lives on the profile.
+                    GestureDetector(
+                        onTap: () => openCreateChooser(context),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFF0B1418),
+                            border: Border.all(
+                              // No glow: the header clips it into a square.
+                              color: const Color(0xFF29D3E8),
+                              width: 1.4,
+                            ),
+                          ),
+                          child: PV2Icons.plus(18, const Color(0xFF29D3E8)),
+                        ),
+                      ),
                     const Spacer(),
                     ReactionLibraryButton(
-                      size: 36,
+                      // 36 -> 40, matching ViewedByBannerButton's ChromeButton
+                      // on the other end of this row. They read as a pair and
+                      // were visibly different sizes.
+                      size: 40,
                       onTap: () => openReactionLibrary(
                         context,
                         // Was hardcoded false (always Anonymous scope) —
@@ -568,8 +992,24 @@ class _SlimHeaderState extends State<_SlimHeader>
               // natural position regardless of the sibling's collapsed size.
               clipBehavior: Clip.none,
               children: [
+                // Now ALWAYS mounted (both tabs) — the toggle pill inside
+                // must be a single persistent instance so it survives a
+                // tab switch instead of being destroyed/recreated (that's
+                // what makes a real slide transition possible). Previously
+                // this whole block was gated to Friends only, for a real,
+                // separate reason: widget.collapsed reads scroll
+                // notifications bubbling up from AnonFeedScreenV2's
+                // PageView (paged, not continuous), whose `pixels` don't
+                // mean what this collapse math expects — feeding that
+                // straight in produced a bogus mid-collapse heightFactor
+                // and a stray white flash while swiping between POSTS on
+                // the Anon tab. Fixed at the source instead of by removing
+                // the widget: force collapsed:false whenever the Anon tab
+                // is active (this block was always fully visible there
+                // anyway — Anon never had its own scroll-collapse behavior
+                // for the pill), so the buggy signal never reaches it.
                 _CollapsibleChrome(
-                  collapsed: widget.collapsed,
+                  collapsed: widget.activeTab == 0 ? false : widget.collapsed,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
@@ -588,10 +1028,59 @@ class _SlimHeaderState extends State<_SlimHeader>
                       // shapes and the switcher pill's edges. Matches
                       // Scaffold's own white/dark split so it's invisible in
                       // the non-buggy case.
-                      ColoredBox(
-                        color: widget.activeTab == 0
-                            ? Colors.white
-                            : AppColors.background,
+                      //
+                      // Always AppColors.background now, even on the Anon
+                      // tab: this block's toggle is gated to `activeTab !=
+                      // 0` (AnonFeedScreenV2 renders its own toggle instead
+                      // — see that gating below), so on the Anon tab this
+                      // ColoredBox backs an empty/near-zero-height child.
+                      // The old `Colors.white` branch was sized to match
+                      // AnonymousTab's white page background, which no
+                      // longer applies — AnonFeedScreenV2 is dark — and was
+                      // showing through as a stray white bar above its
+                      // header.
+                      // BUG FIX (explicit report, with a screenshot of the
+                      // Friends tab): a flat ColoredBox has a hard-edged
+                      // bottom, and that edge sat flush against the feed
+                      // scrolling underneath it — visible as a distinct
+                      // horizontal black strip right along the toggle pill.
+                      // Can't just fade the whole block: the pill itself
+                      // still needs a fully OPAQUE backing directly behind
+                      // it (that's this box's original purpose — see the
+                      // doc below on why a transparent gap here shows the
+                      // feed straight through the pill/logo shapes). So the
+                      // gradient stays solid through 85% of the height
+                      // (comfortably past the pill, which sits well within
+                      // that span) and only fades over the final 15% — the
+                      // trailing SizedBox gap below the pill, which never
+                      // had real content needing a backing anyway.
+                      // BUG FIX ("why is there a line below the Friends
+                      // pill, blend it" — screenshot showed a thin but
+                      // still-visible seam): the original two-stop fade
+                      // (opaque -> transparent, in one straight ramp over
+                      // the final 15%) is a linear ALPHA ramp, but human
+                      // contrast perception isn't linear — the first
+                      // portion of any straight fade reads as a comparatively
+                      // sharp edge even though the math is smooth. Same
+                      // total space (still solid through 85%, still fully
+                      // gone by 100%, the pill's own backing is untouched),
+                      // just an added mid-stop at 70% opacity so the curve
+                      // eases in before dropping the rest of the way,
+                      // rather than starting the drop at full contrast.
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              AppColors.background,
+                              AppColors.background,
+                              AppColors.background.withValues(alpha: 0.7),
+                              Colors.transparent,
+                            ],
+                            stops: const [0, 0.85, 0.93, 1],
+                          ),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           mainAxisSize: MainAxisSize.min,
@@ -610,125 +1099,118 @@ class _SlimHeaderState extends State<_SlimHeader>
                             // visibility rule (hidden on landing, pops in
                             // once scrolling starts) independent of this
                             // row's own scroll-collapse behavior.
-                            SizedBox(
-                              height: 36,
+                            //
+                            // SINGLE persistent instance now (both tabs) —
+                            // _SlimHeader sits in the shell's own Stack
+                            // ABOVE the PageView (home_screen.dart's own
+                            // Positioned, not per-page content), so this
+                            // widget is never destroyed/recreated when
+                            // swiping between Anon and Friends. Previously
+                            // duplicated (a second copy lived in
+                            // AnonFeedScreenV2's own _AnonHeader) — that
+                            // copy is now just a same-height SizedBox
+                            // spacer (see _AnonHeader's own doc), so this
+                            // is the ONLY place AnonFriendsTogglePill is
+                            // built. Fixes two real bugs the duplication
+                            // caused: the pill hard-jumping instead of
+                            // sliding on switch (AnimatedSwitcher was
+                            // cross-fading between two separate widget
+                            // instances, not morphing one), and the two
+                            // copies drifting to different vertical
+                            // positions (each computed its own offset via
+                            // a different, independently hand-tuned
+                            // formula).
+                            // Extra top padding when widget.bellCollapsed —
+                            // that's exactly when _AnonHeaderRankBadge
+                            // ("230 PROMINENT") takes over the bell's old
+                            // top-left corner (see that Positioned's own
+                            // doc, a few lines below in this same Stack).
+                            // FIXED 36 (not *scale) — the badge's own
+                            // height is a literal, unscaled 26 (see
+                            // _AnonHeaderRankBadge's Container), so a
+                            // scaled offset (previously 24*scale, ~14px on
+                            // this device) could land smaller than the
+                            // badge itself and still fail to clear it.
+                            // Confirmed via screenshot+pixel measurement:
+                            // the two were STILL overlapping — badge and
+                            // pill sat on the same row, colliding
+                            // horizontally (badge's right edge crossed 31px
+                            // into the pill's own left edge), not just
+                            // vertically close. 36 = 26 (badge height) + 10
+                            // gap, comfortably pushes the pill to a
+                            // separate row below the badge so the
+                            // horizontal collision no longer matters.
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(40 * anonScale(context), widget.bellCollapsed ? 36.0 : 0, 40 * anonScale(context), 0),
                               child: Center(
-                                child: _FeedToggle(
+                                child: AnonFriendsTogglePill(
+                                  scale: anonScale(context),
                                   activeIndex: widget.activeTab,
                                   onToggle: widget.onTabSwitch,
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            // 14 -> 6 — reduces the gap between the pill
+                            // and the first post card below it (Friends
+                            // tab) / prompt bar (Anon tab), per explicit
+                            // request that it read as too much empty space.
+                            SizedBox(height: 6 * anonScale(context)),
                           ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                // Anon score badge — Anon tab ONLY (it's specifically the
-                // viewer's anon-feed score/reputation, not a Friends-feed
-                // concept — showing it while on Friends would be
-                // contextually wrong even though nothing here previously
-                // gated it). Hidden on landing (not shown until the user
-                // has scrolled at least a little), then pops in once
-                // scrolling starts. Independent of the identity row/toggle
-                // above (which follows its own, different collapse rule) —
-                // driven by bellCollapsed instead, since that's already a
-                // plain "pixels > threshold" readout with no cold-start
-                // special-casing, just inverted (bell hides on scroll,
-                // score should show on scroll).
+                // Anon score/rank — Anon tab ONLY. Hidden on landing, pops
+                // in once scrolling starts (bellCollapsed inverted: the
+                // bell itself hides on scroll, per Row 0's own
+                // _CollapsibleChrome above, so this takes over the exact
+                // same top-left corner the bell just vacated — no overlap,
+                // it's a handoff between two things that are never both
+                // visible at once).
                 if (widget.activeTab == 0)
                   Positioned(
                     top: 0,
-                    right: 0,
+                    left: 0,
                     child: _CollapsibleChrome(
                       collapsed: !widget.bellCollapsed,
-                      child: ValueListenableBuilder<int>(
-                        valueListenable: ViewerScoreService.instance.score,
-                        builder: (context, score, _) =>
-                            _HeaderScoreBadge(score: score),
-                      ),
+                      // The POST AUTHOR's score, not the viewer's. This was
+                      // a ValueListenableBuilder on ViewerScoreService — so
+                      // every post in the feed wore the same number, your
+                      // own. Hidden entirely at 0 (no bare zero, and a
+                      // just-loaded feed has no author yet).
+                      //
+                      // On the ANON feed this is now always 0 by design:
+                      // posts_feed NULLs author_total_score for anonymous
+                      // rows because an exact score de-anonymized the
+                      // author (see AnonFeedPost.authorScore's own doc and
+                      // 20260921030000_posts_feed_anon_score_fingerprint).
+                      // So this branch is what deliberately removes the
+                      // badge there — it is not a missing feature.
+                      child: widget.authorScore <= 0
+                          ? const SizedBox.shrink()
+                          : _AnonHeaderRankBadge(score: widget.authorScore),
                     ),
                   ),
               ],
             ),
-            if (widget.activeTab == 0)
-              // Prompt composer + viewer-activity toast — pinned, always
-              // visible regardless of scroll (unlike the tab switcher/
-              // identity row/pills above, which fully hide), but the
-              // composer SHRINKS into a genuinely smaller compact form once
-              // the feed has scrolled (widget.collapsed), rather than
-              // staying full-width/full-height the whole time. `collapsed`
-              // is already a plain bool (set from scroll position, see
-              // HomeScreen's _onScrollNotification) rather than a continuous
-              // scroll offset, so a binary target animated over the same
-              // duration as the rest of this collapsible chrome reads as
-              // "tied to scroll" without needing its own scroll listener.
-              //
-              // Two things shrink together, both driven by `collapsed`:
-              //  1. Width — via the LayoutBuilder/AnimatedContainer below.
-              //  2. The composer's CONTENT ITSELF — via AnimatedCrossFade
-              //     in _buildFullComposer swapping in a deliberately
-              //     smaller/simpler layout (single-line truncated prompt,
-              //     no +vibe/community chips, tighter padding), not the
-              //     same content squeezed into less space. AnimatedCrossFade
-              //     animates the height change for us, so the container's
-              //     size genuinely reduces and reclaims vertical space for
-              //     the feed — this is NOT text reflowing inside a
-              //     same-size box.
-              //
-              // LayoutBuilder measures the available (stretched) width
-              // first — Align alone can't do this shrink, since the parent
-              // Column's crossAxisAlignment.stretch hands every child a
-              // TIGHT width, and Align only loosens the constraints it
-              // passes to ITS child, it doesn't renegotiate what it itself
-              // is given. AnimatedContainer's explicit `width` then only
-              // takes effect because it's sitting inside that loosened
-              // Align, not directly under the stretch-tight Column.
-              ColoredBox(
-                color: Colors.white,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 2), // moved up from 6
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final fullWidth = constraints.maxWidth;
-                        return Align(
-                          alignment: Alignment.center,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 220),
-                            curve: Curves.easeOutCubic,
-                            width: widget.collapsed
-                                ? fullWidth * 0.72
-                                : fullWidth,
-                            child: GestureDetector(
-                              onTap: widget.onRespondTap,
-                              child: _buildFullComposer(),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-
-                    // Viewer-activity toast — collapses in lockstep with the
-                    // tab switcher/identity row/pills above (same
-                    // `collapsed` bool).
-                    _CollapsibleChrome(
-                      collapsed: widget.collapsed,
-                      child: FeedNotifHost(controller: widget.notifController),
-                    ),
-                  ],
-                ),
-              ),
+            // The old prompt composer + viewer-activity toast block that
+            // used to render here (Anon tab only) is removed — superseded
+            // by AnonFeedScreenV2's own §4.2 prompt bar, which is now the
+            // real one. The viewer-activity toast (FeedNotifHost) that
+            // lived alongside it has no replacement yet — a known,
+            // explicitly-flagged gap (see AnonFeedScreenV2's own doc on
+            // widget.onSwitchToFriends and the earlier decision to proceed
+            // without it for now).
           ],
         ),
       ),
     );
   }
 
+  // Retained for a future expanded-composer surface; nothing builds it
+  // today. See this file's own history — deliberately not deleted.
+  // ignore: unused_element
   Widget _buildFullComposer() {
     return AnimatedBuilder(
       animation: _liveAnim,
@@ -831,7 +1313,7 @@ class _SlimHeaderState extends State<_SlimHeader>
                   children: [
                     const Spacer(),
                     GestureDetector(
-                      onTap: widget.onRespondTap,
+                      onTap: _respond,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 14,
@@ -928,7 +1410,7 @@ class _SlimHeaderState extends State<_SlimHeader>
                 ),
                 const SizedBox(width: 8),
                 GestureDetector(
-                  onTap: widget.onRespondTap,
+                  onTap: _respond,
                   child: Container(
                     padding: const EdgeInsets.all(5),
                     decoration: const BoxDecoration(
@@ -958,222 +1440,55 @@ class _SlimHeaderState extends State<_SlimHeader>
 // from the MainShell originals.
 // ---------------------------------------------------------------------------
 
-class _HeaderBellButton extends StatelessWidget {
-  const _HeaderBellButton({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final totalUnread = notifState.totalUnread;
-    return GestureDetector(
-      onTap: onTap,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A1A20).withValues(alpha: 0.92),
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.border),
-            ),
-            child: const Icon(
-              Icons.notifications_outlined,
-              size: 18,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          if (totalUnread > 0)
-            Positioned(
-              right: -2,
-              top: -2,
-              child: Container(
-                width: 16,
-                height: 16,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.background, width: 1.5),
-                ),
-                child: Center(
-                  child: Text(
-                    totalUnread > 9 ? '9+' : '$totalUnread',
-                    style: const TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.onPrimary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderScoreBadge extends StatelessWidget {
-  const _HeaderScoreBadge({required this.score});
+// Anon tab's own rank/score badge, restyled to match AnonFeedScreenV2's
+// design language (spec §2's palette/type tokens) instead of the generic
+// dark-chip look the rest of this file's chrome uses — same
+// peekBg/hairline/star treatment as the peek panel's own "★ 512 TRUSTED"
+// row (anon_feed_screen.dart's _AnonBottomBlock), since this badge shows
+// the same kind of score+tier information for the SAME feed.
+class _AnonHeaderRankBadge extends StatelessWidget {
+  const _AnonHeaderRankBadge({required this.score});
   final int score;
 
   @override
   Widget build(BuildContext context) {
     final info = tierInfoForScore(score);
+    // Smaller than the first pass (explicit request) — this sits right in
+    // the bell's own corner, not inside the feed body, so it doesn't need
+    // the peek panel's more legible sizing.
     return Container(
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A20).withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
+        color: AnonFeedColors.peekBg,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: AnonFeedColors.hairlineStrong),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.star_rounded, size: 14, color: info.color),
-          const SizedBox(width: 5),
+          Icon(Icons.star_rounded, size: 11, color: AnonFeedColors.accentCyan),
+          const SizedBox(width: 4),
           Text(
             '$score',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: info.color,
-            ),
+            style: const TextStyle(fontFamily: 'Manrope', fontSize: 11, fontWeight: FontWeight.w800, color: AnonFeedColors.textPeek),
           ),
-          // Tier name tag (e.g. "legend") — TierBadge already existed in
-          // score_tier.dart but was never actually wired into this header
-          // badge, so the badge only ever showed the bare number.
-          const SizedBox(width: 6),
-          TierBadge(score: score),
+          const SizedBox(width: 4),
+          Text(
+            info.title.toUpperCase(),
+            style: const TextStyle(fontFamily: 'Manrope', fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AnonFeedColors.textDim),
+          ),
         ],
       ),
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Feed toggle
-// ---------------------------------------------------------------------------
-
-class _FeedToggle extends StatelessWidget {
-  const _FeedToggle({required this.activeIndex, required this.onToggle});
-
-  final int activeIndex;
-  final ValueChanged<int> onToggle;
-
-  static const _labels = ['Anon', 'Friends'];
-  static const _width = 152.0;
-  static const _height = 34.0;
-
-  @override
-  Widget build(BuildContext context) {
-    // This toggle is the one piece of chrome always visible regardless of
-    // which tab is active, so — unlike everything else in _SlimHeader,
-    // which only ever renders against ONE fixed background — it has to
-    // read against whichever page background is CURRENTLY showing through
-    // it (white behind Anon, black behind Friends).
-    final isLight = activeIndex == 0;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(17),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-        child: Container(
-          width: _width,
-          height: _height,
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: isLight
-                ? Colors.black.withValues(alpha: 0.06)
-                : Colors.white.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(
-              color: isLight
-                  ? Colors.black.withValues(alpha: 0.12)
-                  : Colors.white.withValues(alpha: 0.18),
-            ),
-          ),
-          // BeReal-style pill: a single sliding highlight behind two fixed
-          // label slots, rather than each chip independently cross-fading
-          // its own fill (the old _ToggleChip approach) — this is what
-          // actually reads as "sliding transition between states" instead
-          // of two chips blinking in place. LayoutBuilder measures the
-          // REAL available width rather than hand-computing it from _width
-          // minus padding/border — Container's border insets eat a couple
-          // more px than the explicit padding alone accounts for, which a
-          // hardcoded guess silently overflowed by.
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final chipWidth = constraints.maxWidth / 2;
-              return Stack(
-                children: [
-                  AnimatedAlign(
-                    duration: const Duration(milliseconds: 260),
-                    curve: Curves.easeOutCubic,
-                    alignment: activeIndex == 0
-                        ? Alignment.centerLeft
-                        : Alignment.centerRight,
-                    child: Container(
-                      width: chipWidth,
-                      height: double.infinity,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE1306C).withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(
-                              0xFFE1306C,
-                            ).withValues(alpha: 0.45),
-                            blurRadius: 14,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Row(
-                    children: List.generate(2, (i) {
-                      final active = activeIndex == i;
-                      return SizedBox(
-                        width: chipWidth,
-                        height: double.infinity,
-                        child: GestureDetector(
-                          onTap: () => onToggle(i),
-                          behavior: HitTestBehavior.opaque,
-                          child: Center(
-                            child: AnimatedDefaultTextStyle(
-                              duration: const Duration(milliseconds: 180),
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: active
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                                // The active label sits on the pink pill
-                                // (high-contrast regardless of page
-                                // background) — only the inactive label's
-                                // color needs to flip per background.
-                                color: active
-                                    ? Colors.white
-                                    : (isLight ? Colors.black : Colors.white)
-                                          .withValues(alpha: 0.55),
-                              ),
-                              child: Text(_labels[i]),
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-}
+// Feed toggle — removed. The old pink BeReal-style sliding pill
+// (_FeedToggle) has been replaced by AnonFriendsTogglePill
+// (anon_feed_v2/anon_feed_screen.dart), the SAME pill AnonFeedScreenV2
+// renders on its own side, per explicit request that both tabs show one
+// identical toggle rather than two separately-designed ones.
 
 // ---------------------------------------------------------------------------
 // App wordmark — stylized lowercase "i": a solid dot sitting on thin
@@ -1183,6 +1498,9 @@ class _FeedToggle extends StatelessWidget {
 // no font asset.
 // ---------------------------------------------------------------------------
 
+// Kept for the wordmark that is intentionally omitted from the header for
+// now (see the header's own comment). Unreferenced until it returns.
+// ignore: unused_element
 class _AppLogoMark extends StatelessWidget {
   const _AppLogoMark();
 
@@ -1297,4 +1615,57 @@ class _DashedBorderPainter extends CustomPainter {
       old.radius != radius ||
       old.dashWidth != dashWidth ||
       old.dashGap != dashGap;
+}
+
+
+// ---------------------------------------------------------------------------
+// Tags every vertical scroll notification with the index of the page it
+// came from, so HomeScreen can ignore the page that isn't on screen.
+// Returns false so the notification keeps bubbling — this observes, it
+// never consumes.
+// ---------------------------------------------------------------------------
+
+class _TabScrollScope extends StatelessWidget {
+  const _TabScrollScope({
+    required this.tab,
+    required this.onNotification,
+    required this.child,
+  });
+
+  final int tab;
+  final bool Function(int tab, ScrollNotification notification) onNotification;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) => onNotification(tab, n),
+      child: child,
+    );
+  }
+}
+
+/// Page physics that commit the turn on a short swipe.
+///
+/// [PageScrollPhysics] decides where to land by rounding the fractional
+/// page, nudged half a page in the fling direction only when the release
+/// velocity clears `toleranceFor(position).velocity`. A brief, gentle
+/// drag clears neither, so it snaps back to where it started. Lowering
+/// both the fling thresholds and that velocity tolerance means any drag
+/// still moving when the finger lifts carries the page across — while a
+/// completely static touch-and-release (velocity 0) still doesn't, so
+/// resting a thumb on the screen never navigates.
+class _SlightSwipePageScrollPhysics extends PageScrollPhysics
+    with SlightSwipeSettle {
+  const _SlightSwipePageScrollPhysics({super.parent});
+
+  @override
+  _SlightSwipePageScrollPhysics applyTo(ScrollPhysics? ancestor) =>
+      _SlightSwipePageScrollPhysics(parent: buildParent(ancestor));
+
+  @override
+  double get minFlingVelocity => 8; // default 50
+  @override
+  double get minFlingDistance => 2; // default 18
+
 }

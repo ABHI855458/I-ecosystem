@@ -111,6 +111,7 @@ class _FaceReactionThumb extends StatelessWidget {
         children: [
           ClipOval(
             child: CachedNetworkImage(
+              memCacheWidth: 1080,
               imageUrl: reaction.photoUrl,
               width: size,
               height: size,

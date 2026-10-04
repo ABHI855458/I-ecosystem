@@ -1,6 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
-import 'package:timezone/timezone.dart' as tz;
 
 import '../services/current_user_service.dart';
 import 'supabase_config.dart';
@@ -12,9 +12,10 @@ class NotificationService {
 
   final _plugin = FlutterLocalNotificationsPlugin();
 
-  static const _channelId = 'daily_channel';
-  static const _channelName = 'Daily Notifications';
-  static const _channelDesc = 'Daily streak, activity, and moment reminders';
+  // The 'daily_channel' constants that lived here went with the scheduled
+  // reminders that used them — this class no longer posts a notification of
+  // its own, it only initialises the plugin (so a tapped SERVER push can be
+  // routed) and clears reminders left by older installs.
 
   Future<void> init({void Function(String? payload)? onTap}) async {
     tzdata.initializeTimeZones();
@@ -42,65 +43,52 @@ class NotificationService {
         ?.requestPermissions(alert: true, badge: true, sound: true);
   }
 
+  /// Best-effort: a failure here must never stop the app from starting.
+  /// See the androidScheduleMode note in [_schedule] for the specific
+  /// exception that used to escape into main() and block runApp().
   Future<void> scheduleDailyNotifications() async {
-    await _plugin.cancelAll();
-
-    final hasPostedToday = await _checkIfPostedToday();
-    if (!hasPostedToday) {
-      await _schedule(id: 1, title: 'Your streak is alive! 🔥', body: 'Post today to keep your streak going', hour: 9, minute: 0);
+    try {
+      await _scheduleDailyNotifications();
+    } catch (e) {
+      debugPrint('NotificationService: daily schedule failed (non-fatal): $e');
     }
-
-    await _schedule(id: 2, title: 'Lunch hour is live! 🍽️', body: '47 people in CSE community right now', hour: 12, minute: 0);
-    await _schedule(id: 3, title: 'Daily moment? 📸', body: "What's happening in your circle right now?", hour: 20, minute: 0);
   }
 
-  Future<void> _schedule({
-    required int id,
-    required String title,
-    required String body,
-    required int hour,
-    required int minute,
-    String? payload,
-  }) async {
-    final now = DateTime.now();
-    var targetLocal = DateTime(now.year, now.month, now.day, hour, minute);
-    if (!targetLocal.isAfter(now)) {
-      targetLocal = targetLocal.add(const Duration(days: 1));
-    }
-    final tzScheduled = tz.TZDateTime.from(targetLocal.toUtc(), tz.UTC);
-
-    await _plugin.zonedSchedule(
-      id: id,
-      title: title,
-      body: body,
-      scheduledDate: tzScheduled,
-      notificationDetails: const NotificationDetails(
-        android: AndroidNotificationDetails(
-          _channelId,
-          _channelName,
-          channelDescription: _channelDesc,
-          importance: Importance.high,
-          priority: Priority.high,
-          playSound: true,
-        ),
-        iOS: DarwinNotificationDetails(
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: true,
-        ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time,
-      payload: payload,
-    );
+  Future<void> _scheduleDailyNotifications() async {
+    // The three hardcoded daily reminders that used to be scheduled here are
+    // GONE, and this now only clears any that a previous install left behind.
+    //
+    // They were wrong on three separate counts:
+    //
+    //   1. FABRICATED DATA. The noon one read "47 people in CSE community
+    //      right now" — a literal, on a timer, every day, to every user. The
+    //      number was never queried, and "CSE community" is not even one of
+    //      the six pilot communities. The 9am one announced "Your streak is
+    //      alive!" gated on _checkIfPostedToday(), which is a stub that
+    //      always returns false — so it fired at people with no streak at
+    //      all. Both are exactly what the server rule "every number is real,
+    //      omit the line rather than invent it" exists to prevent.
+    //
+    //   2. DUPLICATES. Each now has a real server-side counterpart that
+    //      sends the true version: the 4-stage streak escalation
+    //      (notify_streak_escalation), the break-time live count
+    //      (notify_break_live_count, which sends NOTHING when fewer than two
+    //      people are genuinely present), and the window-turnover prompt
+    //      (notify_window_change). Leaving these scheduled meant a user got
+    //      a fabricated local copy and an accurate server copy of the same
+    //      idea, hours apart.
+    //
+    //   3. STARTUP COST. Scheduling them meant a cancelAll() plus three
+    //      zoned-schedule platform calls on the critical path to the first
+    //      frame.
+    //
+    // cancelAll() stays: an upgrading device still has the old ones sitting
+    // in its alarm table, and nothing else would ever clear them.
+    await _plugin.cancelAll();
   }
 
   Future<void> cancelStreakNotification() async {
     await _plugin.cancel(id: 1);
-  }
-
-  Future<bool> _checkIfPostedToday() async {
-    return false;
   }
 
   /// Upserts a push token into `device_tokens` so the server-side
@@ -108,11 +96,9 @@ class NotificationService {
   /// supabase/functions/README.md) can reach this device for PING
   /// RECEIVED, PING REPLIED, PROFILE VIEW, and REACTION/COMMENT pushes.
   ///
-  /// Not called anywhere yet — this app has no remote-push plugin wired in
-  /// (only flutter_local_notifications, which is on-device only and can't
-  /// produce a token). Once a push plugin is added and yields a real
-  /// platform token, call this from wherever that plugin's
-  /// onTokenRefresh/getToken result lands.
+  /// Called from [PushMessagingService]'s `onTokenRefresh` listener and on
+  /// every auth-state change with a live session (see push_messaging_service
+  /// .dart's `_persist()`/`syncToken()`) — this is the live remote-push path.
   Future<void> registerDeviceToken({
     required String token,
     required String platform, // 'ios' | 'android'
@@ -127,5 +113,51 @@ class NotificationService {
       },
       onConflict: 'user_id,token',
     );
+
+    // BUG FIX (reported: "my friends were getting the same notification
+    // several times"). The upsert above only ever prevents the SAME token
+    // value from being duplicated — it does nothing about an OLDER token
+    // for this exact device. FCM tokens rotate more often than assumed
+    // (app updates, Play Services updates, a cleared cache), and every
+    // rotation used to just add a new row alongside the old one, which
+    // stayed in device_tokens indefinitely. The send side fans out to
+    // EVERY row on file (see notify.ts's sendToUser / notify-dispatch),
+    // so a device that had rotated a few times received every push once
+    // per still-live old token. One real account had accumulated 6.
+    //
+    // A device only ever has one current token per platform, so deleting
+    // every OTHER (user_id, platform) row right after registering this
+    // one is safe — it can never remove a token that is still this same
+    // device's current registration. It CAN remove a genuine second
+    // device of the same platform (two Android phones on one account),
+    // but that device re-registers its own token on its own next open,
+    // same as any token naturally does — a brief, self-correcting gap
+    // beats guaranteed duplicate pushes on every send.
+    //
+    // A failed delete here used to be swallowed with nothing but a
+    // debugPrint, leaving the stale token live indefinitely (nothing else
+    // retried it). One retry after a short backoff covers the common
+    // transient case (offline, a momentary RLS/network hiccup); anything
+    // that still fails falls to the recurring server-side
+    // dedupe_device_tokens() sweep (every 15 min — see
+    // 20260925010000_notify_dispatch_claim.sql) as the actual safety net.
+    Future<void> deleteStaleTokens() => supabase
+        .from('device_tokens')
+        .delete()
+        .eq('user_id', userId)
+        .eq('platform', platform)
+        .neq('token', token);
+    try {
+      await deleteStaleTokens();
+    } catch (e) {
+      debugPrint('[NotificationService.registerDeviceToken] stale-token cleanup failed, retrying once: $e');
+      try {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        await deleteStaleTokens();
+      } catch (e2) {
+        debugPrint('[NotificationService.registerDeviceToken] stale-token cleanup retry failed, '
+            'leaving for the server-side dedupe sweep: $e2');
+      }
+    }
   }
 }

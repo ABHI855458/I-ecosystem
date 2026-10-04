@@ -6,22 +6,48 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants.dart';
 import '../../core/supabase_config.dart';
+import 'reset_password_screen.dart';
+
+/// Institutional college mail (RVCE/RVU) routes this app's OTP to Spam/Junk
+/// far more often than a personal Gmail address does — their mail filters
+/// flag anything from a new automated sender. Reuses AppStrings.
+/// allowedEmailDomains (the old signup-restriction list, unreferenced since
+/// 20260929070000_allow_any_email_domain.sql let any domain sign up) as
+/// exactly the "known institutional domain" list this needs.
+bool _isInstitutionalEmail(String email) {
+  final e = email.toLowerCase().trim();
+  return AppStrings.allowedEmailDomains.any((d) => e.endsWith(d));
+}
 
 // ---------------------------------------------------------------------------
 // OtpScreen — 6-digit code entry as six individually-focused boxes (not a
 // single text field), auto-advancing on each digit and auto-submitting once
-// all six are filled. On a successful verifyOTP, this screen does NOT
-// navigate anywhere itself — AuthGate (auth_gate.dart) holds a
-// StreamBuilder on supabase.auth.onAuthStateChange, which fires the moment
-// verifyOTP succeeds and swaps the whole app root (login → onboarding/home)
-// out from under this screen automatically. This screen just pops itself
-// off the (now-obsolete) auth Navigator stack once that's happened.
+// all six are filled.
+//
+// Two purposes share this one screen (same code, same 6-box input, same
+// resend/cooldown UX — no reason to fork it):
+//  - confirmSignup: verifies a brand-new signUp()'s email. On success,
+//    AuthGate's onAuthStateChange listener swaps the whole app root out from
+//    under this screen automatically (login → onboarding/home) — this screen
+//    just pops itself off the now-obsolete auth Navigator stack.
+//  - recovery: verifies a resetPasswordForEmail() code. Success DOES create
+//    a session too (so AuthGate's listener also fires), but landing the user
+//    straight in the app mid-recovery would be wrong — this screen instead
+//    pushes ResetPasswordScreen directly so they set the new password before
+//    anything else happens.
 // ---------------------------------------------------------------------------
 
+enum OtpPurpose { confirmSignup, recovery }
+
 class OtpScreen extends StatefulWidget {
-  const OtpScreen({super.key, required this.email});
+  const OtpScreen({
+    super.key,
+    required this.email,
+    this.purpose = OtpPurpose.confirmSignup,
+  });
 
   final String email;
+  final OtpPurpose purpose;
 
   @override
   State<OtpScreen> createState() => _OtpScreenState();
@@ -87,16 +113,29 @@ class _OtpScreenState extends State<OtpScreen> {
       final res = await SupabaseConfig.client.auth.verifyOTP(
         email: widget.email,
         token: otp,
-        type: OtpType.email,
+        type: widget.purpose == OtpPurpose.recovery
+            ? OtpType.recovery
+            : OtpType.signup,
       );
       debugPrint(
         '[OtpScreen._verify] verifyOTP returned — session=${res.session != null} user=${res.user?.id}',
       );
-      // AuthGate's auth-state listener swaps the root content to
-      // MainShell/OnboardingScreen once the session lands, but that root
-      // swap doesn't touch this screen's own pushed route — pop it off
-      // explicitly so the swapped-in content is actually visible.
-      if (mounted && res.session != null) {
+      if (!mounted || res.session == null) return;
+      if (widget.purpose == OtpPurpose.recovery) {
+        // A recovery verifyOTP also creates a session, which would make
+        // AuthGate's listener drop the user straight into the app mid
+        // password-reset — push the actual reset screen instead of relying
+        // on that swap, same as confirmSignup does below.
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => ResetPasswordScreen(email: widget.email),
+          ),
+        );
+      } else {
+        // AuthGate's auth-state listener swaps the root content to
+        // MainShell/OnboardingScreen once the session lands, but that root
+        // swap doesn't touch this screen's own pushed route — pop it off
+        // explicitly so the swapped-in content is actually visible.
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } catch (e, st) {
@@ -113,10 +152,17 @@ class _OtpScreenState extends State<OtpScreen> {
   Future<void> _resend() async {
     if (_cooldownSeconds > 0) return;
     try {
-      await SupabaseConfig.client.auth.signInWithOtp(
-        email: widget.email,
-        shouldCreateUser: true,
-      );
+      if (widget.purpose == OtpPurpose.recovery) {
+        await SupabaseConfig.client.auth.resetPasswordForEmail(widget.email);
+      } else {
+        // resend(), not signInWithOtp() — this is a signup confirmation
+        // code, and resend() doesn't need the password threaded back in
+        // here just to re-issue it.
+        await SupabaseConfig.client.auth.resend(
+          type: OtpType.signup,
+          email: widget.email,
+        );
+      }
       _startCooldown();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -124,7 +170,7 @@ class _OtpScreenState extends State<OtpScreen> {
         );
       }
     } catch (e, st) {
-      debugPrint('[OtpScreen._resend] signInWithOtp(${widget.email}) failed: $e\n$st');
+      debugPrint('[OtpScreen._resend] resend(${widget.email}) failed: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Couldn't resend the code. Try again.")),
@@ -168,7 +214,31 @@ class _OtpScreenState extends State<OtpScreen> {
                   height: 1.6,
                 ),
               ),
-              if (_showSpamHint) ...[
+              // Institutional mail (RVCE/RVU) shown right away, not gated
+              // behind the 10s timer below — their filters near-certainly
+              // route this to Spam/Junk, it isn't a "maybe it's just slow"
+              // guess the way the generic hint is for everyone else.
+              if (_isInstitutionalEmail(widget.email)) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+                  ),
+                  child: Text(
+                    'College mail (RVCE/RVU) often sends this straight to '
+                    'Spam or Junk — check there if it doesn’t show up '
+                    'in a minute.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      color: AppColors.textMuted,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ] else if (_showSpamHint) ...[
                 const SizedBox(height: 12),
                 Text(
                   'Check your spam folder — code may take up to 2 minutes',

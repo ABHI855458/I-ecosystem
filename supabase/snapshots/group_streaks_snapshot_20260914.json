@@ -1,0 +1,42 @@
+[
+  {
+    "current_streak": 1,
+    "group_id": "34bda8ce-0ac7-4941-8dd6-d9e7649db11e",
+    "last_dip_on": "2026-09-02",
+    "longest_streak": 1,
+    "updated_at": "2026-09-02 10:36:02.763363+00",
+    "user_id": "5658d3a5-9d46-4e71-ae43-596ae6ba42c9"
+  },
+  {
+    "current_streak": 1,
+    "group_id": "4bdd004d-9b1a-44de-9147-70a4f7a06a77",
+    "last_dip_on": "2026-09-02",
+    "longest_streak": 1,
+    "updated_at": "2026-09-02 09:22:25.392931+00",
+    "user_id": "5658d3a5-9d46-4e71-ae43-596ae6ba42c9"
+  },
+  {
+    "current_streak": 1,
+    "group_id": "77c996ae-e5bd-490c-b38e-13a1d1884ff2",
+    "last_dip_on": "2026-09-04",
+    "longest_streak": 1,
+    "updated_at": "2026-09-04 02:02:29.200757+00",
+    "user_id": "527a9931-4a5c-4899-83ac-56107d2de136"
+  },
+  {
+    "current_streak": 1,
+    "group_id": "77c996ae-e5bd-490c-b38e-13a1d1884ff2",
+    "last_dip_on": "2026-09-07",
+    "longest_streak": 1,
+    "updated_at": "2026-09-07 04:52:11.978967+00",
+    "user_id": "726dc111-4c83-4974-94ba-e700118d7a7d"
+  },
+  {
+    "current_streak": 1,
+    "group_id": "a0ca3433-10f5-41bc-9ab9-2c845843def4",
+    "last_dip_on": "2026-09-02",
+    "longest_streak": 1,
+    "updated_at": "2026-09-02 12:07:57.57528+00",
+    "user_id": "5658d3a5-9d46-4e71-ae43-596ae6ba42c9"
+  }
+]

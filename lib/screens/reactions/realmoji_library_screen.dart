@@ -41,6 +41,12 @@ class _RealmojiLibraryScreenState extends State<RealmojiLibraryScreen> {
   }
 
   Future<void> _load() async {
+    // Guarded: _load is awaited from _capture and _handleTap, both of which
+    // resume after a pushed route pops — by which time this screen may be
+    // gone (RefreshIndicator's onRefresh calls it too). Reproduced live on
+    // device: "[RealmojiLibraryScreen._capture] failed: setState() called
+    // after dispose", which then took the whole run down.
+    if (!mounted) return;
     setState(() => _error = null);
     try {
       final saved = await RealmojiService.instance.savedSelfies(feedScope: widget.feedScope.wire);
@@ -87,10 +93,14 @@ class _RealmojiLibraryScreenState extends State<RealmojiLibraryScreen> {
         selfie: result.selfie,
       );
       HapticFeedback.mediumImpact();
+      if (!mounted) return;
       await _load();
     } catch (e, st) {
       debugPrint('[RealmojiLibraryScreen._capture] failed: $e\n$st');
-      if (mounted) showGlassToast(context, "Couldn't save your RealMoji.", isError: true);
+      if (!mounted) return;
+      if (context.mounted) {
+        showGlassToast(context, "Couldn't save your RealMoji.", isError: true);
+      }
     }
   }
 
@@ -108,12 +118,17 @@ class _RealmojiLibraryScreenState extends State<RealmojiLibraryScreen> {
     if (retake != true || !mounted) return;
 
     try {
-      await RealmojiService.instance.retake(feedScope: widget.feedScope.wire, emojiType: type);
+      // Synchronous now — see RealmojiService.retake's own doc: it only
+      // clears the client-side cache entry so the picker below re-opens the
+      // camera, it no longer touches the DB/storage (that used to destroy
+      // the existing RealMoji even if this capture attempt was cancelled).
+      RealmojiService.instance.retake(feedScope: widget.feedScope.wire, emojiType: type);
       if (!mounted) return;
       setState(() => _saved = {...?_saved}..remove(type));
     } catch (e, st) {
       debugPrint('[RealmojiLibraryScreen._handleTap] retake failed: $e\n$st');
     }
+    if (!mounted) return;
     await _capture(type);
   }
 
@@ -121,9 +136,11 @@ class _RealmojiLibraryScreenState extends State<RealmojiLibraryScreen> {
   Widget build(BuildContext context) {
     final title = widget.feedScope == ReactionPresetCategory.everyone ? 'Everyone' : 'Anon';
     return Scaffold(
-      backgroundColor: Colors.black,
+      // 1A canvas token (#0b0b0d), not flat black — the slot cards read as
+      // surfaces against it.
+      backgroundColor: const Color(0xFF0B0B0D),
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: const Color(0xFF0B0B0D),
         elevation: 0,
         title: Text(
           'Your RealMojis · $title',
@@ -164,7 +181,7 @@ class _RealmojiLibraryScreenState extends State<RealmojiLibraryScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
-          mainAxisSpacing: 20,
+          mainAxisSpacing: 22,
           crossAxisSpacing: 14,
           // Was 0.82 — at a 3-column cell width around ~107px (typical
           // phone width), that only left ~23.5px of vertical slack above
@@ -189,60 +206,153 @@ class _RealmojiLibraryScreenState extends State<RealmojiLibraryScreen> {
   }
 }
 
+/// One RealMoji slot, built to the handoff's **variant 1A** (Profile Card —
+/// stacked card): a circular photo with a decorative ring floating 6px
+/// outside it, the reaction emoji sitting directly ON the photo's
+/// bottom-right with NO background plate, and the name centred beneath.
+///
+/// The badge placement is the substantive change, not just the styling. It
+/// used to be rendered INSIDE the photo's `ClipOval`, aligned bottom-right
+/// with a 4px margin — so the circular clip sliced almost all of it away and
+/// only a crescent of colour survived at the rim ("see the emoji is not
+/// seen"). 1A puts it outside the clip, over the photo, which is why it
+/// reads at any size.
+///
+/// Every 1A measurement is proportional to the photo rather than the spec's
+/// literal 168px box, so the same card holds up in this 3-column grid and
+/// would hold up at the spec's own size: ring inset and badge box are
+/// expressed as fractions of the photo's diameter (6/168, 52/168, 32/168).
 class _RealmojiSlot extends StatelessWidget {
   const _RealmojiSlot({required this.type, required this.imageUrl, required this.onTap});
   final RealmojiType type;
   final String? imageUrl;
   final VoidCallback onTap;
 
+  // 1A ratios, against the spec's 168px photo.
+  static const _ringInsetRatio = 6 / 168;
+  static const _badgeBoxRatio = 52 / 168;
+  static const _badgeFontRatio = 32 / 168;
+  static const _badgeOffsetRatio = 2 / 168;
+
   @override
   Widget build(BuildContext context) {
+    final captured = imageUrl != null;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AspectRatio(
-            aspectRatio: 1,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutBack,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF17171B),
-                border: Border.all(
-                  color: imageUrl != null ? AppColors.neonCyan : Colors.white24,
-                  width: imageUrl != null ? 2 : 1,
-                ),
-              ),
-              child: ClipOval(
-                child: imageUrl == null
-                    ? Center(child: Text(type.glyph, style: const TextStyle(fontSize: 30)))
-                    : Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CachedNetworkImage(imageUrl: imageUrl!, fit: BoxFit.cover),
-                          Align(
-                            alignment: Alignment.bottomRight,
-                            child: Container(
-                              margin: const EdgeInsets.all(4),
-                              width: 22,
-                              height: 22,
-                              alignment: Alignment.center,
-                              decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black),
-                              child: Text(type.glyph, style: const TextStyle(fontSize: 12)),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, c) {
+                // The ring lives outside the photo, so the photo has to give
+                // that space back or the ring clips against the grid cell.
+                final inset = c.maxHeight * _ringInsetRatio;
+                final d = c.maxHeight - inset * 2;
+                final badge = d * _badgeBoxRatio;
+                return Center(
+                  child: SizedBox(
+                    width: c.maxHeight,
+                    height: c.maxHeight,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // Decorative ring — 1.5px #2e2e33 at inset -6. It
+                        // takes the accent once a selfie exists, which is
+                        // this screen's only "captured / not yet" signal now
+                        // that the badge no longer sits in a plate.
+                        Container(
+                          width: d + inset * 2,
+                          height: d + inset * 2,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: captured ? AppColors.neonCyan : const Color(0xFF2E2E33),
+                              width: 1.5,
                             ),
                           ),
-                        ],
-                      ),
-              ),
+                        ),
+                        SizedBox(
+                          width: d,
+                          height: d,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Color(0xFF161618),
+                                  ),
+                                  child: ClipOval(
+                                    child: captured
+                                        ? CachedNetworkImage(
+              memCacheWidth: 1080,
+                                            imageUrl: imageUrl!,
+                                            fit: BoxFit.cover,
+                                            errorWidget: (_, _, _) => Center(
+                                              child: Text(
+                                                type.glyph,
+                                                style: TextStyle(fontSize: d * 0.3),
+                                              ),
+                                            ),
+                                          )
+                                        : Center(
+                                            child: Icon(
+                                              Icons.photo_camera_rounded,
+                                              size: d * 0.3,
+                                              color: Colors.white.withValues(alpha: 0.22),
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                              ),
+                              // 1A: over the photo, no background plate.
+                              // Outside the ClipOval above — that clip is
+                              // what used to eat it.
+                              Positioned(
+                                right: d * _badgeOffsetRatio,
+                                bottom: d * _badgeOffsetRatio,
+                                width: badge,
+                                height: badge,
+                                child: Center(
+                                  child: Text(
+                                    type.glyph,
+                                    style: TextStyle(
+                                      fontSize: d * _badgeFontRatio,
+                                      shadows: const [
+                                        // The spec's badge has no plate, so
+                                        // the glyph needs its own separation
+                                        // from whatever photo is behind it.
+                                        Shadow(color: Color(0xCC000000), blurRadius: 6),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
+          // 1A's name block: Space Grotesk 600, tight tracking, primary ink.
           Text(
-            type.name,
-            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70),
+            type.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: captured ? const Color(0xFFF4F4F5) : const Color(0xFF7D7D84),
+              letterSpacing: -0.01 * 13,
+            ),
           ),
         ],
       ),
@@ -266,7 +376,8 @@ class _RetakeSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ClipOval(
-              child: CachedNetworkImage(imageUrl: imageUrl, width: 64, height: 64, fit: BoxFit.cover),
+              child: CachedNetworkImage(
+              memCacheWidth: 192,imageUrl: imageUrl, width: 64, height: 64, fit: BoxFit.cover),
             ),
             const SizedBox(height: 10),
             Text(

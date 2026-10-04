@@ -3,14 +3,15 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../../services/ping_service.dart';
 
 import '../../../core/glass.dart';
-import '../../../features/ping/ping_prompt_sheet.dart';
 import '../../../services/feed_service.dart';
 import '../../../services/reaction_service.dart';
 import '../../../widgets/emoji_burst.dart';
 import '../../../widgets/hot_glow_border.dart';
 import '../../../widgets/reaction_picker_popup.dart';
+import 'post_card_shared.dart';
 import 'spotlight_feed_controller.dart';
 import 'spotlight_privileges_controller.dart';
 
@@ -80,7 +81,7 @@ class _SpotlightCardState extends State<SpotlightCard> {
 
   @override
   void dispose() {
-    widget.controller.unregisterCard(widget.item.postId);
+    widget.controller.unregisterCard(widget.item.postId, _cardKey);
     _reactionSub?.cancel();
     super.dispose();
   }
@@ -96,13 +97,47 @@ class _SpotlightCardState extends State<SpotlightCard> {
     setState(() => _floaters.removeWhere((f) => f.key == key));
   }
 
-  void _react(String emoji) => ReactionService.instance.react(widget.item.postId, emoji);
+  // widget.item.postId is a group_posts.id, not a posts.id, whenever this
+  // card is wrapping DesignGroupCard (see everyone_feed_screen.dart's own
+  // `item.groupName != null` branch, which this mirrors) — reactions has a
+  // separate group_post_id column precisely for that case (see
+  // ReactionService.setEmojiReaction). Routing every double-tap/long-press
+  // through the legacy react(postId, …) wrapper regardless of that ignored
+  // the column entirely: every group-post reaction upserted post_id against
+  // a group_posts id, which reactions.post_id's FK to posts(id) rejects —
+  // an uncaught, un-awaited failure with nothing shown to the user.
+  Future<void> _react(String emoji) async {
+    final isGroupPost = widget.item.groupName != null;
+    try {
+      await ReactionService.instance.setEmojiReaction(
+        postId: isGroupPost ? null : widget.item.postId,
+        groupPostId: isGroupPost ? widget.item.postId : null,
+        emoji: emoji,
+      );
+      // Tell whichever card is rendering this post's counts to refetch —
+      // the write and the display live in different widgets. See
+      // reactionsChangedForPost's own doc.
+      notifyReactionsChanged(widget.item.postId);
+    } catch (e) {
+      // Was a dropped Future: the write could fail (this is exactly how
+      // the group-post FK violation stayed invisible) and the user saw the
+      // burst animation play as though it had worked. Awaited and surfaced
+      // now, so a failure looks like a failure.
+      if (!mounted) return;
+      showGlassToast(context, "Couldn't save that reaction.", isError: true);
+    }
+  }
 
+  // Heart, not fire, and always from the card's CENTRE — a double-tap
+  // anywhere on the photo splashes in the middle (explicit request). The
+  // burst layer is Positioned.fill in this widget's root Stack, so its
+  // origin space is this State's own size.
   void _onDoubleTapDown(TapDownDetails d) {
     HapticFeedback.mediumImpact();
-    _react('🔥');
+    _react('❤️');
     final key = UniqueKey();
-    setState(() => _bursts.add(_Burst(key, d.localPosition, '🔥')));
+    final origin = context.size?.center(Offset.zero) ?? d.localPosition;
+    setState(() => _bursts.add(_Burst(key, origin, '❤️')));
   }
 
   void _removeBurst(Key key) {
@@ -115,22 +150,47 @@ class _SpotlightCardState extends State<SpotlightCard> {
     setState(() => _showPicker = !_showPicker);
   }
 
-  void _ping() {
+  /// One tap = pinged, no prompt sheet (user decision, 2026-09-30 — only
+  /// Dip keeps prompts). ping_post_author resolves the recipient(s) from
+  /// the post, so a Duo post pings both authors.
+  Future<void> _ping() async {
     HapticFeedback.lightImpact();
-    showPingPromptSheet(
-      context,
-      targetName: widget.item.username ?? 'someone',
-      pingContext: PingContext.everyone,
-      glass: true,
-    );
+    final who = widget.item.username ?? 'someone';
+    try {
+      await PingService.instance.pingPostAuthor(
+        postId: widget.item.postId,
+        prompt: '',
+        anonymous: false,
+      );
+      if (mounted) showGlassToast(context, 'Pinged $who ✓');
+    } on Object catch (e) {
+      if (!mounted) return;
+      showGlassToast(
+        context,
+        e is PingLimitExceeded ||
+                e is PingAlreadyOpen ||
+                e is PingSelfNotAllowed ||
+                e is PingBlocked
+            ? e.toString()
+            : "Couldn't send that ping.",
+        isError: true,
+      );
+    }
   }
 
   static double _quantize(double sigma) => (sigma / 2).round() * 2;
 
+  /// Never changes — used in place of the per-card focus notifier when the
+  /// focus effect is off, so the card isn't rebuilt on every scroll frame
+  /// for a value it ignores anyway (_buildVisual treats focus as 1.0).
+  static final ValueNotifier<double> _fullFocus = ValueNotifier(1.0);
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<double>(
-      valueListenable: widget.controller.focusNotifierFor(widget.item.postId),
+      valueListenable: widget.enableFocusEffect
+          ? widget.controller.focusNotifierFor(widget.item.postId)
+          : _fullFocus,
       builder: (context, focus, _) {
         return ValueListenableBuilder<String?>(
           valueListenable: widget.controller.spotlightPostId,
@@ -141,7 +201,15 @@ class _SpotlightCardState extends State<SpotlightCard> {
               child: GestureDetector(
                 onTap: widget.onTap,
                 onDoubleTapDown: _onDoubleTapDown,
-                onLongPress: _togglePicker,
+                // Gated by showActionOverlay for the same reason _ActionRow
+                // itself already is (see that field's own doc): when the
+                // wrapped card draws its own reaction UI (PostReactionCorner
+                // + its "Reactions" viewer pill), this old fixed-emoji
+                // long-press picker only duplicated it — popping up
+                // overlapping the card's own pill instead of replacing it.
+                // Every live SpotlightCard caller passes showActionOverlay:
+                // false, so this was firing unconditionally everywhere.
+                onLongPress: widget.showActionOverlay ? _togglePicker : null,
                 child: _buildVisual(focus, isSpotlight),
               ),
             );
@@ -198,9 +266,22 @@ class _SpotlightCardState extends State<SpotlightCard> {
               ),
             for (final f in _floaters)
               _FloatingReaction(key: f.key, emoji: f.emoji, onComplete: () => _removeFloater(f.key)),
+            // Positioned.fill: EmojiBurst's own inner Stack has every child
+            // wrapped in Positioned (particles placed by absolute offset
+            // from a tap point), which means it can only size itself from
+            // its incoming constraints, not its children. As a bare,
+            // non-positioned child of THIS Stack it was inheriting
+            // whatever ambient constraints this card's own layout state
+            // happened to hand down — usually fine, but unbounded in at
+            // least one real reachable state ("A Stack requires bounded
+            // constraints from its parent", live crash-loop on tapping a
+            // reaction). Positioned.fill guarantees it always gets this
+            // outer Stack's own already-resolved, always-bounded size.
             for (final b in _bursts)
-              EmojiBurst(key: b.key, origin: b.origin, emoji: b.emoji, onComplete: () => _removeBurst(b.key)),
-            if (_showPicker && isSpotlight)
+              Positioned.fill(
+                child: EmojiBurst(key: b.key, origin: b.origin, emoji: b.emoji, onComplete: () => _removeBurst(b.key)),
+              ),
+            if (_showPicker && isSpotlight && widget.showActionOverlay)
               Positioned(
                 bottom: 64,
                 left: 12,

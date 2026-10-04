@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet"><style>
+html,body{margin:0;background:#0B0B0D;color:#F5F4F1;font-family:'Manrope',system-ui,sans-serif}
+a{color:#29D3E8;text-decoration:none}a:hover{color:#29D3E8}
+*{box-sizing:border-box}
+input,button,textarea{font-family:inherit}
+@keyframes seenPulse{0%,100%{opacity:.35;transform:scale(1)}50%{opacity:1;transform:scale(1.35)}}
+@keyframes breathe{0%,100%{opacity:.5}50%{opacity:.95}}
+@keyframes driftA{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(18px,-22px,0)}}
+@keyframes driftB{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(-24px,16px,0)}}
+@keyframes sheetIn{from{opacity:0;transform:translateY(-10px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes promptIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+</style></helmet>
+
+<div style="min-height:100vh;padding:28px 24px 60px;display:flex;gap:28px;align-items:flex-start;background:radial-gradient(900px 600px at 18% 0%,rgba(120,90,200,.16),transparent 70%),radial-gradient(700px 500px at 88% 30%,rgba(60,180,200,.12),transparent 70%),#0B0B0D">
+
+  <div style="display:flex;flex-direction:column;gap:18px;flex:none">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:600 11px 'Manrope',system-ui,sans-serif;letter-spacing:.14em;padding:4px 8px;border-radius:5px;background:rgba(255,255,255,.08);color:rgba(245,244,241,.7)">1a</span>
+      <span style="font:500 14px/1.2 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.82)">Ping — live prototype (hold, expand, reply, reveal)</span>
+    </div>
+
+    <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" width="402" height="720" hint-size="402px,720px">
+
+      <div style="position:relative;height:100%;background:#0B0B0D;overflow:hidden">
+        <sc-if value="{{ creatingGroup }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;z-index:92;background:linear-gradient(180deg,#131317,#0B0B0D);display:flex;flex-direction:column">
+            <div style="position:absolute;top:-120px;right:-80px;width:280px;height:280px;border-radius:50%;background:radial-gradient(circle,rgba(41,211,232,.14),transparent 68%);filter:blur(12px);pointer-events:none"></div>
+
+            <div style="position:relative;display:flex;align-items:center;justify-content:space-between;padding:52px 18px 8px">
+              <div onClick="{{ onCloseCreate }}" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;font:400 17px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.8)">‹</div>
+              <span style="font:600 14px 'Manrope',system-ui,sans-serif;letter-spacing:-.01em">New group</span>
+              <div style="width:34px;height:34px"></div>
+            </div>
+
+            <div style="position:relative;flex:1;min-height:0;overflow-y:auto;padding:14px 20px 20px;display:flex;flex-direction:column;gap:22px">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:6px">
+                <div style="position:relative;width:78px;height:78px;border-radius:26px 12px 26px 12px;border:1px solid rgba(41,211,232,.28);background:linear-gradient(160deg,rgba(41,211,232,.14),rgba(255,255,255,.03));display:flex;align-items:center;justify-content:center;box-shadow:0 0 30px rgba(41,211,232,.12)">
+                  <span style="font:700 30px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.9);letter-spacing:-.02em">{{ newGroupGlyph }}</span>
+                </div>
+                <input value="{{ newGroupName }}" onChange="{{ onNewGroupName }}" placeholder="Name your group" style="width:100%;text-align:center;background:transparent;border:none;outline:none;color:#F5F4F1;font:600 21px 'Manrope',system-ui,sans-serif;letter-spacing:-.01em;caret-color:#29D3E8" />
+                <div style="width:64px;height:1px;background:rgba(255,255,255,.12)"></div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:11px">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <span style="font:500 9.5px 'Manrope',system-ui,sans-serif;letter-spacing:.16em;color:rgba(245,244,241,.4)">ADD PEOPLE</span>
+                  <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(41,211,232,.8)">{{ createPickCount }}</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:7px">
+                  <sc-for list="{{ createPicks }}" as="p" hint-placeholder-count="6">
+                    <div onClick="{{ p.onClick }}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:18px 8px 18px 8px;cursor:pointer;background:{{ p.bg }};border:{{ p.bd }};transition:all .15s ease">
+                      <div style="flex:none;width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.12);background:{{ p.tint }};display:flex;align-items:center;justify-content:center;font:500 14px 'Manrope',system-ui,sans-serif;color:rgba(11,11,13,.72)">{{ p.initial }}</div>
+                      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                        <span style="font:500 13.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.9)">{{ p.who }}</span>
+                        <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.34)">🔥 {{ p.streak }} · {{ p.note }}</span>
+                      </div>
+                      <div style="flex:none;width:24px;height:24px;border-radius:50%;border:{{ p.checkBorder }};background:{{ p.checkBg }};display:flex;align-items:center;justify-content:center;font:500 12px/1 'Manrope',system-ui,sans-serif;color:#0B0B0D">{{ p.check }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+
+            <div style="position:relative;padding:12px 20px 26px;border-top:1px solid rgba(255,255,255,.07);background:linear-gradient(0deg,#0B0B0D 55%,transparent)">
+              <div onClick="{{ onCreateGroup }}" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:15px 0;border-radius:100px;cursor:pointer;font:600 14.5px 'Manrope',system-ui,sans-serif;color:{{ createFg }};background:{{ createBg }};box-shadow:{{ createGlow }};transition:transform .16s cubic-bezier(.34,1.56,.64,1)" style-active="transform:scale(.97)">{{ createLabel }}</div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ hasWallViewer }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;z-index:89;background:#0B0B0D;display:flex;flex-direction:column">
+            <div style="display:flex;align-items:center;gap:11px;padding:52px 18px 12px">
+              <div onClick="{{ wallViewer.onClose }}" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;font:400 17px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.8)">‹</div>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                <span style="font:600 14px 'Manrope',system-ui,sans-serif;letter-spacing:-.01em">{{ wallViewer.group }}</span>
+                <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.34)">{{ wallViewer.position }} · {{ wallViewer.prompt }}</span>
+              </div>
+            </div>
+            <div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 22px 18px;gap:16px">
+              <div style="position:relative;width:100%;max-width:280px;aspect-ratio:3/4;border-radius:24px;overflow:hidden;border:1px solid rgba(255,255,255,.12);background:{{ wallViewer.tint }};box-shadow:0 24px 60px rgba(0,0,0,.55)">
+                <div style="position:absolute;inset:0;background:repeating-linear-gradient(135deg,rgba(255,255,255,.09) 0 10px,rgba(255,255,255,.03) 10px 20px)"></div>
+                <div style="position:absolute;top:14px;left:14px;width:60px;height:76px;border-radius:12px;border:1.5px solid rgba(255,255,255,.5);background:repeating-linear-gradient(135deg,rgba(255,255,255,.14) 0 7px,rgba(255,255,255,.04) 7px 14px);box-shadow:0 4px 14px rgba(0,0,0,.4)"></div>
+                <div onClick="{{ wallViewer.onPrev }}" style="position:absolute;top:0;bottom:0;left:0;width:34%;cursor:pointer"></div>
+                <div onClick="{{ wallViewer.onNext }}" style="position:absolute;top:0;bottom:0;right:0;width:34%;cursor:pointer"></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="width:28px;height:28px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:{{ wallViewer.tint }};display:flex;align-items:center;justify-content:center;font:500 11px 'Manrope',system-ui,sans-serif;color:rgba(11,11,13,.72)">{{ wallViewer.initial }}</div>
+                <span style="font:600 14px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.9)">{{ wallViewer.who }}</span>
+              </div>
+              <span style="font:400 15px/1.6 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.82);text-align:center;max-width:280px;text-wrap:pretty">{{ wallViewer.text }}</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:7px;padding:0 22px 34px">
+              <sc-for list="{{ wallViewer.dots }}" as="dot" hint-placeholder-count="3">
+                <div style="width:{{ dot.w }};height:6px;border-radius:100px;background:{{ dot.bg }};transition:all .25s ease"></div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ composeOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;z-index:88;display:flex;flex-direction:column;justify-content:flex-end">
+            <div onClick="{{ onComposeClose }}" style="position:absolute;inset:0;background:rgba(11,11,13,.62);backdrop-filter:blur(3px);cursor:pointer"></div>
+            <div style="position:relative;border-radius:30px 30px 0 0;border:1px solid rgba(255,255,255,.12);border-bottom:none;background:linear-gradient(180deg,#17171B,#131317);backdrop-filter:blur(24px) saturate(180%);box-shadow:0 -18px 50px rgba(0,0,0,.55);padding:12px 18px 22px;display:flex;flex-direction:column;gap:14px;max-height:86%;animation:sheetIn .3s cubic-bezier(.2,.85,.2,1) both">
+              <div style="width:38px;height:4px;border-radius:100px;background:rgba(255,255,255,.16);margin:0 auto"></div>
+              <div style="display:flex;align-items:center;gap:12px">
+                <div style="flex:none;width:44px;height:44px;border-radius:50%;border:{{ composeAvatarBorder }};background:{{ composeAvatarBg }};display:flex;align-items:center;justify-content:center;font:600 16px 'Manrope',system-ui,sans-serif;color:{{ composeInitialColor }}">{{ composeInitial }}</div>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                  <span style="font:600 17px/1.1 'Manrope',system-ui,sans-serif;letter-spacing:-.01em">Ping {{ composeWho }}</span>
+                  <span style="font:400 11px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.4)">Pick a prompt or write your own</span>
+                </div>
+                <div onClick="{{ onComposeClose }}" style="flex:none;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;font:400 15px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.6)">×</div>
+              </div>
+              <span style="font:500 9.5px 'Manrope',system-ui,sans-serif;letter-spacing:.16em;color:rgba(245,244,241,.32)">CHOOSE A PROMPT</span>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;overflow-y:auto;padding:1px 1px 2px">
+                <sc-for list="{{ promptChoices }}" as="pr" hint-placeholder-count="8">
+                  <div onClick="{{ pr.onClick }}" style="padding:14px 15px;border-radius:18px;cursor:pointer;font:500 13.5px/1.35 'Manrope',system-ui,sans-serif;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);color:rgba(245,244,241,.82);text-wrap:pretty;animation:promptIn .3s cubic-bezier(.2,.8,.2,1) both;animation-delay:{{ pr.delay }};transition:transform .15s ease" style-hover="background:rgba(41,211,232,.09);border-color:rgba(41,211,232,.32);color:#F5F4F1" style-active="transform:scale(.97)">{{ pr.text }}</div>
+                </sc-for>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;padding:4px 5px 4px 16px;border-radius:100px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05)">
+                <input value="{{ composeDraft }}" onChange="{{ onComposeDraft }}" placeholder="or write your own…" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:#F5F4F1;font:400 14px 'Manrope',system-ui,sans-serif;padding:10px 0" />
+                <div onClick="{{ onComposeCustomSend }}" style="flex:none;padding:10px 18px;border-radius:100px;cursor:pointer;font:500 13px 'Manrope',system-ui,sans-serif;color:{{ composeSendFg }};background:{{ composeSendBg }}">Send</div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ hasLightbox }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ lightbox.onClose }}" style="position:absolute;inset:0;z-index:90;background:rgba(11,11,13,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;cursor:pointer;padding:40px 24px">
+            <div style="position:relative;width:260px;aspect-ratio:3/4;border-radius:20px;overflow:hidden;border:1px solid rgba(255,255,255,.14);background:linear-gradient(160deg,rgba(41,211,232,.16),rgba(176,137,104,.14)),repeating-linear-gradient(135deg,rgba(255,255,255,.1) 0 10px,rgba(255,255,255,.03) 10px 20px);box-shadow:0 24px 60px rgba(0,0,0,.6)">
+              <div style="position:absolute;top:12px;left:12px;width:64px;height:80px;border-radius:12px;border:1.5px solid rgba(255,255,255,.5);background:repeating-linear-gradient(135deg,rgba(255,255,255,.12) 0 7px,rgba(255,255,255,.03) 7px 14px);box-shadow:0 4px 14px rgba(0,0,0,.4)"></div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
+              <span style="font:500 13px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.85)">{{ lightbox.who }} · {{ lightbox.when }}</span>
+              <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.34)">tap anywhere to close · always here to reopen</span>
+            </div>
+            <div style="position:absolute;top:56px;right:20px;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font:400 16px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.8)">×</div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ hasReplyDetail }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;z-index:80;background:#0B0B0D;overflow-y:auto;display:flex;flex-direction:column">
+            <div style="position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:46px 18px 10px;background:linear-gradient(180deg,#0B0B0D 60%,rgba(11,11,13,.85) 85%,transparent)">
+              <div onClick="{{ replyDetail.onClose }}" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;font:400 17px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.8)">‹</div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                <span style="font:600 14px 'Manrope',system-ui,sans-serif">{{ replyDetail.who }}</span>
+                <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.34)">{{ replyDetail.when }}</span>
+              </div>
+              <div style="width:34px;height:34px"></div>
+            </div>
+
+            <div style="padding:8px 22px 18px;display:flex;flex-direction:column;align-items:center">
+              <div style="position:relative;width:150px;aspect-ratio:3/4;border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.12);background:linear-gradient(160deg,rgba(41,211,232,.14),rgba(176,137,104,.12)),repeating-linear-gradient(135deg,rgba(255,255,255,.09) 0 9px,rgba(255,255,255,.03) 9px 18px);box-shadow:0 20px 50px rgba(0,0,0,.5)">
+                <div style="position:absolute;top:9px;left:9px;width:44px;height:56px;border-radius:10px;overflow:hidden;border:1.5px solid rgba(255,255,255,.5);background:repeating-linear-gradient(135deg,rgba(255,255,255,.12) 0 7px,rgba(255,255,255,.03) 7px 14px);box-shadow:0 4px 14px rgba(0,0,0,.4)"></div>
+              </div>
+              <span style="margin-top:12px;font:400 10.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.32)">re: {{ replyDetail.prompt }}</span>
+              <span style="margin-top:8px;font:400 15px/1.6 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.85);text-align:center;max-width:280px;text-wrap:pretty">{{ replyDetail.body }}</span>
+            </div>
+
+            <div style="padding:14px 22px 24px;border-top:1px solid rgba(255,255,255,.07)">
+              <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">
+                <span style="font:600 14px 'Manrope',system-ui,sans-serif">Comments</span>
+                <span style="font:400 11px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.32)">{{ replyDetail.commentCount }}</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:16px">
+                <sc-for list="{{ replyDetail.comments }}" as="c" hint-placeholder-count="2">
+                  <div style="display:flex;gap:10px">
+                    <div style="flex:none;width:30px;height:30px;border-radius:50%;background:{{ c.tint }}"></div>
+                    <div style="display:flex;flex-direction:column;gap:3px">
+                      <div style="display:flex;align-items:baseline;gap:7px">
+                        <span style="font:500 12.5px 'Manrope',system-ui,sans-serif">{{ c.who }}</span>
+                        <span style="font:400 9.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.3)">{{ c.when }}</span>
+                      </div>
+                      <span style="font:400 13.5px/1.4 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.78)">{{ c.text }}</span>
+                      <span style="font:400 10.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.32);cursor:pointer">Reply</span>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="position:sticky;bottom:0;display:flex;align-items:center;gap:10px;padding:12px 16px 20px;background:linear-gradient(0deg,#0B0B0D 60%,transparent);border-top:1px solid rgba(255,255,255,.06)">
+              <input value="{{ commentDraft }}" onChange="{{ onCommentDraft }}" placeholder="Add a comment…" style="flex:1;min-width:0;padding:11px 16px;border-radius:100px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:#F5F4F1;font:400 13.5px 'Manrope',system-ui,sans-serif;outline:none" />
+              <div onClick="{{ onCommentSend }}" style="flex:none;width:38px;height:38px;border-radius:50%;background:linear-gradient(180deg,#29D3E8,#1BAFC4);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px">💬</div>
+            </div>
+          </div>
+        </sc-if>
+        <div style="position:absolute;top:-140px;left:-90px;width:340px;height:340px;border-radius:50%;background:radial-gradient(circle,rgba(41,211,232,.16),transparent 68%);filter:blur(10px);animation:driftA 18s ease-in-out infinite;pointer-events:none"></div>
+        <div style="position:absolute;top:220px;right:-130px;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle,rgba(41,211,232,.15),transparent 68%);filter:blur(10px);animation:driftB 22s ease-in-out infinite;pointer-events:none"></div>
+        <div style="position:absolute;bottom:-160px;left:40px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(176,137,104,.10),transparent 70%);filter:blur(12px);animation:driftA 26s ease-in-out infinite;pointer-events:none"></div>
+
+        <div style="position:relative;height:100%;overflow-y:auto;padding:62px 0 46px">
+
+          <div style="padding:0 22px 18px;display:flex;align-items:flex-end;justify-content:space-between">
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span style="font:500 10px 'Manrope',system-ui,sans-serif;letter-spacing:.22em;color:rgba(245,244,241,.34)">CAMPUS · BROWN</span>
+              <span style="font:800 28px/1.15 'Manrope',system-ui,sans-serif;letter-spacing:-.03em">Ping</span>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+              <div style="display:flex;align-items:baseline;gap:5px">
+                <span style="font:800 21px/1 'Manrope',system-ui,sans-serif;color:#F5F4F1;letter-spacing:-.02em">{{ pingScore }}</span>
+                <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.34)">score</span>
+              </div>
+              <span style="font:500 10px 'Manrope',system-ui,sans-serif;letter-spacing:.04em;padding:3px 9px;border-radius:100px;color:{{ scoreTag.color }};background:{{ scoreTag.bg }};border:1px solid {{ scoreTag.border }}">{{ scoreTag.label }}</span>
+            </div>
+          </div>
+
+          <div style="padding:0 22px 20px">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 10px">
+              <span style="font:500 11px 'Manrope',system-ui,sans-serif;letter-spacing:.18em;color:rgba(245,244,241,.4)">PING SOMEONE</span>
+            </div>
+            <div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin">
+              <sc-for list="{{ follows }}" as="f" hint-placeholder-count="6">
+                <div onClick="{{ f.onClick }}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;width:56px">
+                  <div style="position:relative;width:52px;height:52px">
+                    <div style="width:52px;height:52px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:{{ f.tint }};display:flex;align-items:center;justify-content:center;font:500 16px 'Manrope',system-ui,sans-serif;color:rgba(11,11,13,.75)">{{ f.initial }}</div>
+                    <div style="position:absolute;bottom:-3px;right:-3px;display:flex;align-items:center;gap:2px;padding:2px 5px;border-radius:100px;background:#0B0B0D;border:1px solid rgba(255,255,255,.14)">
+                      <span style="font:400 8.5px 'Manrope',system-ui,sans-serif;color:#29D3E8">🔥{{ f.streak }}</span>
+                    </div>
+                  </div>
+                  <span style="font:400 10.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56px">{{ f.who }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="display:flex;gap:10px;overflow-x:auto;padding:14px 0 2px">
+              <div onClick="{{ onNewGroup }}" style="flex:none;display:flex;align-items:center;gap:9px;padding:8px 15px 8px 11px;border-radius:100px;cursor:pointer;border:1px dashed rgba(41,211,232,.4);background:rgba(41,211,232,.06)" style-hover="background:rgba(41,211,232,.12)">
+                <div style="width:24px;height:24px;border-radius:50%;border:1px solid rgba(41,211,232,.45);display:flex;align-items:center;justify-content:center;font:300 15px/1 'Manrope',system-ui,sans-serif;color:rgba(205,246,250,.9)">+</div>
+                <span style="font:500 12px 'Manrope',system-ui,sans-serif;color:rgba(205,246,250,.9);white-space:nowrap">New group</span>
+              </div>
+              <sc-for list="{{ groupChips }}" as="g" hint-placeholder-count="2">
+                <div onClick="{{ g.onClick }}" style="flex:none;display:flex;align-items:center;gap:10px;padding:8px 14px 8px 10px;border-radius:100px;cursor:pointer;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04)">
+                  <div style="display:flex;align-items:center">
+                    <sc-for list="{{ g.slots }}" as="s" hint-placeholder-count="4">
+                      <div style="width:24px;height:24px;border-radius:50%;border:1.5px solid #0B0B0D;background:{{ s.tint }};margin-left:{{ s.ml }}"></div>
+                    </sc-for>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:1px">
+                    <span style="font:500 12px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.88);white-space:nowrap">{{ g.name }}</span>
+                    <span style="font:400 9.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.34);white-space:nowrap">{{ g.sub }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <sc-if value="{{ hasLoops }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:0 22px 9px;display:flex;align-items:center;justify-content:space-between">
+              <span style="font:500 11px 'Manrope',system-ui,sans-serif;letter-spacing:.18em;color:rgba(41,211,232,.75)">OPEN LOOPS</span>
+              <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.28)">{{ loopMeta }}</span>
+            </div>
+            <div style="padding:0 22px 22px;display:flex;flex-direction:column;gap:9px">
+              <sc-for list="{{ loops }}" as="l" hint-placeholder-count="2">
+                <div style="display:flex;align-items:center;gap:12px;padding:13px 15px;border-radius:18px;background:linear-gradient(90deg,rgba(41,211,232,.16),rgba(41,211,232,.08));border:1px solid rgba(255,255,255,.13);box-shadow:0 0 26px rgba(41,211,232,.1)">
+                  <div style="flex:none;width:32px;height:32px;border-radius:50%;border:{{ l.avatarBorder }};background:{{ l.avatarBg }};display:flex;align-items:center;justify-content:center;font:500 12px 'Manrope',system-ui,sans-serif;color:{{ l.initialColor }}">{{ l.initial }}</div>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                    <span style="font:500 13px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.94)">{{ l.title }}</span>
+                    <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.42)">{{ l.reason }} · {{ l.left }}</span>
+                  </div>
+                  <div onClick="{{ l.onPingBack }}" style="flex:none;padding:9px 15px;border-radius:100px;cursor:pointer;font:500 12px 'Manrope',system-ui,sans-serif;color:#0B0B0D;background:linear-gradient(180deg,#7FE8F2,#29D3E8);box-shadow:0 0 22px rgba(41,211,232,.3)">Ping back</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:52px 34px 0;display:flex;flex-direction:column;align-items:center;text-align:center;gap:0">
+              <div style="position:relative;width:132px;height:132px;display:flex;align-items:center;justify-content:center;margin-bottom:26px">
+                <div style="position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,rgba(41,211,232,.28),transparent 65%);animation:breathe 5s ease-in-out infinite"></div>
+                <div style="width:62px;height:62px;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);backdrop-filter:blur(20px)"></div>
+              </div>
+              <div style="font:800 22px/1.3 'Manrope',system-ui,sans-serif;letter-spacing:-.02em;margin-bottom:10px">{{ emptyTitle }}</div>
+              <div style="font:400 14.5px/1.6 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.5);max-width:270px;text-wrap:pretty">{{ emptyBody }}</div>
+              <div onClick="{{ onEmptyCta }}" style="margin-top:28px;padding:13px 24px;border-radius:100px;cursor:pointer;font:600 14px 'Manrope',system-ui,sans-serif;color:#0B0B0D;background:linear-gradient(180deg,#29D3E8,#1BAFC4);box-shadow:0 0 34px rgba(41,211,232,.3);transition:transform .18s cubic-bezier(.34,1.56,.64,1)" style-active="transform:scale(.94) rotate(-1deg)">{{ emptyCta }}</div>
+              <div style="margin-top:16px;font:400 11px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.28)">nothing here is a bad thing</div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ hasToReply }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:0 22px 8px;display:flex;align-items:center;justify-content:space-between">
+              <span style="font:500 11px 'Manrope',system-ui,sans-serif;letter-spacing:.18em;color:rgba(245,244,241,.72)">TO REPLY</span>
+              <span style="font:400 11px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.3)">{{ toReplyCount }}</span>
+            </div>
+            <div style="padding:0 22px 30px;display:flex;flex-direction:column;gap:12px">
+              <sc-for list="{{ toReply }}" as="p" hint-placeholder-count="2">
+                <div>
+
+                  <sc-if value="{{ p.notRevealed }}" hint-placeholder-val="{{ true }}">
+                    <div onPointerDown="{{ p.onDown }}" onPointerUp="{{ p.onUp }}" onPointerLeave="{{ p.onUp }}" style="position:relative;overflow:hidden;border-radius:26px 14px 30px 10px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(150deg,rgba(255,255,255,.07),rgba(255,255,255,.03));backdrop-filter:blur(22px) saturate(175%);cursor:pointer;user-select:none;touch-action:none;box-shadow:{{ p.cardGlow }}">
+                      <div style="padding:17px 90px 17px 18px;display:flex;gap:13px;align-items:center;filter:{{ p.veil }}">
+                        <div style="flex:none;width:36px;height:36px;border-radius:50%;border:{{ p.avatarBorder }};background:{{ p.avatarBg }};display:flex;align-items:center;justify-content:center;font:500 13px 'Manrope',system-ui,sans-serif;color:{{ p.initialColor }}">{{ p.initial }}</div>
+                        <div style="display:flex;flex-direction:column;gap:5px;min-width:0">
+                          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                            <span style="font:500 13px 'Manrope',system-ui,sans-serif;color:{{ p.whoColor }}">{{ p.whoLabel }}</span>
+                            <sc-if value="{{ p.hasStreak }}" hint-placeholder-val="{{ true }}">
+                              <span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:100px;background:rgba(41,211,232,.1);border:1px solid rgba(41,211,232,.24);font:500 8.5px 'Manrope',system-ui,sans-serif;color:#29D3E8">{{ p.streakLabel }}</span>
+                              <span style="padding:2px 8px;border-radius:100px;background:{{ p.tagBg }};border:1px solid {{ p.tagBorder }};font:500 8.5px 'Manrope',system-ui,sans-serif;letter-spacing:.06em;color:{{ p.tagColor }}">{{ p.tag }}</span>
+                            </sc-if>
+                          </div>
+                          <span style="font:500 16px/1.35 'Manrope',system-ui,sans-serif;color:#F5F4F1;text-wrap:pretty">{{ p.prompt }}</span>
+                        </div>
+                      </div>
+
+                      <div style="position:absolute;top:0;right:0;bottom:0;width:90px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:linear-gradient(270deg,rgba(255,255,255,.06),transparent)">
+                        <div style="position:relative;width:42px;height:42px;display:flex;align-items:center;justify-content:center">
+                          <div style="position:absolute;inset:0;border-radius:50%;background:{{ p.ring }};-webkit-mask:radial-gradient(farthest-side,transparent 68%,#000 70%);mask:radial-gradient(farthest-side,transparent 68%,#000 70%)"></div>
+                          <div style="position:absolute;inset:0;border-radius:50%;border:1px solid rgba(255,255,255,.1)"></div>
+                          <div style="position:absolute;inset:-10px;border-radius:50%;box-shadow:{{ p.ringGlow }}"></div>
+                          <div style="width:7px;height:7px;border-radius:50%;background:rgba(245,244,241,.65)"></div>
+                        </div>
+                        <span style="font:400 8.5px 'Manrope',system-ui,sans-serif;letter-spacing:.06em;color:{{ p.hintColor }};text-align:center;line-height:1.3;width:78px">{{ p.hint }}</span>
+                      </div>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ p.revealedCollapsed }}" hint-placeholder-val="{{ false }}">
+                    <div onClick="{{ p.onReopen }}" style="position:relative;overflow:hidden;border-radius:26px 14px 30px 10px;border:1px solid rgba(41,211,232,.28);background:linear-gradient(150deg,rgba(41,211,232,.08),rgba(255,255,255,.03));cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.08)">
+                      <div style="padding:17px 20px 17px 18px;display:flex;gap:13px;align-items:flex-start">
+                        <div style="flex:none;width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:{{ p.avatarBg }};display:flex;align-items:center;justify-content:center;font:500 13px 'Manrope',system-ui,sans-serif;color:rgba(11,11,13,.75)">{{ p.initial }}</div>
+                        <div style="display:flex;flex-direction:column;gap:5px;min-width:0;flex:1">
+                          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                            <span style="font:500 13px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.62)">{{ p.who }}</span>
+                            <sc-if value="{{ p.hasStreak }}" hint-placeholder-val="{{ true }}">
+                              <span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:100px;background:rgba(41,211,232,.1);border:1px solid rgba(41,211,232,.24);font:500 8.5px 'Manrope',system-ui,sans-serif;color:#29D3E8">{{ p.streakLabel }}</span>
+                              <span style="padding:2px 8px;border-radius:100px;background:{{ p.tagBg }};border:1px solid {{ p.tagBorder }};font:500 8.5px 'Manrope',system-ui,sans-serif;letter-spacing:.06em;color:{{ p.tagColor }}">{{ p.tag }}</span>
+                            </sc-if>
+                          </div>
+                          <span style="font:500 16px/1.35 'Manrope',system-ui,sans-serif;color:#F5F4F1;text-wrap:pretty">{{ p.prompt }}</span>
+                        </div>
+                      </div>
+                      <div style="padding:0 20px 15px 67px;display:flex;align-items:center;gap:8px">
+                        <div style="width:5px;height:5px;border-radius:50%;background:#29D3E8;box-shadow:0 0 9px rgba(41,211,232,.9);animation:seenPulse 3s ease-in-out infinite"></div>
+                        <span style="font:400 11.5px 'Manrope',system-ui,sans-serif;color:rgba(41,211,232,.75)">window open · {{ p.windowLeft }} to send more</span>
+                      </div>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ p.expanded }}" hint-placeholder-val="{{ false }}">
+                    <div style="border-radius:30px 12px 34px 16px;border:1px solid rgba(255,255,255,.13);background:linear-gradient(160deg,rgba(255,255,255,.09),rgba(255,255,255,.04));backdrop-filter:blur(24px) saturate(180%);box-shadow:0 18px 44px rgba(0,0,0,.45),0 0 32px rgba(41,211,232,.08),inset 0 1px 0 rgba(255,255,255,.12);overflow:hidden">
+
+                      <div style="padding:14px 16px 12px;border-bottom:1px solid rgba(255,255,255,.08)">
+                        <div style="display:flex;align-items:flex-start;gap:10px">
+                          <div style="flex:none;width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.16);background:{{ p.avatarBg }};display:flex;align-items:center;justify-content:center;font:500 12px 'Manrope',system-ui,sans-serif;color:rgba(11,11,13,.75)">{{ p.initial }}</div>
+                          <div style="flex:1;display:flex;flex-direction:column;gap:2px;min-width:0">
+                            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                              <span style="font:500 12.5px 'Manrope',system-ui,sans-serif">{{ p.who }}</span>
+                              <sc-if value="{{ p.hasStreak }}" hint-placeholder-val="{{ true }}">
+                                <span style="padding:2px 7px;border-radius:100px;background:rgba(41,211,232,.1);border:1px solid rgba(41,211,232,.24);font:500 8.5px 'Manrope',system-ui,sans-serif;color:#29D3E8">{{ p.streakLabel }}</span>
+                                <span style="padding:2px 8px;border-radius:100px;background:{{ p.tagBg }};border:1px solid {{ p.tagBorder }};font:500 8.5px 'Manrope',system-ui,sans-serif;letter-spacing:.06em;color:{{ p.tagColor }}">{{ p.tag }}</span>
+                              </sc-if>
+                            </div>
+                            <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.36)">pinged you · {{ p.time }}</span>
+                          </div>
+                          <div style="flex:none;display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:100px;background:rgba(41,211,232,.1);border:1px solid rgba(41,211,232,.24)">
+                            <div style="width:5px;height:5px;border-radius:50%;background:#29D3E8;box-shadow:0 0 9px rgba(41,211,232,.9);animation:seenPulse 3s ease-in-out infinite"></div>
+                            <span style="font:400 9.5px 'Manrope',system-ui,sans-serif;color:rgba(41,211,232,.8)">open</span>
+                          </div>
+                        </div>
+                        <div style="margin-top:11px;font:500 17px/1.35 'Manrope',system-ui,sans-serif;letter-spacing:-.01em;text-wrap:pretty">{{ p.prompt }}</div>
+                      </div>
+
+                      <div style="padding:14px">
+
+                        <div style="display:flex;gap:12px;align-items:stretch">
+                          <div onClick="{{ p.onAddPhoto }}" style="position:relative;flex:none;border-radius:18px;overflow:hidden;border:{{ p.dropBorder }};width:120px;height:150px;background:rgba(255,255,255,.03);cursor:pointer;display:flex;align-items:center;justify-content:center">
+                            <sc-if value="{{ p.captured }}" hint-placeholder-val="{{ false }}">
+                              <div style="position:absolute;inset:0;background:linear-gradient(160deg,rgba(41,211,232,.12),rgba(176,137,104,.12)),repeating-linear-gradient(135deg,rgba(255,255,255,.08) 0 9px,rgba(255,255,255,.02) 9px 18px)"></div>
+                              <div style="position:absolute;top:9px;left:9px;width:34px;height:42px;border-radius:8px;border:1.5px solid rgba(255,255,255,.45);background:repeating-linear-gradient(135deg,rgba(255,255,255,.12) 0 6px,rgba(255,255,255,.03) 6px 12px)"></div>
+                              <div onClick="{{ p.onRemovePhoto }}" style="position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:50%;background:rgba(11,11,13,.6);border:1px solid rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;cursor:pointer;font:400 12px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.8)">×</div>
+                              <span style="position:absolute;bottom:9px;left:10px;font:400 9px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.5)">photo attached</span>
+                            </sc-if>
+                            <sc-if value="{{ p.notCaptured }}" hint-placeholder-val="{{ true }}">
+                              <div style="display:flex;flex-direction:column;align-items:center;gap:9px">
+                                <div style="width:46px;height:46px;border-radius:50%;border:1.5px solid rgba(255,255,255,.24);display:flex;align-items:center;justify-content:center;font:300 22px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.65)">+</div>
+                                <span style="font:400 10.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.34)">add photo</span>
+                              </div>
+                            </sc-if>
+                          </div>
+
+                          <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:10px">
+                            <div style="display:flex;flex-direction:column;gap:6px">
+                              <span style="font:500 9.5px 'Manrope',system-ui,sans-serif;letter-spacing:.16em;color:rgba(245,244,241,.34)">YOUR REPLY</span>
+                              <span style="font:400 11.5px/1.5 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.42);text-wrap:pretty">{{ p.replyHint }}</span>
+                            </div>
+                            <div onClick="{{ p.onPingBackNow }}" style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:14px;cursor:pointer;border:1px solid rgba(41,211,232,.3);background:linear-gradient(90deg,rgba(41,211,232,.16),rgba(41,211,232,.07))">
+                              <div style="flex:none;width:24px;height:24px;border-radius:50%;background:linear-gradient(180deg,#7FE8F2,#29D3E8);display:flex;align-items:center;justify-content:center;font:500 11px/1 'Manrope',system-ui,sans-serif;color:#0B0B0D">↩</div>
+                              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                                <span style="font:500 11.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.9)">Ping {{ p.firstName }} back</span>
+                                <span style="font:400 9px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.36)">ask them something too</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style="margin-top:12px;display:flex;align-items:center;gap:9px;padding:4px 5px 4px 14px;border-radius:100px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05)">
+                          <input value="{{ draft }}" onChange="{{ onDraft }}" placeholder="say something…" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:#F5F4F1;font:400 13px 'Manrope',system-ui,sans-serif;padding:8px 0" />
+                          <div onClick="{{ p.onSend }}" style="flex:none;padding:8px 15px;border-radius:100px;cursor:pointer;font:500 12px 'Manrope',system-ui,sans-serif;color:{{ sendFg }};background:{{ sendBg }};box-shadow:{{ sendGlow }}">Send</div>
+                        </div>
+
+                        <sc-if value="{{ p.hasSentReplies }}" hint-placeholder-val="{{ false }}">
+                          <div style="margin-top:11px;display:flex;flex-direction:column;gap:6px">
+                            <sc-for list="{{ p.sentReplies }}" as="r" hint-placeholder-count="1">
+                              <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:16px 8px 16px 8px;background:linear-gradient(150deg,rgba(41,211,232,.1),rgba(41,211,232,.04));border:1px solid rgba(41,211,232,.18)">
+                                <div style="flex:none;width:34px;height:42px;border-radius:7px;overflow:hidden;background:linear-gradient(160deg,rgba(41,211,232,.2),rgba(176,137,104,.16)),repeating-linear-gradient(135deg,rgba(255,255,255,.12) 0 6px,rgba(255,255,255,.03) 6px 12px)"></div>
+                                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                                  <span style="font:400 12.5px/1.45 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.85);text-wrap:pretty">{{ r.text }}</span>
+                                  <div style="display:flex;align-items:center;gap:6px">
+                                    <div style="width:4px;height:4px;border-radius:50%;background:#29D3E8;box-shadow:0 0 8px rgba(41,211,232,.9)"></div>
+                                    <span style="font:400 9px 'Manrope',system-ui,sans-serif;color:rgba(41,211,232,.7)">sent · just now</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </sc-for>
+                            <span style="font:400 9.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.3);padding-left:2px">unlimited within the window — send more anytime</span>
+                          </div>
+                        </sc-if>
+                      </div>
+                    </div>
+                  </sc-if>
+
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ hasReplies }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:0 22px 8px">
+              <span style="font:500 11px 'Manrope',system-ui,sans-serif;letter-spacing:.18em;color:rgba(245,244,241,.55)">REPLIES</span>
+            </div>
+            <div style="padding:0 22px 30px;display:flex;flex-direction:column;gap:12px">
+              <sc-for list="{{ replies }}" as="r" hint-placeholder-count="3">
+                <div>
+                  <sc-if value="{{ r.unviewed }}" hint-placeholder-val="{{ true }}">
+                    <div onPointerDown="{{ r.onDown }}" onPointerUp="{{ r.onUp }}" onPointerLeave="{{ r.onUp }}" style="position:relative;overflow:hidden;border-radius:26px 14px 30px 10px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(150deg,rgba(255,255,255,.07),rgba(255,255,255,.03));backdrop-filter:blur(22px) saturate(175%);cursor:pointer;user-select:none;touch-action:none;box-shadow:{{ r.cardGlow }}">
+                      <div style="padding:17px 90px 17px 18px;display:flex;gap:13px;align-items:center;filter:{{ r.veil }}">
+                        <div style="flex:none;width:36px;height:36px;border-radius:50%;overflow:hidden;background:linear-gradient(160deg,rgba(176,137,104,.3),rgba(41,211,232,.24)),repeating-linear-gradient(135deg,rgba(255,255,255,.12) 0 6px,rgba(255,255,255,.03) 6px 12px)"></div>
+                        <div style="display:flex;flex-direction:column;gap:5px;min-width:0">
+                          <span style="font:500 13px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.62)">{{ r.who }} replied</span>
+                          <span style="font:500 16px/1.35 'Manrope',system-ui,sans-serif;color:#F5F4F1;text-wrap:pretty">{{ r.prompt }}</span>
+                        </div>
+                      </div>
+                      <div style="position:absolute;top:0;right:0;bottom:0;width:90px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:linear-gradient(270deg,rgba(255,255,255,.06),transparent)">
+                        <div style="position:relative;width:42px;height:42px;display:flex;align-items:center;justify-content:center">
+                          <div style="position:absolute;inset:0;border-radius:50%;background:{{ r.ring }};-webkit-mask:radial-gradient(farthest-side,transparent 68%,#000 70%);mask:radial-gradient(farthest-side,transparent 68%,#000 70%)"></div>
+                          <div style="position:absolute;inset:0;border-radius:50%;border:1px solid rgba(255,255,255,.1)"></div>
+                          <div style="position:absolute;inset:-10px;border-radius:50%;box-shadow:{{ r.ringGlow }}"></div>
+                          <div style="width:7px;height:7px;border-radius:50%;background:rgba(245,244,241,.65)"></div>
+                        </div>
+                        <span style="font:400 8.5px 'Manrope',system-ui,sans-serif;color:{{ r.hintColor }};text-align:center;line-height:1.3;width:78px">{{ r.hint }}</span>
+                      </div>
+                    </div>
+                  </sc-if>
+
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <div style="padding:0 22px 8px;display:flex;align-items:center;justify-content:space-between">
+            <span style="font:500 11px 'Manrope',system-ui,sans-serif;letter-spacing:.18em;color:rgba(245,244,241,.55)">GROUP WALL</span>
+            <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.3)">{{ wallMeta }}</span>
+          </div>
+          <div style="padding:0 22px 30px">
+            <div style="border-radius:28px 12px 30px 16px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(160deg,#16161A,#131317);overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,.35)">
+              <div style="padding:15px 16px 14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;gap:11px">
+                <div style="display:flex;align-items:center;gap:11px">
+                  <div style="flex:none;display:flex;align-items:center">
+                    <sc-for list="{{ wall.members }}" as="m" hint-placeholder-count="4">
+                      <div style="width:30px;height:30px;border-radius:50%;border:2px solid #16161A;background:{{ m.tint }};margin-left:{{ m.ml }};display:flex;align-items:center;justify-content:center;font:500 11px 'Manrope',system-ui,sans-serif;color:rgba(11,11,13,.72)">{{ m.initial }}</div>
+                    </sc-for>
+                  </div>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                    <span style="font:600 13.5px 'Manrope',system-ui,sans-serif;color:#F5F4F1;letter-spacing:-.01em">{{ wall.group }}</span>
+                    <span style="font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.34)">{{ wall.memberCount }} people · {{ wall.when }}</span>
+                  </div>
+                  <div style="flex:none;display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:100px;background:{{ wallBadgeBg }};border:1px solid {{ wallBadgeBorder }}">
+                    <div style="width:5px;height:5px;border-radius:50%;background:{{ wallBadgeDot }};box-shadow:0 0 8px {{ wallBadgeDot }}"></div>
+                    <span style="font:500 9.5px 'Manrope',system-ui,sans-serif;color:{{ wallBadgeColor }}">{{ wallBadgeLabel }}</span>
+                  </div>
+                </div>
+                <span style="font:500 16px/1.35 'Manrope',system-ui,sans-serif;color:#F5F4F1;text-wrap:pretty">{{ wall.prompt }}</span>
+                <div style="display:flex;flex-direction:column;gap:5px">
+                  <div style="position:relative;height:5px;border-radius:100px;background:rgba(255,255,255,.06);overflow:hidden">
+                    <div style="position:absolute;inset:0 auto 0 0;width:{{ wallProgress }};border-radius:100px;background:linear-gradient(90deg,#29D3E8,#7FE8F2);box-shadow:0 0 12px rgba(41,211,232,.5);transition:width .4s cubic-bezier(.2,.8,.2,1)"></div>
+                  </div>
+                  <span style="font:400 9.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.34)">{{ wallMeta }}</span>
+                </div>
+              </div>
+
+              <sc-if value="{{ wallLocked }}" hint-placeholder-val="{{ true }}">
+                <div style="padding:14px 16px 16px;display:flex;flex-direction:column;gap:11px">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <div style="width:22px;height:22px;border-radius:50%;background:rgba(41,211,232,.14);border:1px solid rgba(41,211,232,.3);display:flex;align-items:center;justify-content:center;font:500 11px/1 'Manrope',system-ui,sans-serif;color:#29D3E8">↑</div>
+                    <span style="font:500 12px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.9)">Your turn — answer to unlock everyone's</span>
+                  </div>
+                  <div style="display:flex;gap:11px;align-items:stretch">
+                    <div onClick="{{ onWallAddPhoto }}" style="position:relative;flex:none;width:96px;height:120px;border-radius:16px;overflow:hidden;border:{{ wallDropBorder }};background:rgba(255,255,255,.03);cursor:pointer;display:flex;align-items:center;justify-content:center">
+                      <sc-if value="{{ wallCaptured }}" hint-placeholder-val="{{ false }}">
+                        <div style="position:absolute;inset:0;background:linear-gradient(160deg,rgba(41,211,232,.12),rgba(176,137,104,.12)),repeating-linear-gradient(135deg,rgba(255,255,255,.08) 0 8px,rgba(255,255,255,.02) 8px 16px)"></div>
+                        <div style="position:absolute;top:8px;left:8px;width:28px;height:34px;border-radius:7px;border:1.5px solid rgba(255,255,255,.45);background:repeating-linear-gradient(135deg,rgba(255,255,255,.12) 0 6px,rgba(255,255,255,.03) 6px 12px)"></div>
+                        <div onClick="{{ onWallRemovePhoto }}" style="position:absolute;top:7px;right:7px;width:20px;height:20px;border-radius:50%;background:rgba(11,11,13,.6);border:1px solid rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;cursor:pointer;font:400 11px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.8)">×</div>
+                      </sc-if>
+                      <sc-if value="{{ wallNotCaptured }}" hint-placeholder-val="{{ true }}">
+                        <div style="display:flex;flex-direction:column;align-items:center;gap:7px">
+                          <div style="width:38px;height:38px;border-radius:50%;border:1.5px solid rgba(255,255,255,.24);display:flex;align-items:center;justify-content:center;font:300 20px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.65)">+</div>
+                          <span style="font:400 9.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.34)">add photo</span>
+                        </div>
+                      </sc-if>
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:9px">
+                      <span style="font:400 11px/1.5 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.42);text-wrap:pretty">Post to the wall — only members who've answered can see it.</span>
+                      <div style="display:flex;align-items:center;gap:8px;padding:4px 5px 4px 13px;border-radius:100px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05)">
+                        <input value="{{ wallDraft }}" onChange="{{ onWallDraft }}" placeholder="say something…" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:#F5F4F1;font:400 12.5px 'Manrope',system-ui,sans-serif;padding:8px 0" />
+                        <div onClick="{{ onWallSend }}" style="flex:none;padding:8px 14px;border-radius:100px;cursor:pointer;font:500 11.5px 'Manrope',system-ui,sans-serif;color:{{ wallSendFg }};background:{{ wallSendBg }};box-shadow:{{ wallSendGlow }}">Post</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ wallUnlocked }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:14px 16px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <sc-for list="{{ wallTiles }}" as="t" hint-placeholder-count="4">
+                  <div style="position:relative;border-radius:16px;overflow:hidden;aspect-ratio:3/4">
+
+                    <sc-if value="{{ t.hidden }}" hint-placeholder-val="{{ true }}">
+                      <div onPointerDown="{{ t.onDown }}" onPointerUp="{{ t.onUp }}" onPointerLeave="{{ t.onUp }}" style="position:absolute;inset:0;border-radius:16px;border:1px solid rgba(255,255,255,.12);background:{{ t.tint }};cursor:pointer;user-select:none;touch-action:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;box-shadow:{{ t.cardGlow }}">
+                        <div style="position:absolute;inset:0;backdrop-filter:{{ t.veil }};background:repeating-linear-gradient(135deg,rgba(255,255,255,.07) 0 8px,rgba(255,255,255,.02) 8px 16px)"></div>
+                        <div style="position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center">
+                          <div style="position:absolute;inset:0;border-radius:50%;background:{{ t.ring }};-webkit-mask:radial-gradient(farthest-side,transparent 68%,#000 70%);mask:radial-gradient(farthest-side,transparent 68%,#000 70%)"></div>
+                          <div style="position:absolute;inset:0;border-radius:50%;border:1px solid rgba(255,255,255,.14)"></div>
+                          <div style="position:absolute;inset:-8px;border-radius:50%;box-shadow:{{ t.ringGlow }}"></div>
+                          <div style="width:6px;height:6px;border-radius:50%;background:rgba(245,244,241,.75)"></div>
+                        </div>
+                        <span style="position:relative;font:500 11.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.9)">{{ t.who }}</span>
+                        <span style="position:relative;font:400 8.5px 'Manrope',system-ui,sans-serif;color:{{ t.hintColor }}">{{ t.hint }}</span>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{ t.shown }}" hint-placeholder-val="{{ false }}">
+                      <div onClick="{{ t.onView }}" style="position:absolute;inset:0;border-radius:16px;border:1px solid rgba(255,255,255,.12);background:{{ t.tint }};display:flex;flex-direction:column;justify-content:flex-end;padding:10px;cursor:pointer" style-hover="border-color:rgba(41,211,232,.35)">
+                        <div style="position:absolute;inset:0;background:repeating-linear-gradient(135deg,rgba(255,255,255,.08) 0 9px,rgba(255,255,255,.02) 9px 18px)"></div>
+                        <div style="position:absolute;top:9px;left:9px;width:30px;height:38px;border-radius:7px;border:1.5px solid rgba(255,255,255,.45);background:repeating-linear-gradient(135deg,rgba(255,255,255,.14) 0 6px,rgba(255,255,255,.04) 6px 12px)"></div>
+                        <div style="position:absolute;top:9px;right:9px;width:22px;height:22px;border-radius:50%;background:rgba(11,11,13,.5);border:1px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font:400 10px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.8)">↗</div>
+                        <div style="position:relative;display:flex;flex-direction:column;gap:3px">
+                          <span style="font:500 11px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.95)">{{ t.who }}</span>
+                          <span style="font:400 10.5px/1.35 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.72);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">{{ t.text }}</span>
+                        </div>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{ t.pending }}" hint-placeholder-val="{{ false }}">
+                      <div style="position:absolute;inset:0;border-radius:16px;border:1px dashed rgba(255,255,255,.14);background:rgba(255,255,255,.02);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">
+                        <div style="width:38px;height:38px;border-radius:50%;border:1.5px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font:300 22px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.55)">+</div>
+                        <span style="font:400 8.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.3)">your turn</span>
+                      </div>
+                    </sc-if>
+
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ wallMultiPage }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;justify-content:center;gap:14px;padding:0 16px 14px">
+                  <div onClick="{{ onWallPrevPage }}" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;font:400 14px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.7)">‹</div>
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <sc-for list="{{ wallPages }}" as="pg" hint-placeholder-count="2">
+                      <div onClick="{{ pg.onClick }}" style="width:{{ pg.w }};height:6px;border-radius:100px;background:{{ pg.bg }};cursor:pointer;transition:all .25s ease"></div>
+                    </sc-for>
+                  </div>
+                  <div onClick="{{ onWallNextPage }}" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;font:400 14px/1 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.7)">›</div>
+                </div>
+              </sc-if>
+              </sc-if>
+
+              <div style="padding:13px 16px 15px;border-top:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;gap:10px">
+                <span style="font:500 9.5px 'Manrope',system-ui,sans-serif;letter-spacing:.14em;color:rgba(245,244,241,.32)">PING THE GROUP</span>
+                <div style="display:flex;align-items:center;gap:9px">
+                  <div onClick="{{ onPingWholeGroup }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 0;border-radius:100px;cursor:pointer;background:linear-gradient(180deg,#29D3E8,#1BAFC4);box-shadow:0 0 22px rgba(41,211,232,.28)" style-active="transform:scale(.97)">
+                    <span style="font:600 12.5px 'Manrope',system-ui,sans-serif;color:#0B0B0D">Ask everyone something</span>
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px">
+                  <sc-for list="{{ wallPingMembers }}" as="m" hint-placeholder-count="4">
+                    <div onClick="{{ m.onClick }}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;width:48px" style-hover="opacity:.8">
+                      <div style="width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:{{ m.tint }};display:flex;align-items:center;justify-content:center;font:500 14px 'Manrope',system-ui,sans-serif;color:rgba(11,11,13,.72)">{{ m.initial }}</div>
+                      <span style="font:400 9.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:48px">{{ m.who }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <sc-if value="{{ hasSent }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:0 22px 8px">
+              <span style="font:500 11px 'Manrope',system-ui,sans-serif;letter-spacing:.18em;color:rgba(245,244,241,.4)">SENT</span>
+            </div>
+            <div style="padding:0 22px 30px;display:flex;flex-direction:column;gap:9px">
+              <sc-for list="{{ sent }}" as="s" hint-placeholder-count="2">
+                <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:20px 10px 22px 12px;border:1px solid rgba(255,255,255,.05);background:#17171B">
+                  <div style="flex:none;width:28px;height:28px;border-radius:50%;border:1px dashed rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;font:400 10px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.4)">{{ s.initial }}</div>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                    <span style="font:400 11px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.32)">to {{ s.who }}</span>
+                    <span style="font:400 14px/1.3 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.62);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.prompt }}</span>
+                  </div>
+                  <sc-if value="{{ s.seen }}" hint-placeholder-val="{{ true }}">
+                    <div style="flex:none;display:flex;align-items:center;gap:6px">
+                      <div style="width:5px;height:5px;border-radius:50%;background:#29D3E8;box-shadow:0 0 9px rgba(41,211,232,.9);animation:seenPulse 3s ease-in-out infinite"></div>
+                      <span style="font:400 10.5px 'Manrope',system-ui,sans-serif;color:rgba(41,211,232,.72)">Seen</span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ s.unseen }}" hint-placeholder-val="{{ false }}">
+                    <span style="flex:none;font:400 10.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.24)">Delivered</span>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ showFooter }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:6px 22px 0;text-align:center;font:400 10.5px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.2)">that's everything · no feed, no streaks</div>
+          </sc-if>
+        </div>
+      </div>
+    </x-import>
+  </div>
+
+  <div style="flex:1;min-width:0;max-width:340px;display:flex;flex-direction:column;gap:26px;padding-top:6px">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <span style="font:500 11px 'Manrope',system-ui,sans-serif;letter-spacing:.16em;color:rgba(245,244,241,.35)">JUMP TO STATE</span>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <sc-for list="{{ jumps }}" as="j" hint-placeholder-count="6">
+          <div onClick="{{ j.onClick }}" style="position:relative;padding:9px 14px;border-radius:100px;cursor:pointer;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);font:400 12px 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.75)" style-hover="background:rgba(255,255,255,.1);color:#fff">{{ j.label }}</div>
+        </sc-for>
+      </div>
+      <span style="font:400 11px/1.6 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.28)">or interact directly: press &amp; hold any blurred card for 2s</span>
+    </div>
+
+    <div style="height:1px;background:rgba(255,255,255,.08)"></div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <span style="font:500 11px 'Manrope',system-ui,sans-serif;letter-spacing:.16em;color:rgba(245,244,241,.35)">DESIGN NOTES</span>
+      <div style="display:flex;flex-direction:column;gap:13px;font:400 13px/1.65 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.55)">
+        <p style="margin:0"><span style="color:rgba(245,244,241,.85)">Hold, not tap.</span> Two seconds of deliberate pressure is the whole thesis — the ring fills, the blur lifts continuously, and nothing opens by accident while scrolling.</p>
+        <p style="margin:0"><span style="color:rgba(245,244,241,.85)">Time is soft.</span> "5h left" with a slow-glowing dot, never a ticking clock. Pressure comes from care, not from a timer.</p>
+        <p style="margin:0"><span style="color:rgba(245,244,241,.85)">Hierarchy by opacity, not color.</span> To Reply is the brightest glass; Sent is nearly flat; Replies sit between. Cyan appears only where something is live.</p>
+        <p style="margin:0"><span style="color:rgba(245,244,241,.85)">Reply stays open.</span> Sending doesn't close the card — a second thought is a first-class action, so the camera resets in place and sent replies stack beneath it.</p>
+        <p style="margin:0"><span style="color:rgba(245,244,241,.85)">Nothing vanishes.</span> Viewed replies persist in a quiet state; only the Ping Back affordance is temporary (24h), so the loop invites but never nags.</p>
+      </div>
+    </div>
+
+    <div style="height:1px;background:rgba(255,255,255,.08)"></div>
+
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <span style="font:500 11px 'Manrope',system-ui,sans-serif;letter-spacing:.16em;color:rgba(245,244,241,.35)">OPEN QUESTIONS</span>
+      <div style="font:400 12.5px/1.7 'Manrope',system-ui,sans-serif;color:rgba(245,244,241,.42)">Should Anonymous pings be revealable at all before replying? · Does a group ping show every member's reply in one stack? · Is 2s the right hold, or does 1.2s feel better on a real device?</div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#29D3E8&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#29D3E8&quot;,&quot;#F0705E&quot;],&quot;section&quot;:&quot;Feel&quot;},&quot;holdSeconds&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.4,&quot;max&quot;:4,&quot;step&quot;:0.1,&quot;unit&quot;:&quot;s&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Feel&quot;}}">
+class Component extends DCLogic {
+  state = {
+    cat: 'everyone', openId: null, holdId: null, holdP: 0, frozen: false,
+    viewed: {}, captured: {}, draft: '', sentReplies: {}, pingedBack: {},
+    composeTarget: null, composePrompt: null, sentExtra: [], openedAt: {},
+    mediaOpen: {}, composeFor: null, composeDraft: '', revealed: {},
+    replyDetailId: null, commentDraft: '', extraComments: {}, extraReactions: {},
+    lightboxId: null, wallCaptured: false, wallDraft: '', wallViewerId: null, wallPage: 0,
+    creatingGroup: false, newGroupName: '', groupPicks: {},
+  };
+
+  createTints = ['linear-gradient(160deg,#C97B5A,#A85D3E)', 'linear-gradient(160deg,#B08968,#8B6A4F)', 'linear-gradient(160deg,#7A8B6F,#5F7355)', 'linear-gradient(160deg,#D2A05C,#B8843F)', 'linear-gradient(160deg,#8A7A6D,#6B5D52)', 'linear-gradient(160deg,#6E8B8A,#516B6A)'];
+
+  streaks = { 'Naomi K.': 12, 'Dev P.': 5, 'Someone': 0, 'Basement Four': 9, 'Ilana': 8, 'Theo': 5, 'Sam': 2 };
+
+  tierFor(n) {
+    if (n >= 10) return { tag: 'LEGEND', color: '#0B0B0D', bg: '#29D3E8', border: '#29D3E8' };
+    if (n >= 5) return { tag: 'REGULAR', color: 'rgba(245,244,241,.85)', bg: 'rgba(255,255,255,.08)', border: 'rgba(255,255,255,.18)' };
+    return { tag: 'NEW', color: 'rgba(245,244,241,.5)', bg: 'transparent', border: 'rgba(255,255,255,.14)' };
+  }
+
+  reactionBank = [
+    { who: 'Naomi', emoji: '😍', tint: 'linear-gradient(160deg,#C97B5A,#A85D3E)' },
+    { who: 'Theo', emoji: '🔥', tint: 'linear-gradient(160deg,#B08968,#8B6A4F)' },
+    { who: 'Priya', emoji: '👍', tint: 'linear-gradient(160deg,#7A8B6F,#5F7355)' },
+    { who: 'Sam', emoji: '😂', tint: 'linear-gradient(160deg,#6E8B8A,#516B6A)' },
+  ];
+
+  commentBank = [
+    { who: 'nonoka', when: '2h ago', text: 'this is so real', tint: 'linear-gradient(160deg,#8A7A6D,#6B5D52)' },
+  ];
+
+  quickReactionEmojis = ['😍', '🔥', '😂', '👍', '🥹'];
+
+  groups = [
+    {
+      id: 'g1', name: 'Basement Four', count: 4,
+      tints: ['linear-gradient(160deg,#C97B5A,#A85D3E)', 'linear-gradient(160deg,#B08968,#8B6A4F)', 'linear-gradient(160deg,#7A8B6F,#5F7355)', 'linear-gradient(160deg,#D2A05C,#B8843F)'],
+    },
+    {
+      id: 'g2', name: 'Thesis Hell', count: 3,
+      tints: ['linear-gradient(160deg,#8A7A6D,#6B5D52)', 'linear-gradient(160deg,#6E8B8A,#516B6A)', 'linear-gradient(160deg,#C97B5A,#A85D3E)'],
+    },
+  ];
+
+  groupWall = {
+    id: 'gw1', group: 'Basement Four', prompt: 'What are you avoiding right now?', when: '2h ago',
+    tiles: [
+      { id: 'gt1', who: 'Naomi', text: 'the email. still the email.', tint: 'linear-gradient(160deg,rgba(41,211,232,.22),rgba(110,139,138,.16))' },
+      { id: 'gt2', who: 'Theo', text: 'sleep, apparently', tint: 'linear-gradient(160deg,rgba(176,137,104,.2),rgba(138,122,109,.16))' },
+      { id: 'gt3', who: 'Priya', text: 'calling my mom back', tint: 'linear-gradient(160deg,rgba(122,139,111,.2),rgba(122,139,111,.14))' },
+      { id: 'gt4', who: 'Marcus', text: 'the group chat i muted', tint: 'linear-gradient(160deg,rgba(210,160,92,.2),rgba(184,132,63,.14))' },
+      { id: 'gt5', who: 'Ilana', text: 'my laundry, all week', tint: 'linear-gradient(160deg,rgba(138,122,109,.2),rgba(107,93,82,.14))' },
+      { id: 'gt6', who: 'Jonah', text: 'that one conversation', tint: 'linear-gradient(160deg,rgba(110,139,138,.2),rgba(81,107,106,.14))' },
+      { id: 'gt7', who: 'Dev', text: null, tint: null },
+    ],
+  };
+
+  windowHours = 3;
+
+  data = {
+    everyone: {
+      toReply: [
+        { id: 'f1', who: 'Naomi K.', initial: 'N', prompt: "Something you're not over yet", time: '5h left to reply', tint: 'linear-gradient(160deg,#C97B5A,#A85D3E)' },
+        { id: 'f2', who: 'Dev P.', initial: 'D', prompt: "What's been weighing on you this week?", time: '19h left to reply', tint: 'linear-gradient(160deg,#B08968,#8B6A4F)' },
+        { id: 'a1', who: 'Someone', initial: '?', prompt: "A thing you'd only admit at 2am", time: '9h left to reply', tint: 'linear-gradient(160deg,#8A7A6D,#6B5D52)' },
+        { id: 'g1p', who: 'Basement Four', initial: '4', prompt: 'Where were you an hour ago?', time: '12h left to reply', tint: 'linear-gradient(160deg,#7A8B6F,#5F7355)', isGroup: true, groupCount: 4 },
+      ],
+      sent: [
+        { id: 's1', who: 'Priya', initial: 'P', prompt: 'The last thing that made you laugh out loud', seen: true },
+        { id: 's2', who: 'Marcus', initial: 'M', prompt: 'A place on campus you keep going back to', seen: false },
+        { id: 'as1', who: 'Anonymous', initial: '?', prompt: 'What are you pretending not to want?', seen: true },
+      ],
+      replies: [
+        { id: 'r1', who: 'Ilana', prompt: 'A song you played too many times', body: "It's the one from the drive back in March. I keep it on when the library gets loud.", when: '40m ago', viewedInit: false, pingBackLeft: '23h' },
+        { id: 'ar1', who: 'Someone', prompt: 'The version of you nobody here has met', body: 'I used to sing. Loudly. In front of people. I have not told anyone here that.', when: '3h ago', viewedInit: false, pingBackLeft: '24h' },
+        { id: 'r2', who: 'Theo', prompt: "Something small that went right today", body: 'Got the espresso machine in the basement to work. Nobody saw it happen but me.', when: 'yesterday', viewedInit: true, pingBackLeft: '11h' },
+        { id: 'r3', who: 'Sam', prompt: 'A thing you miss about first year', body: 'Leaving my door open. I should probably just start doing that again.', when: 'last week', viewedInit: true, pingBackLeft: null },
+      ],
+    },
+  };
+
+  follows = [
+    { id: 'n1', who: 'Naomi K.', initial: 'N', tint: 'linear-gradient(160deg,#C97B5A,#A85D3E)', note: 'pinged you', streak: 12 },
+    { id: 'n2', who: 'Theo', initial: 'T', tint: 'linear-gradient(160deg,#B08968,#8B6A4F)', note: 'replied 1d', streak: 5 },
+    { id: 'n3', who: 'Priya', initial: 'P', tint: 'linear-gradient(160deg,#7A8B6F,#5F7355)', note: 'quiet 6d', streak: 3 },
+    { id: 'n4', who: 'Marcus', initial: 'M', tint: 'linear-gradient(160deg,#D2A05C,#B8843F)', note: 'quiet 2w', streak: 1 },
+    { id: 'n5', who: 'Ilana', initial: 'I', tint: 'linear-gradient(160deg,#8A7A6D,#6B5D52)', note: 'quiet 3d', streak: 8 },
+    { id: 'n6', who: 'Sam', initial: 'S', tint: 'linear-gradient(160deg,#6E8B8A,#516B6A)', note: 'quiet 9d', streak: 2 },
+  ];
+
+  promptBank = [
+    "Something you're not over yet",
+    'What went right today?',
+    "A thing you'd only admit at 2am",
+    'What are you pretending not to want?',
+    'What are you avoiding right now?',
+    'The last thing that made you laugh',
+    'A place you keep going back to',
+    "What's been weighing on you?",
+    'Something small that made today ok',
+    'What do you miss about first year?',
+    'A song you played too many times',
+    "What's on your mind, honestly?",
+  ];
+
+  windowMs = 15 * 60 * 1000;
+
+  get holdMs() { return (this.props.holdSeconds ?? 1) * 1000; }
+  get accent() { return this.props.accent ?? '#29D3E8'; }
+
+  isViewed(r) { const v = this.state.viewed[r.id]; return v === undefined ? r.viewedInit : v; }
+
+  startHold(id, kind) {
+    if (this.raf) cancelAnimationFrame(this.raf);
+    this.setState({ holdId: id, holdP: 0, frozen: false });
+    const t0 = performance.now();
+    const step = (t) => {
+      const p = Math.min(1, (t - t0) / this.holdMs);
+      this.setState({ holdP: p });
+      if (p < 1) { this.raf = requestAnimationFrame(step); }
+      else { this.raf = null; this.finish(id, kind); }
+    };
+    this.raf = requestAnimationFrame(step);
+  }
+
+  endHold() {
+    if (this.raf) { cancelAnimationFrame(this.raf); this.raf = null; }
+    if (this.state.holdP < 1) this.setState({ holdId: null, holdP: 0, frozen: false });
+  }
+
+  finish(id, kind) {
+    if (kind === 'ping') {
+      this.setState({
+        openId: id, holdId: null, holdP: 0, draft: '',
+        revealed: { ...this.state.revealed, [id]: Date.now() },
+      });
+    } else this.setState({ viewed: { ...this.state.viewed, [id]: true }, holdId: null, holdP: 0 });
+  }
+
+  windowLeftText(revealedAt) {
+    const leftMs = revealedAt + this.windowHours * 3600000 - Date.now();
+    if (leftMs <= 0) return 'window closed';
+    const h = Math.floor(leftMs / 3600000), m = Math.floor((leftMs % 3600000) / 60000);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
+
+  componentWillUnmount() { if (this.raf) cancelAnimationFrame(this.raf); if (this.tick) clearInterval(this.tick); }
+
+  ringBg(p) {
+    const a = this.accent;
+    return `conic-gradient(from -90deg, ${a} ${p * 360}deg, rgba(255,255,255,0.09) ${p * 360}deg)`;
+  }
+
+  renderVals() {
+    const st = this.state, d = this.data.everyone;
+    const hp = st.holdP;
+
+    const holdBits = (id) => {
+      const active = st.holdId === id;
+      const p = active ? hp : 0;
+      return {
+        veil: `blur(${(9 * (1 - p)).toFixed(2)}px) saturate(${0.75 + 0.25 * p})`,
+        ring: this.ringBg(p),
+        ringGlow: active ? `0 0 ${10 + 26 * p}px rgba(41,211,232,${0.12 + 0.4 * p})` : 'none',
+        cardGlow: active
+          ? `0 10px 40px rgba(0,0,0,.45), 0 0 ${18 + 30 * p}px rgba(41,211,232,${0.1 + 0.25 * p}), inset 0 1px 0 rgba(255,255,255,.1)`
+          : '0 6px 24px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08)',
+        hint: active ? (p < 0.99 ? 'keep holding' : 'opening') : `hold ${+(this.holdMs / 1000).toFixed(1)}s to reveal`,
+        hintColor: active ? 'rgba(41,211,232,.85)' : 'rgba(245,244,241,.28)',
+      };
+    };
+
+    const toReply = d.toReply.map((p) => {
+      const open = st.openId === p.id;
+      const revealedAt = st.revealed[p.id];
+      const isRevealed = !!revealedAt;
+      const sent = st.sentReplies[p.id] || [];
+      return {
+        ...p, ...holdBits(p.id),
+        whoLabel: p.isGroup ? `${p.who} · ${p.groupCount} people` : p.who,
+        isAnon: p.who === 'Someone',
+        avatarBorder: p.who === 'Someone' ? '1.5px dashed rgba(169,164,154,.5)' : '1px solid rgba(255,255,255,.14)',
+        initialColor: p.who === 'Someone' ? 'rgba(169,164,154,.9)' : 'rgba(11,11,13,.75)',
+        whoColor: p.who === 'Someone' ? 'rgba(169,164,154,.85)' : 'rgba(245,244,241,.62)',
+        collapsed: !open, expanded: open,
+        notRevealed: !open && !isRevealed, revealedCollapsed: !open && isRevealed,
+        windowLeft: isRevealed ? this.windowLeftText(revealedAt) : '',
+        avatarBg: p.who === 'Someone' ? 'radial-gradient(circle at 50% 40%,rgba(169,164,154,.2),rgba(169,164,154,.05))' : p.tint,
+        captured: !!st.captured[p.id], notCaptured: !st.captured[p.id], live: !st.captured[p.id],
+        dropBorder: st.captured[p.id] ? '1.5px solid rgba(41,211,232,.35)' : '1.5px dashed rgba(255,255,255,.2)',
+        firstName: p.who === 'Someone' ? 'them' : String(p.who).split(' ')[0],
+        replyHint: st.captured[p.id]
+          ? 'Photo ready. Add a line and send — the window stays open for more.'
+          : 'Tap + to attach a photo, then say something. You can send as many as you want.',
+        ...(() => {
+          const n = this.streaks[p.who] || 0;
+          const t = this.tierFor(n);
+          return { hasStreak: n > 0, streakLabel: '\uD83D\uDD25 ' + n, tag: t.tag, tagColor: t.color, tagBg: t.bg, tagBorder: t.border };
+        })(),
+        sentReplies: sent, hasSentReplies: sent.length > 0,
+        onDown: () => this.startHold(p.id, 'ping'),
+        onUp: () => this.endHold(),
+        onReopen: () => this.setState({ openId: p.id, draft: '' }),
+        onCollapse: () => this.setState({ openId: null, draft: '' }),
+        onAddPhoto: () => this.setState({ captured: { ...st.captured, [p.id]: true } }),
+        onRemovePhoto: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.setState({ captured: { ...st.captured, [p.id]: false } }); },
+        onPingBackNow: () => this.setState({ composeFor: p.id, composeDraft: '', pingedBack: { ...st.pingedBack, [p.id]: true } }),
+        onSend: () => {
+          if (!st.captured[p.id]) { this.setState({ captured: { ...st.captured, [p.id]: true } }); return; }
+          const text = st.draft.trim() || 'photo only';
+          this.setState({
+            sentReplies: { ...st.sentReplies, [p.id]: [...sent, { text }] },
+            captured: { ...st.captured, [p.id]: false }, draft: '',
+          });
+        },
+      };
+    });
+
+    const openItem = toReply.find((x) => x.expanded);
+    const canSend = openItem ? openItem.captured : false;
+
+    const replies = d.replies.filter((r) => !this.isViewed(r)).map((r) => {
+      const v = this.isViewed(r);
+      const pb = !!r.pingBackLeft && !st.pingedBack[r.id];
+      return {
+        ...r, ...holdBits(r.id),
+        unviewed: !v, viewed: v, pingBack: v && pb,
+        firstName: r.who === 'Someone' ? 'back' : r.who,
+        onDown: () => this.startHold(r.id, 'reply'),
+        onUp: () => this.endHold(),
+        onPingBack: () => this.setState({ pingedBack: { ...st.pingedBack, [r.id]: true } }),
+        onOpenDetail: () => this.setState({ replyDetailId: r.id }),
+        onOpenPhoto: () => this.setState({ lightboxId: r.id }),
+      };
+    });
+
+    const lbSrc = st.lightboxId ? d.replies.find((r) => r.id === st.lightboxId) : null;
+    const detailSrc = st.replyDetailId ? d.replies.find((r) => r.id === st.replyDetailId) : null;
+    let replyDetail = {};
+    if (detailSrc) {
+      const reactions = [...this.reactionBank, ...(st.extraReactions[detailSrc.id] || [])];
+      const comments = [...this.commentBank, ...(st.extraComments[detailSrc.id] || [])];
+      replyDetail = {
+        ...detailSrc,
+        reactions, comments,
+        reactionCount: reactions.length, commentCount: comments.length,
+        onClose: () => this.setState({ replyDetailId: null }),
+      };
+    }
+    const quickReactions = this.quickReactionEmojis.map((emoji) => ({
+      emoji,
+      onClick: () => {
+        if (!detailSrc) return;
+        const list = st.extraReactions[detailSrc.id] || [];
+        this.setState({ extraReactions: { ...st.extraReactions, [detailSrc.id]: [...list, { who: 'You', emoji, tint: 'linear-gradient(160deg,#29D3E8,#1BAFC4)' }] } });
+      },
+    }));
+    const sendComment = () => {
+      if (!detailSrc || !st.commentDraft.trim()) return;
+      const list = st.extraComments[detailSrc.id] || [];
+      this.setState({
+        extraComments: { ...st.extraComments, [detailSrc.id]: [...list, { who: 'You', when: 'now', text: st.commentDraft.trim(), tint: 'linear-gradient(160deg,#29D3E8,#1BAFC4)' }] },
+        commentDraft: '',
+      });
+    };
+
+    const jumps = [
+      ['Main', () => this.setState({ openId: null, holdId: null, holdP: 0, viewed: {}, sentReplies: {}, captured: {}, pingedBack: {}, revealed: {} })],
+      ['Mid-hold (55%)', () => { if (this.raf) cancelAnimationFrame(this.raf); this.raf = null; this.setState({ openId: null, holdId: 'f1', holdP: 0.55, frozen: true }); }],
+      ['Expanded reply', () => this.setState({ openId: 'f1', holdId: null, holdP: 0, captured: {}, draft: 'still the same corridor', revealed: { ...this.state.revealed, f1: Date.now() } })],
+      ['Reply sent (reusable)', () => this.setState({ openId: null, holdId: null, holdP: 0, captured: {}, draft: '', sentReplies: { f1: [{ text: 'still the same corridor' }] }, revealed: { ...this.state.revealed, f1: Date.now() } })],
+      ['Reply viewed + ping back', () => this.setState({ openId: null, holdId: null, holdP: 0, viewed: { r1: true }, pingedBack: {}, replyDetailId: null })],
+      ['Group wall (locked)', () => this.setState({ openId: null, replyDetailId: null, holdId: null, holdP: 0, viewed: {}, sentReplies: {} })],
+      ['Group wall (unlocked)', () => { if (this.raf) cancelAnimationFrame(this.raf); this.raf = null; this.setState({ openId: null, replyDetailId: null, viewed: { gt1: true }, sentReplies: { g1p: [{ text: 'here' }] }, holdId: 'gt2', holdP: 0.6, frozen: true }); }],
+      ['Comment page', () => this.setState({ openId: null, holdId: null, holdP: 0, viewed: { r1: true }, replyDetailId: 'r1' })],
+    ].map(([label, onClick]) => ({ label, onClick }));
+
+    const empties = ['All quiet', 'Nothing waiting on you. A good time to ask someone something real.', 'Send a ping'];
+    const isEmpty = !d.toReply.length && !d.sent.length && !d.replies.length;
+
+    const pingScore = 742;
+    const scoreTag = pingScore >= 700
+      ? { label: 'Deeply Present', color: '#0B0B0D', bg: '#29D3E8', border: '#29D3E8' }
+      : pingScore >= 400
+      ? { label: 'Showing Up', color: 'rgba(245,244,241,.85)', bg: 'rgba(255,255,255,.08)', border: 'rgba(255,255,255,.18)' }
+      : { label: 'Getting Started', color: 'rgba(245,244,241,.5)', bg: 'transparent', border: 'rgba(255,255,255,.14)' };
+
+    const pingBackTarget = replies.find((r) => r.pingBack);
+
+    const loops = [];
+    d.toReply.forEach((p) => {
+      const answered = (st.sentReplies[p.id] || []).length > 0;
+      if (!answered || st.pingedBack[p.id]) return;
+      const anon = p.who === 'Someone';
+      loops.push({
+        id: p.id, initial: anon ? '?' : p.initial,
+        title: anon ? 'Ping them back?' : `Ping ${p.isGroup ? p.who : p.who.split(' ')[0]} back?`,
+        reason: p.isGroup ? 'you replied to the group' : 'you replied to theirs', left: '24h left',
+        avatarBg: anon ? 'radial-gradient(circle at 50% 40%,rgba(169,164,154,.2),rgba(169,164,154,.05))' : p.tint,
+        avatarBorder: anon ? '1.5px dashed rgba(169,164,154,.5)' : '1px solid rgba(255,255,255,.16)',
+        initialColor: anon ? 'rgba(169,164,154,.9)' : 'rgba(11,11,13,.75)',
+        onPingBack: () => this.setState({ pingedBack: { ...st.pingedBack, [p.id]: true }, composeFor: null }),
+      });
+    });
+    replies.forEach((r) => {
+      if (!r.pingBack) return;
+      const anon = r.who === 'Someone';
+      loops.push({
+        id: r.id, initial: anon ? '?' : r.who[0],
+        title: anon ? 'Ping them back?' : `Ping ${r.who} back?`,
+        reason: 'they replied to yours', left: `${r.pingBackLeft} left`,
+        avatarBg: anon ? 'radial-gradient(circle at 50% 40%,rgba(169,164,154,.2),rgba(169,164,154,.05))' : 'linear-gradient(160deg,#C97B5A,#A85D3E)',
+        avatarBorder: anon ? '1.5px dashed rgba(169,164,154,.5)' : '1px solid rgba(255,255,255,.16)',
+        initialColor: anon ? 'rgba(169,164,154,.9)' : 'rgba(11,11,13,.75)',
+        onPingBack: r.onPingBack,
+      });
+    });
+
+    const follows = this.follows.map((f) => ({ ...f, onClick: () => this.setState({ composeFor: f.id }) }));
+
+    const groupChips = this.groups.map((g) => ({
+      ...g,
+      sub: `${g.count} people`,
+      onClick: () => this.setState({ composeFor: g.id }),
+      slots: g.tints.map((tint, i) => ({ tint, z: 10 - i, ml: i === 0 ? '0px' : '-13px' })),
+    }));
+
+    const wall = this.groupWall;
+    const wallUnlocked = (st.sentReplies['g1p'] || []).length > 0;
+    const WALL_PAGE = 4;
+    const wallPageCount = Math.ceil(wall.tiles.length / WALL_PAGE);
+    const wallPage = Math.min(st.wallPage || 0, wallPageCount - 1);
+    const wallTiles = wall.tiles.slice(wallPage * WALL_PAGE, wallPage * WALL_PAGE + WALL_PAGE).map((t) => {
+      const answered = !!t.text;
+      const seen = !!st.viewed[t.id];
+      return {
+        ...t, answered, pending: !answered,
+        locked: answered && !wallUnlocked,
+        hidden: answered && wallUnlocked && !seen,
+        shown: answered && wallUnlocked && seen,
+        ...holdBits(t.id),
+        onDown: () => wallUnlocked && this.startHold(t.id, 'reply'),
+        onUp: () => this.endHold(),
+        onView: () => this.setState({ wallViewerId: t.id }),
+      };
+    });
+
+    const shownTiles = wall.tiles.filter((t) => t.text && st.viewed[t.id]);
+    const vIdx = shownTiles.findIndex((t) => t.id === st.wallViewerId);
+    const vTile = vIdx >= 0 ? shownTiles[vIdx] : null;
+    const wallViewer = vTile ? {
+      group: wall.group, prompt: wall.prompt,
+      who: vTile.who, initial: vTile.who[0], text: vTile.text, tint: vTile.tint,
+      position: `${vIdx + 1} of ${shownTiles.length}`,
+      onClose: () => this.setState({ wallViewerId: null }),
+      onPrev: () => this.setState({ wallViewerId: shownTiles[(vIdx - 1 + shownTiles.length) % shownTiles.length].id }),
+      onNext: () => this.setState({ wallViewerId: shownTiles[(vIdx + 1) % shownTiles.length].id }),
+      dots: shownTiles.map((t, i) => ({ w: i === vIdx ? '18px' : '6px', bg: i === vIdx ? '#29D3E8' : 'rgba(255,255,255,.2)' })),
+    } : null;
+    const wallAnswered = wall.tiles.filter((t) => t.text).length + (wallUnlocked ? 1 : 0);
+    const wallSeen = wall.tiles.filter((t) => t.text && st.viewed[t.id]).length;
+    const wallMemberTints = ['linear-gradient(160deg,#C97B5A,#A85D3E)', 'linear-gradient(160deg,#B08968,#8B6A4F)', 'linear-gradient(160deg,#7A8B6F,#5F7355)', 'linear-gradient(160deg,#D2A05C,#B8843F)', 'linear-gradient(160deg,#6E8B8A,#516B6A)'];
+    const wallMembers = ['You', 'Naomi', 'Theo', 'Priya', 'Marcus'].map((who, i) => ({ who, initial: who === 'You' ? 'Y' : who[0], tint: wallMemberTints[i % wallMemberTints.length], ml: i === 0 ? '0px' : '-11px' }));
+    const wallPages = Array.from({ length: wallPageCount }, (_, i) => ({
+      w: i === wallPage ? '18px' : '6px',
+      bg: i === wallPage ? '#29D3E8' : 'rgba(255,255,255,.2)',
+      onClick: () => this.setState({ wallPage: i }),
+    }));
+    const wallTotal = wall.tiles.length + 1;
+    const wallProgressPct = Math.round((wallAnswered / wallTotal) * 100);
+    const wallSendReady = st.wallCaptured;
+    const sendWall = () => {
+      if (!st.wallCaptured) { this.setState({ wallCaptured: true }); return; }
+      this.setState({ sentReplies: { ...st.sentReplies, g1p: [...(st.sentReplies['g1p'] || []), { text: st.wallDraft.trim() || 'photo only' }] }, wallCaptured: false, wallDraft: '' });
+    };
+    const wallPingMembers = ['Naomi', 'Theo', 'Priya', 'Marcus'].map((who, i) => ({
+      who, initial: who[0], tint: wallMemberTints[(i + 1) % wallMemberTints.length],
+      onClick: () => { const f = this.follows.find((x) => x.who.split(' ')[0] === who); this.setState({ composeFor: f ? f.id : null }); },
+    }));
+    const gMatch = this.groups.find((g) => g.id === st.composeFor);
+    const isAnonCompose = false;
+    const isNewGroup = false;
+    const composeFriend = this.follows.find((f) => f.id === st.composeFor)
+      || (gMatch ? { id: gMatch.id, who: gMatch.name, initial: String(gMatch.count) } : null);
+    const promptChoices = this.promptBank.map((text, i) => ({
+      text, bg: 'rgba(255,255,255,.04)', delay: `${0.05 + i * 0.05}s`,
+      onClick: () => {
+        d.sent.unshift({ id: `sent-${Date.now()}`, who: isAnonCompose ? 'Anonymous' : composeFriend.who, initial: composeFriend.initial, prompt: text, seen: false });
+        this.setState({ composeFor: null });
+      },
+    }));
+
+    const canComposeCustom = st.composeDraft.trim().length > 0;
+    const sendCustom = () => {
+      if (!canComposeCustom || !composeFriend) return;
+      d.sent.unshift({ id: `sent-${Date.now()}`, who: composeFriend.who, initial: composeFriend.initial, prompt: st.composeDraft.trim(), seen: false });
+      this.setState({ composeFor: null, composeDraft: '' });
+    };
+
+    return {
+      toReply, replies, sent: d.sent.map((s) => ({ ...s, unseen: !s.seen })),
+      pingScore, scoreTag,
+      follows, composeOpen: !!composeFriend, composeWho: composeFriend ? composeFriend.who : '',
+      composeInitial: composeFriend ? composeFriend.initial : '',
+      composeAvatarBg: composeFriend && composeFriend.who === 'Anonymous' ? 'radial-gradient(circle at 50% 40%,rgba(169,164,154,.2),rgba(169,164,154,.05))' : 'linear-gradient(160deg,#C97B5A,#A85D3E)',
+      composeAvatarBorder: composeFriend && composeFriend.who === 'Anonymous' ? '1.5px dashed rgba(169,164,154,.5)' : '1px solid rgba(41,211,232,.4)',
+      composeInitialColor: composeFriend && composeFriend.who === 'Anonymous' ? 'rgba(169,164,154,.9)' : 'rgba(11,11,13,.75)',
+      promptChoices, composeKey: `compose-${st.composeFor || 'none'}`,
+      isAnonCompose, isNewGroup,
+      creatingGroup: st.creatingGroup,
+      newGroupName: st.newGroupName,
+      newGroupGlyph: (st.newGroupName.trim()[0] || '+').toUpperCase(),
+      onNewGroupName: (e) => this.setState({ newGroupName: e.target.value }),
+      onCloseCreate: () => this.setState({ creatingGroup: false }),
+      createPicks: this.follows.map((f) => {
+        const on = !!st.groupPicks[f.id];
+        return {
+          ...f,
+          bg: on ? 'rgba(41,211,232,.1)' : 'rgba(255,255,255,.03)',
+          bd: on ? '1px solid rgba(41,211,232,.34)' : '1px solid rgba(255,255,255,.07)',
+          check: on ? '✓' : '',
+          checkBg: on ? '#29D3E8' : 'transparent',
+          checkBorder: on ? '1px solid #29D3E8' : '1.5px solid rgba(255,255,255,.2)',
+          onClick: () => this.setState({ groupPicks: { ...st.groupPicks, [f.id]: !st.groupPicks[f.id] } }),
+        };
+      }),
+      createPickCount: (() => { const n = Object.values(st.groupPicks).filter(Boolean).length; return n === 0 ? 'pick at least 2' : `${n} added`; })(),
+      ...(() => {
+        const n = Object.values(st.groupPicks).filter(Boolean).length;
+        const ok = st.newGroupName.trim().length > 0 && n >= 2;
+        return {
+          createLabel: ok ? `Create · ${n} people` : 'Add a name and 2+ people',
+          createFg: ok ? '#0B0B0D' : 'rgba(245,244,241,.4)',
+          createBg: ok ? 'linear-gradient(180deg,#29D3E8,#1BAFC4)' : 'rgba(255,255,255,.06)',
+          createGlow: ok ? '0 0 28px rgba(41,211,232,.3)' : 'none',
+          onCreateGroup: () => {
+            if (!ok) return;
+            const picked = this.follows.filter((f) => st.groupPicks[f.id]);
+            const id = `g-${Date.now()}`;
+            this.groups.unshift({ id, name: st.newGroupName.trim(), count: picked.length, tints: picked.map((p, i) => this.createTints[i % this.createTints.length]) });
+            this.setState({ creatingGroup: false, newGroupName: '', groupPicks: {}, composeFor: id });
+          },
+        };
+      })(),
+      onComposeClose: () => this.setState({ composeFor: null, composeDraft: '' }),
+      composeDraft: st.composeDraft,
+      onComposeDraft: (e) => this.setState({ composeDraft: e.target.value }),
+      onComposeCustomSend: sendCustom,
+      composeSendFg: canComposeCustom ? '#0B0B0D' : 'rgba(245,244,241,.4)',
+      composeSendBg: canComposeCustom ? 'linear-gradient(180deg,#29D3E8,#1BAFC4)' : 'rgba(255,255,255,.07)',
+      groupChips, wallUnlocked, wallLocked: !wallUnlocked, wallTiles,
+      wallPages, wallMultiPage: wallPageCount > 1,
+      onWallPrevPage: () => this.setState({ wallPage: (wallPage - 1 + wallPageCount) % wallPageCount }),
+      onWallNextPage: () => this.setState({ wallPage: (wallPage + 1) % wallPageCount }),
+      wall: { ...wall, members: wallMembers, memberCount: wallTotal },
+      wallProgress: `${wallProgressPct}%`,
+      wallMeta: wallUnlocked ? `${wallAnswered} of ${wallTotal} answered · ${wallSeen} opened` : `${wallAnswered} of ${wallTotal} answered · post yours to see the rest`,
+      wallBadgeLabel: wallUnlocked ? 'Unlocked' : 'Locked',
+      wallBadgeColor: wallUnlocked ? 'rgba(41,211,232,.85)' : 'rgba(245,244,241,.5)',
+      wallBadgeBg: wallUnlocked ? 'rgba(41,211,232,.12)' : 'rgba(255,255,255,.05)',
+      wallBadgeBorder: wallUnlocked ? 'rgba(41,211,232,.3)' : 'rgba(255,255,255,.1)',
+      wallBadgeDot: wallUnlocked ? '#29D3E8' : 'rgba(245,244,241,.35)',
+      wallCaptured: st.wallCaptured, wallNotCaptured: !st.wallCaptured,
+      wallDropBorder: st.wallCaptured ? '1.5px solid rgba(41,211,232,.35)' : '1.5px dashed rgba(255,255,255,.2)',
+      wallDraft: st.wallDraft,
+      onWallDraft: (e) => this.setState({ wallDraft: e.target.value }),
+      onWallAddPhoto: () => this.setState({ wallCaptured: true }),
+      onWallRemovePhoto: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.setState({ wallCaptured: false }); },
+      onWallSend: sendWall,
+      wallSendFg: wallSendReady ? '#0B0B0D' : 'rgba(245,244,241,.4)',
+      wallSendBg: wallSendReady ? 'linear-gradient(180deg,#29D3E8,#1BAFC4)' : 'rgba(255,255,255,.07)',
+      wallSendGlow: wallSendReady ? '0 0 20px rgba(41,211,232,.3)' : 'none',
+      wallPingMembers,
+      hasWallViewer: !!wallViewer, wallViewer: wallViewer || {},
+      onPingWholeGroup: () => this.setState({ composeFor: 'g1' }),
+      hasLightbox: !!lbSrc,
+      lightbox: lbSrc ? { who: lbSrc.who, when: lbSrc.when, onClose: () => this.setState({ lightboxId: null }) } : {},
+      hasReplyDetail: !!detailSrc, replyDetail, quickReactions,
+      commentDraft: st.commentDraft,
+      onCommentDraft: (e) => this.setState({ commentDraft: e.target.value }),
+      onCommentSend: sendComment,
+      hasPingBack: !!pingBackTarget, pingBackTarget: pingBackTarget || {},
+      loops, hasLoops: loops.length > 0,
+      loopMeta: loops.length === 1 ? '1 waiting' : `${loops.length} waiting`,
+      onNewGroup: () => this.setState({ creatingGroup: true, newGroupName: '', groupPicks: {} }),
+      toReplyCount: `${d.toReply.length} waiting`,
+      hasToReply: d.toReply.length > 0, hasSent: d.sent.length > 0, hasReplies: replies.length > 0,
+      isEmpty, showFooter: !isEmpty,
+      emptyTitle: empties[0], emptyBody: empties[1], emptyCta: empties[2],
+      onEmptyCta: () => this.setState({ cat: 'friends' }),
+      draft: st.draft,
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      sendFg: canSend ? '#0B0B0D' : 'rgba(245,244,241,.4)',
+      sendBg: canSend ? 'linear-gradient(180deg,#29D3E8,#1BAFC4)' : 'rgba(255,255,255,.07)',
+      sendGlow: canSend ? '0 0 26px rgba(41,211,232,.3)' : 'none',
+      jumps,
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+-- Fills the communities the source spec had no prompt set for.
+--
+-- Reported as "no prompts uploaded to 2nd year"; an audit found 11, not 1:
+-- RVCE itself, five branches (ECE, EEE, EIE, Biotech, IEM), three years
+-- (2nd/3rd/4th) and two Tier 1 communities (Late Night Club, Memes). The
+-- spec only authored CSE-family, Mech-family and First Year.
+--
+-- None were BROKEN — pick_window_prompt falls back to the universal pool,
+-- so they always showed something. But a generic prompt in a branch
+-- community is exactly the failure the specific pool exists to prevent:
+-- the app stops feeling like it knows who is reading.
+--
+-- Adds 8 feed prompts each, plus 10 ping prompts (text/photo alternating)
+-- for 2nd/3rd/4th Year, following the same selection rule as the rest:
+-- answerable in under 30 seconds by pointing a camera at something already
+-- next to you. Nothing staged, nothing that asks anyone to be impressive.
+--
+-- Applied live as migration `seed_missing_community_prompt_sets`; full
+-- statements in supabase_migrations.schema_migrations. After this, zero
+-- Tier 0/Tier 1 communities have an empty specific pool.

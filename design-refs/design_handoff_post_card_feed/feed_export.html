@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feed — static export (canonical values)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #5ac8e0; text-decoration: none; }
+  a:hover { color: #7fdcf0; }
+  .hs::-webkit-scrollbar { display: none; }
+  .ph { background-size: cover; background-position: center; }
+</style>
+</head>
+<body>
+<!--
+  STATIC EXPORT of the Feed design. This mirrors FEED_CANONICAL_SPEC.md 1:1.
+  - Template {{holes}} are resolved to the reference data values.
+  - Conditional (sc-if) panels are shown in their DEFAULT state:
+      dropdowns/pickers closed, comments COLLAPSED.
+  - Colored blocks (.ph) stand in for user photos/selfies (object-fit:cover in production).
+  - cardGap = 8px, photoRadius = 26px (design defaults).
+-->
+<div style="min-height:100vh;background:#000;display:flex;justify-content:center;">
+  <div style="width:430px;max-width:100vw;">
+
+    <!-- ===================== SOLO CARD A ===================== -->
+    <div style="border-bottom:8px solid #000;">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 11px;">
+        <div style="display:flex;align-items:center;gap:11px;min-width:0;">
+          <div style="width:42px;height:42px;border-radius:50%;flex:0 0 auto;background:#8a8f98;"></div>
+          <div style="min-width:0;">
+            <div style="display:flex;align-items:center;gap:5px;">
+              <span style="font-family:'Nunito',sans-serif;color:#fff;font-size:15.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">theo_b</span>
+            </div>
+            <div style="color:rgba(255,255,255,.5);font-size:12.5px;font-weight:500;margin-top:1px;">just now</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button style="display:flex;align-items:center;gap:7px;height:34px;padding:0 13px 0 5px;border:none;border-radius:17px;background:#faf8f4;color:#2e2a22;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;flex:0 0 auto;box-shadow:0 5px 10px rgba(0,0,0,.35);">
+            <span style="display:flex;">
+              <span style="width:22px;height:22px;border-radius:50%;background:#b9ad97;border:1.5px solid #faf8f4;"></span>
+              <span style="width:22px;height:22px;border-radius:50%;background:#9db29a;border:1.5px solid #faf8f4;margin-left:-9px;"></span>
+              <span style="width:22px;height:22px;border-radius:50%;background:#a79bbf;border:1.5px solid #faf8f4;margin-left:-9px;"></span>
+            </span>
+            <span style="width:8px;height:8px;border-radius:50%;background:#37c9e6;box-shadow:0 0 7px 1px rgba(55,201,230,.8);"></span>
+            <span>7 here</span>
+          </button>
+          <div style="position:relative;">
+            <button aria-label="More" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- Caption -->
+      <div style="padding:0 14px 10px;color:#fff;font-size:15px;font-weight:500;line-height:1.4;">somewhere very white</div>
+      <!-- Photo -->
+      <div style="position:relative;margin:0 12px;">
+        <div style="border-radius:26px;aspect-ratio:4 / 5;overflow:hidden;">
+          <div class="ph" style="width:100%;height:100%;background:#3a4048;"></div>
+          <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.22) 0%,transparent 18%,transparent 60%,rgba(0,0,0,.42) 100%);pointer-events:none;"></div>
+          <div style="position:absolute;top:14px;left:14px;width:34%;aspect-ratio:3 / 4;border-radius:14px;overflow:hidden;border:2px solid rgba(255,255,255,.9);box-shadow:0 6px 18px -6px rgba(0,0,0,.7);">
+            <div class="ph" style="width:100%;height:100%;background:#55606b;"></div>
+          </div>
+        </div>
+        <!-- Action rail (right): ping + realmoji -->
+        <div style="position:absolute;right:13px;bottom:14px;display:flex;flex-direction:column;align-items:center;gap:22px;">
+          <button aria-label="Ping" style="width:34px;height:34px;border-radius:50%;background:#131315;border:none;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4);">
+            <svg width="24" height="24" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="13.2" stroke="rgba(255,255,255,.9)" stroke-width="1.5"/><circle cx="16" cy="10.6" r="1.9" fill="#fff"/><path d="M10 14.2c1.9.85 3.9 1.28 6 1.28s4.1-.43 6-1.28M16 15.48v3.7M16 19.18l-2.6 4.4M16 19.18l2.6 4.4" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+          <button aria-label="RealMoji" style="width:34px;height:34px;border-radius:50%;padding:0;overflow:hidden;background:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><path d="M8.4 14.2c.9 1.2 2.1 1.8 3.6 1.8s2.7-.6 3.6-1.8"/><circle cx="9" cy="10" r=".9" fill="#1a1a1a" stroke="none"/><circle cx="15" cy="10" r=".9" fill="#1a1a1a" stroke="none"/></svg>
+          </button>
+        </div>
+        <!-- Reactions cluster (left) -->
+        <button style="position:absolute;left:13px;bottom:14px;display:flex;align-items:center;border:none;padding:0;background:none;cursor:pointer;">
+          <span style="width:34px;height:34px;border-radius:50%;background:#b9ad97;border:2px solid rgba(0,0,0,.55);"></span>
+          <span style="width:34px;height:34px;border-radius:50%;background:#9db29a;border:2px solid rgba(0,0,0,.55);margin-left:-13px;"></span>
+          <span style="display:flex;align-items:center;justify-content:center;height:34px;padding:0 10px 0 17px;margin-left:-13px;border-radius:17px;background:rgba(0,0,0,.5);border:2px solid rgba(0,0,0,.55);color:#fff;font-size:13px;font-weight:700;">+42</span>
+        </button>
+      </div>
+      <!-- Comment card (collapsed default) -->
+      <div style="margin:10px 8px 0 8px;border-radius:18px;background:#18181a;overflow:visible;">
+        <button style="display:flex;align-items:center;gap:7px;background:none;border:none;padding:9px 14px 6px;cursor:pointer;font-family:inherit;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="2" stroke-linejoin="round"><path d="M3.4 4.6h17.2v11.6H8.4L3.4 19.8z"/></svg>
+          <span style="color:rgba(255,255,255,.4);font-size:12px;font-weight:600;">View all 3 comments</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg);"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div style="display:flex;flex-direction:column;gap:3px;padding:0 14px 2px;">
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">mira_k</span><span style="color:rgba(255,255,255,.75);"> the framing on this is unreal</span></div>
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">dust.echo</span><span style="color:rgba(255,255,255,.75);"> where is this?? 😍</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px 9px;">
+          <button aria-label="Switch identity" style="position:relative;width:27px;height:27px;flex:0 0 auto;border:none;padding:0;cursor:pointer;background:none;">
+            <span style="display:block;width:27px;height:27px;border-radius:50%;background:linear-gradient(140deg,#b9ad97,#a79bbf);"></span>
+            <span style="position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:50%;background:#3a3a40;border:1.5px solid #18181a;display:flex;align-items:center;justify-content:center;">
+              <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.5 21 6.5 17 10.5M21 6.5H9M7 13.5 3 17.5 7 21.5M3 17.5h12"/></svg>
+            </span>
+          </button>
+          <div style="flex:1;display:flex;align-items:center;height:28px;padding:0 12px;border-radius:14px;background:rgba(255,255,255,.055);">
+            <span style="color:rgba(255,255,255,.32);font-size:12.5px;font-weight:500;">Add a comment…</span>
+          </div>
+          <button aria-label="Send" style="width:26px;height:26px;border-radius:50%;flex:0 0 auto;border:none;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,.55)"><path d="M2.2 21.3 22.5 12 2.2 2.7l.1 7.3 12 1.9-12 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== SOLO CARD B (verified, 1/1) ===================== -->
+    <div style="border-bottom:8px solid #000;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 11px;">
+        <div style="display:flex;align-items:center;gap:11px;min-width:0;">
+          <div style="width:42px;height:42px;border-radius:50%;flex:0 0 auto;background:#b9ad97;"></div>
+          <div style="min-width:0;">
+            <div style="display:flex;align-items:center;gap:5px;">
+              <span style="font-family:'Nunito',sans-serif;color:#fff;font-size:15.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">mori.days</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="#3897f0" style="flex:0 0 auto;"><path d="M12 2l2.4 1.8 3-.2 1 2.8 2.6 1.5-.9 2.9.9 2.9-2.6 1.5-1 2.8-3-.2L12 22l-2.4-1.8-3 .2-1-2.8L3 16.3l.9-2.9L3 10.5 5.6 9l1-2.8 3 .2z"/><path d="M10.6 14.6l-2.2-2.2 1.1-1.1 1.1 1.1 3.3-3.3 1.1 1.1z" fill="#fff"/></svg>
+            </div>
+            <div style="color:rgba(255,255,255,.5);font-size:12.5px;font-weight:500;margin-top:1px;">13 Aug 2026</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button style="display:flex;align-items:center;gap:7px;height:34px;padding:0 13px 0 5px;border:none;border-radius:17px;background:#faf8f4;color:#2e2a22;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;flex:0 0 auto;box-shadow:0 5px 10px rgba(0,0,0,.35);">
+            <span style="display:flex;">
+              <span style="width:22px;height:22px;border-radius:50%;background:#b9ad97;border:1.5px solid #faf8f4;"></span>
+              <span style="width:22px;height:22px;border-radius:50%;background:#9db29a;border:1.5px solid #faf8f4;margin-left:-9px;"></span>
+              <span style="width:22px;height:22px;border-radius:50%;background:#a79bbf;border:1.5px solid #faf8f4;margin-left:-9px;"></span>
+            </span>
+            <span style="width:8px;height:8px;border-radius:50%;background:#37c9e6;box-shadow:0 0 7px 1px rgba(55,201,230,.8);"></span>
+            <span>4 here</span>
+          </button>
+          <div style="position:relative;">
+            <button aria-label="More" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div style="padding:0 14px 10px;color:#fff;font-size:15px;font-weight:500;line-height:1.4;">lunch break 🍛</div>
+      <div style="position:relative;margin:0 12px;">
+        <div style="border-radius:26px;aspect-ratio:1 / 1;overflow:hidden;">
+          <div class="ph" style="width:100%;height:100%;background:#6b6152;"></div>
+          <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.22) 0%,transparent 18%,transparent 60%,rgba(0,0,0,.42) 100%);pointer-events:none;"></div>
+          <div style="position:absolute;top:14px;left:14px;width:34%;aspect-ratio:3 / 4;border-radius:14px;overflow:hidden;border:2px solid rgba(255,255,255,.9);box-shadow:0 6px 18px -6px rgba(0,0,0,.7);">
+            <div class="ph" style="width:100%;height:100%;background:#7d7460;"></div>
+          </div>
+        </div>
+        <div style="position:absolute;right:13px;bottom:14px;display:flex;flex-direction:column;align-items:center;gap:22px;">
+          <button aria-label="Ping" style="width:34px;height:34px;border-radius:50%;background:#131315;border:none;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4);">
+            <svg width="24" height="24" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="13.2" stroke="rgba(255,255,255,.9)" stroke-width="1.5"/><circle cx="16" cy="10.6" r="1.9" fill="#fff"/><path d="M10 14.2c1.9.85 3.9 1.28 6 1.28s4.1-.43 6-1.28M16 15.48v3.7M16 19.18l-2.6 4.4M16 19.18l2.6 4.4" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+          <button aria-label="RealMoji" style="width:34px;height:34px;border-radius:50%;padding:0;overflow:hidden;background:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><path d="M8.4 14.2c.9 1.2 2.1 1.8 3.6 1.8s2.7-.6 3.6-1.8"/><circle cx="9" cy="10" r=".9" fill="#1a1a1a" stroke="none"/><circle cx="15" cy="10" r=".9" fill="#1a1a1a" stroke="none"/></svg>
+          </button>
+        </div>
+        <button style="position:absolute;left:13px;bottom:14px;display:flex;align-items:center;border:none;padding:0;background:none;cursor:pointer;">
+          <span style="width:34px;height:34px;border-radius:50%;background:#b9ad97;border:2px solid rgba(0,0,0,.55);"></span>
+          <span style="width:34px;height:34px;border-radius:50%;background:#9db29a;border:2px solid rgba(0,0,0,.55);margin-left:-13px;"></span>
+          <span style="display:flex;align-items:center;justify-content:center;height:34px;padding:0 10px 0 17px;margin-left:-13px;border-radius:17px;background:rgba(0,0,0,.5);border:2px solid rgba(0,0,0,.55);color:#fff;font-size:13px;font-weight:700;">+12</span>
+        </button>
+      </div>
+      <div style="margin:10px 8px 0 8px;border-radius:18px;background:#18181a;overflow:visible;">
+        <button style="display:flex;align-items:center;gap:7px;background:none;border:none;padding:9px 14px 6px;cursor:pointer;font-family:inherit;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="2" stroke-linejoin="round"><path d="M3.4 4.6h17.2v11.6H8.4L3.4 19.8z"/></svg>
+          <span style="color:rgba(255,255,255,.4);font-size:12px;font-weight:600;">View all 5 comments</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg);"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div style="display:flex;flex-direction:column;gap:3px;padding:0 14px 2px;">
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">niko_2150</span><span style="color:rgba(255,255,255,.75);"> looks so good 🤤</span></div>
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">kaz</span><span style="color:rgba(255,255,255,.75);"> save me a seat next time</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px 9px;">
+          <button aria-label="Switch identity" style="position:relative;width:27px;height:27px;flex:0 0 auto;border:none;padding:0;cursor:pointer;background:none;">
+            <span style="display:block;width:27px;height:27px;border-radius:50%;background:linear-gradient(140deg,#b9ad97,#a79bbf);"></span>
+            <span style="position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:50%;background:#3a3a40;border:1.5px solid #18181a;display:flex;align-items:center;justify-content:center;">
+              <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.5 21 6.5 17 10.5M21 6.5H9M7 13.5 3 17.5 7 21.5M3 17.5h12"/></svg>
+            </span>
+          </button>
+          <div style="flex:1;display:flex;align-items:center;height:28px;padding:0 12px;border-radius:14px;background:rgba(255,255,255,.055);">
+            <span style="color:rgba(255,255,255,.32);font-size:12.5px;font-weight:500;">Add a comment…</span>
+          </div>
+          <button aria-label="Send" style="width:26px;height:26px;border-radius:50%;flex:0 0 auto;border:none;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,.55)"><path d="M2.2 21.3 22.5 12 2.2 2.7l.1 7.3 12 1.9-12 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== GROUP: SINGLE ===================== -->
+    <div style="border-bottom:8px solid #000;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px 12px;">
+        <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+          <div style="width:44px;height:44px;border-radius:50%;flex:0 0 auto;background:linear-gradient(150deg,#3ddc97,#10b981);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:700;">A</div>
+          <div style="min-width:0;">
+            <div style="font-family:'Nunito',sans-serif;color:#fff;font-size:17.5px;font-weight:800;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Design Preview Group</div>
+            <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:rgba(255,255,255,.4);font-size:12.5px;margin-top:2px;">1 member · 5d</div>
+          </div>
+        </div>
+        <button style="display:flex;align-items:center;gap:6px;height:29px;padding:0 11px 0 4px;border:none;border-radius:14.5px;background:#faf8f4;color:#17171a;font-family:'Nunito',sans-serif;font-size:11.5px;font-weight:800;cursor:pointer;flex:0 0 auto;">
+          <span style="display:flex;">
+            <span style="width:18px;height:18px;border-radius:50%;background:#e8dfd6;border:1.5px solid #faf8f4;"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#cfc6dd;border:1.5px solid #faf8f4;margin-left:-7px;"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#a79bbf;border:1.5px solid #faf8f4;margin-left:-7px;"></span>
+          </span>
+          <span style="width:7px;height:7px;border-radius:50%;background:#22c9e8;"></span>
+          <span>5 here</span>
+        </button>
+      </div>
+      <div style="position:relative;">
+        <div style="position:relative;margin:0 12px;">
+          <div style="border-radius:20px;aspect-ratio:4 / 5;overflow:hidden;background:#1a1a1e;">
+            <div class="ph" style="width:100%;height:100%;background:#2b3b34;"></div>
+          </div>
+          <div style="position:absolute;top:5%;left:5%;width:29%;aspect-ratio:175 / 220;border-radius:19px;background:linear-gradient(160deg,#3ddc97,#10b981);border:3px solid rgba(255,255,255,.22);box-shadow:0 10px 26px -8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;font-weight:700;">A</div>
+          <button style="position:absolute;left:16px;bottom:16px;display:flex;align-items:center;border:none;padding:0;background:none;cursor:pointer;">
+            <span style="width:34px;height:34px;border-radius:50%;background:#b9ad97;border:2px solid rgba(0,0,0,.55);"></span>
+            <span style="width:34px;height:34px;border-radius:50%;background:#9db29a;border:2px solid rgba(0,0,0,.55);margin-left:-13px;"></span>
+            <span style="display:flex;align-items:center;justify-content:center;height:34px;padding:0 10px 0 17px;margin-left:-13px;border-radius:17px;background:rgba(0,0,0,.5);border:2px solid rgba(0,0,0,.55);color:#fff;font-size:13px;font-weight:700;">+24</span>
+          </button>
+          <div style="position:absolute;right:16px;bottom:16px;display:flex;align-items:center;gap:14px;">
+            <button aria-label="Wave" style="width:44px;height:44px;border-radius:50%;background:#f7f7f5;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.35);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2a2a2e" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4.4" r="1.9"/><path d="M11 7v6M11 13l-2.6 6.6M11 13l2.4 6.6M5.5 8.6 11 10l7.5-3.4"/></svg>
+            </button>
+            <button aria-label="RealMoji" style="width:44px;height:44px;border-radius:50%;background:#f7f7f5;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.35);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2a2a2e" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="12" r="8.2"/><path d="M7.8 14.4c.85 1.1 1.95 1.65 3.2 1.65s2.35-.55 3.2-1.65"/><circle cx="8.5" cy="10" r=".85" fill="#2a2a2e" stroke="none"/><circle cx="13.5" cy="10" r=".85" fill="#2a2a2e" stroke="none"/><path d="M19 3v4M21 5h-4"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div style="margin:12px 12px 0;border-radius:18px;background:#101012;border:1px solid rgba(255,255,255,.07);overflow:visible;">
+        <button style="display:flex;align-items:center;gap:7px;width:100%;background:none;border:none;padding:12px 16px 8px;cursor:pointer;font-family:inherit;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="2" stroke-linejoin="round"><path d="M3.4 4.6h17.2v11.6H8.4L3.4 19.8z"/></svg>
+          <span style="color:rgba(255,255,255,.4);font-size:12px;font-weight:600;">View all 3 comments</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg);"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div style="display:flex;flex-direction:column;gap:3px;padding:0 16px 4px;">
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">zara.h</span><span style="color:rgba(255,255,255,.75);"> this group is unreal</span></div>
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">ben.r</span><span style="color:rgba(255,255,255,.75);"> someone post already</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px 9px;">
+          <button aria-label="Switch identity" style="position:relative;width:27px;height:27px;flex:0 0 auto;border:none;padding:0;cursor:pointer;background:none;">
+            <span style="display:block;width:27px;height:27px;border-radius:50%;background:linear-gradient(140deg,#c9bda9,#a79bbf);"></span>
+            <span style="position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:50%;background:#3a3a40;border:1.5px solid #101012;display:flex;align-items:center;justify-content:center;">
+              <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.5 21 6.5 17 10.5M21 6.5H9M7 13.5 3 17.5 7 21.5M3 17.5h12"/></svg>
+            </span>
+          </button>
+          <div style="flex:1;display:flex;align-items:center;height:28px;padding:0 12px;border-radius:14px;background:rgba(255,255,255,.055);">
+            <span style="color:rgba(255,255,255,.32);font-size:12.5px;font-weight:500;">Add a comment…</span>
+          </div>
+          <button aria-label="Send" style="width:26px;height:26px;border-radius:50%;flex:0 0 auto;border:none;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,.55)"><path d="M2.2 21.3 22.5 12 2.2 2.7l.1 7.3 12 1.9-12 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== GROUP: COLLAGE ===================== -->
+    <div style="border-bottom:8px solid #000;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px 12px;">
+        <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+          <div style="width:44px;height:44px;border-radius:50%;flex:0 0 auto;background:linear-gradient(150deg,#3ddc97,#10b981);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:700;">A</div>
+          <div style="min-width:0;">
+            <div style="font-family:'Nunito',sans-serif;color:#fff;font-size:17.5px;font-weight:800;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Design Preview Group</div>
+            <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:rgba(255,255,255,.4);font-size:12.5px;margin-top:2px;">1 member · 1w</div>
+          </div>
+        </div>
+        <button style="display:flex;align-items:center;gap:6px;height:29px;padding:0 11px 0 4px;border:none;border-radius:14.5px;background:#faf8f4;color:#17171a;font-family:'Nunito',sans-serif;font-size:11.5px;font-weight:800;cursor:pointer;flex:0 0 auto;">
+          <span style="display:flex;">
+            <span style="width:18px;height:18px;border-radius:50%;background:#e8dfd6;border:1.5px solid #faf8f4;"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#cfc6dd;border:1.5px solid #faf8f4;margin-left:-7px;"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#a79bbf;border:1.5px solid #faf8f4;margin-left:-7px;"></span>
+          </span>
+          <span style="width:7px;height:7px;border-radius:50%;background:#22c9e8;"></span>
+          <span>4 here</span>
+        </button>
+      </div>
+      <div>
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:0 0 0 12px;overflow:hidden;height:262px;">
+          <div style="flex:0 0 auto;width:33%;aspect-ratio:230 / 340;margin-top:52px;border-radius:11px;overflow:hidden;background:#1a1a1e;"><div class="ph" style="width:100%;height:100%;background:#33403a;"></div></div>
+          <div style="flex:0 0 auto;width:33%;aspect-ratio:227 / 425;border-radius:11px;overflow:hidden;background:#1a1a1e;"><div class="ph" style="width:100%;height:100%;background:#3d3a30;"></div></div>
+          <div style="flex:0 0 auto;width:25%;aspect-ratio:170 / 290;margin-top:85px;border-radius:11px;background:linear-gradient(160deg,#3ddc97,#10b981);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:700;">A</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;padding:14px 12px 4px;">
+          <button style="display:flex;align-items:center;border:none;padding:0;background:none;cursor:pointer;">
+            <span style="width:34px;height:34px;border-radius:50%;background:#b9ad97;border:2px solid #000;"></span>
+            <span style="width:34px;height:34px;border-radius:50%;background:#9db29a;border:2px solid #000;margin-left:-13px;"></span>
+            <span style="display:flex;align-items:center;justify-content:center;height:34px;padding:0 10px 0 17px;margin-left:-13px;border-radius:17px;background:rgba(255,255,255,.1);border:2px solid #000;color:#fff;font-size:13px;font-weight:700;">+24</span>
+          </button>
+          <div style="display:flex;align-items:center;gap:14px;margin-left:auto;">
+            <button aria-label="Wave" style="width:44px;height:44px;border-radius:50%;background:#f7f7f5;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2a2a2e" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4.4" r="1.9"/><path d="M11 7v6M11 13l-2.6 6.6M11 13l2.4 6.6M5.5 8.6 11 10l7.5-3.4"/></svg>
+            </button>
+            <button aria-label="RealMoji" style="width:44px;height:44px;border-radius:50%;background:#f7f7f5;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2a2a2e" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="12" r="8.2"/><path d="M7.8 14.4c.85 1.1 1.95 1.65 3.2 1.65s2.35-.55 3.2-1.65"/><circle cx="8.5" cy="10" r=".85" fill="#2a2a2e" stroke="none"/><circle cx="13.5" cy="10" r=".85" fill="#2a2a2e" stroke="none"/><path d="M19 3v4M21 5h-4"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div style="margin:12px 12px 0;border-radius:18px;background:#101012;border:1px solid rgba(255,255,255,.07);overflow:visible;">
+        <button style="display:flex;align-items:center;gap:7px;width:100%;background:none;border:none;padding:12px 16px 8px;cursor:pointer;font-family:inherit;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="2" stroke-linejoin="round"><path d="M3.4 4.6h17.2v11.6H8.4L3.4 19.8z"/></svg>
+          <span style="color:rgba(255,255,255,.4);font-size:12px;font-weight:600;">View all 3 comments</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg);"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div style="display:flex;flex-direction:column;gap:3px;padding:0 16px 4px;">
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">zara.h</span><span style="color:rgba(255,255,255,.75);"> this group is unreal</span></div>
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">ben.r</span><span style="color:rgba(255,255,255,.75);"> someone post already</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px 9px;">
+          <button aria-label="Switch identity" style="position:relative;width:27px;height:27px;flex:0 0 auto;border:none;padding:0;cursor:pointer;background:none;">
+            <span style="display:block;width:27px;height:27px;border-radius:50%;background:linear-gradient(140deg,#c9bda9,#a79bbf);"></span>
+            <span style="position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:50%;background:#3a3a40;border:1.5px solid #101012;display:flex;align-items:center;justify-content:center;">
+              <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.5 21 6.5 17 10.5M21 6.5H9M7 13.5 3 17.5 7 21.5M3 17.5h12"/></svg>
+            </span>
+          </button>
+          <div style="flex:1;display:flex;align-items:center;height:28px;padding:0 12px;border-radius:14px;background:rgba(255,255,255,.055);">
+            <span style="color:rgba(255,255,255,.32);font-size:12.5px;font-weight:500;">Add a comment…</span>
+          </div>
+          <button aria-label="Send" style="width:26px;height:26px;border-radius:50%;flex:0 0 auto;border:none;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,.55)"><path d="M2.2 21.3 22.5 12 2.2 2.7l.1 7.3 12 1.9-12 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== GROUP: DECK ===================== -->
+    <div style="border-bottom:8px solid #000;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px 12px;">
+        <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+          <div style="width:44px;height:44px;border-radius:50%;flex:0 0 auto;background:linear-gradient(150deg,#3ddc97,#10b981);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:700;">A</div>
+          <div style="min-width:0;">
+            <div style="font-family:'Nunito',sans-serif;color:#fff;font-size:17.5px;font-weight:800;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Design Preview Group</div>
+            <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:rgba(255,255,255,.4);font-size:12.5px;margin-top:2px;">1 member · 5d</div>
+          </div>
+        </div>
+        <button style="display:flex;align-items:center;gap:6px;height:29px;padding:0 11px 0 4px;border:none;border-radius:14.5px;background:#faf8f4;color:#17171a;font-family:'Nunito',sans-serif;font-size:11.5px;font-weight:800;cursor:pointer;flex:0 0 auto;">
+          <span style="display:flex;">
+            <span style="width:18px;height:18px;border-radius:50%;background:#e8dfd6;border:1.5px solid #faf8f4;"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#cfc6dd;border:1.5px solid #faf8f4;margin-left:-7px;"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#a79bbf;border:1.5px solid #faf8f4;margin-left:-7px;"></span>
+          </span>
+          <span style="width:7px;height:7px;border-radius:50%;background:#22c9e8;"></span>
+          <span>6 here</span>
+        </button>
+      </div>
+      <div>
+        <div style="position:relative;height:400px;display:flex;align-items:center;justify-content:center;">
+          <div style="position:absolute;left:14px;top:42px;width:26%;height:310px;border-radius:14px;overflow:hidden;transform:rotate(-4deg);background:#1a1a1e;"><div class="ph" style="width:100%;height:100%;background:#333a42;"></div></div>
+          <div style="position:absolute;right:14px;top:42px;width:26%;height:310px;border-radius:14px;overflow:hidden;transform:rotate(4deg);background:#1a1a1e;"><div class="ph" style="width:100%;height:100%;background:#3a3630;"></div></div>
+          <div style="position:relative;width:66%;height:385px;border-radius:18px;overflow:hidden;background:#1a1a1e;box-shadow:0 14px 34px -10px rgba(0,0,0,.7);">
+            <div class="ph" style="width:100%;height:100%;background:#2d3b33;"></div>
+            <div style="position:absolute;top:14px;right:14px;height:32px;display:flex;align-items:center;padding:0 14px;border-radius:16px;background:rgba(20,20,22,.72);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#fff;font-size:13.5px;font-weight:600;letter-spacing:.06em;">1 / 9</div>
+            <button style="position:absolute;left:14px;bottom:14px;display:flex;align-items:center;border:none;padding:0;background:none;cursor:pointer;">
+              <span style="width:30px;height:30px;border-radius:50%;background:#b9ad97;border:2px solid rgba(0,0,0,.55);"></span>
+              <span style="width:30px;height:30px;border-radius:50%;background:#9db29a;border:2px solid rgba(0,0,0,.55);margin-left:-12px;"></span>
+              <span style="display:flex;align-items:center;justify-content:center;height:30px;padding:0 9px 0 15px;margin-left:-12px;border-radius:15px;background:rgba(0,0,0,.5);border:2px solid rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:700;">+24</span>
+            </button>
+            <div style="position:absolute;right:14px;bottom:14px;display:flex;align-items:center;gap:12px;">
+              <button aria-label="Wave" style="width:40px;height:40px;border-radius:50%;background:#f7f7f5;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2a2a2e" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4.4" r="1.9"/><path d="M11 7v6M11 13l-2.6 6.6M11 13l2.4 6.6M5.5 8.6 11 10l7.5-3.4"/></svg>
+              </button>
+              <button aria-label="RealMoji" style="width:40px;height:40px;border-radius:50%;background:#f7f7f5;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2a2a2e" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="12" r="8.2"/><path d="M7.8 14.4c.85 1.1 1.95 1.65 3.2 1.65s2.35-.55 3.2-1.65"/><circle cx="8.5" cy="10" r=".85" fill="#2a2a2e" stroke="none"/><circle cx="13.5" cy="10" r=".85" fill="#2a2a2e" stroke="none"/><path d="M19 3v4M21 5h-4"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:7px;padding:12px 0 4px;">
+          <span style="width:22px;height:5px;border-radius:3px;background:#fff;"></span>
+          <span style="width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.24);"></span>
+          <span style="width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.24);"></span>
+          <span style="width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.24);"></span>
+          <span style="width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.24);"></span>
+          <span style="width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.24);"></span>
+          <span style="width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.24);"></span>
+          <span style="width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.24);"></span>
+          <span style="width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.24);"></span>
+        </div>
+      </div>
+      <div style="margin:12px 12px 0;border-radius:18px;background:#101012;border:1px solid rgba(255,255,255,.07);overflow:visible;">
+        <button style="display:flex;align-items:center;gap:7px;width:100%;background:none;border:none;padding:12px 16px 8px;cursor:pointer;font-family:inherit;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="2" stroke-linejoin="round"><path d="M3.4 4.6h17.2v11.6H8.4L3.4 19.8z"/></svg>
+          <span style="color:rgba(255,255,255,.4);font-size:12px;font-weight:600;">View all 3 comments</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg);"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div style="display:flex;flex-direction:column;gap:3px;padding:0 16px 4px;">
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">zara.h</span><span style="color:rgba(255,255,255,.75);"> this group is unreal</span></div>
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">ben.r</span><span style="color:rgba(255,255,255,.75);"> someone post already</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px 9px;">
+          <button aria-label="Switch identity" style="position:relative;width:27px;height:27px;flex:0 0 auto;border:none;padding:0;cursor:pointer;background:none;">
+            <span style="display:block;width:27px;height:27px;border-radius:50%;background:linear-gradient(140deg,#c9bda9,#a79bbf);"></span>
+            <span style="position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:50%;background:#3a3a40;border:1.5px solid #101012;display:flex;align-items:center;justify-content:center;">
+              <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.5 21 6.5 17 10.5M21 6.5H9M7 13.5 3 17.5 7 21.5M3 17.5h12"/></svg>
+            </span>
+          </button>
+          <div style="flex:1;display:flex;align-items:center;height:28px;padding:0 12px;border-radius:14px;background:rgba(255,255,255,.055);">
+            <span style="color:rgba(255,255,255,.32);font-size:12.5px;font-weight:500;">Add a comment…</span>
+          </div>
+          <button aria-label="Send" style="width:26px;height:26px;border-radius:50%;flex:0 0 auto;border:none;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,.55)"><path d="M2.2 21.3 22.5 12 2.2 2.7l.1 7.3 12 1.9-12 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== GROUP: SPLIT ===================== -->
+    <div style="border-bottom:8px solid #000;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px 12px;">
+        <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+          <div style="width:44px;height:44px;border-radius:50%;flex:0 0 auto;background:linear-gradient(150deg,#3ddc97,#10b981);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:700;">A</div>
+          <div style="min-width:0;">
+            <div style="font-family:'Nunito',sans-serif;color:#fff;font-size:17.5px;font-weight:800;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Design Preview Group</div>
+            <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:rgba(255,255,255,.4);font-size:12.5px;margin-top:2px;">1 member · 1w</div>
+          </div>
+        </div>
+        <button style="display:flex;align-items:center;gap:6px;height:29px;padding:0 11px 0 4px;border:none;border-radius:14.5px;background:#faf8f4;color:#17171a;font-family:'Nunito',sans-serif;font-size:11.5px;font-weight:800;cursor:pointer;flex:0 0 auto;">
+          <span style="display:flex;">
+            <span style="width:18px;height:18px;border-radius:50%;background:#e8dfd6;border:1.5px solid #faf8f4;"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#cfc6dd;border:1.5px solid #faf8f4;margin-left:-7px;"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#a79bbf;border:1.5px solid #faf8f4;margin-left:-7px;"></span>
+          </span>
+          <span style="width:7px;height:7px;border-radius:50%;background:#22c9e8;"></span>
+          <span>4 here</span>
+        </button>
+      </div>
+      <div style="position:relative;margin:0 12px;">
+        <div style="display:flex;gap:3px;aspect-ratio:406 / 640;border-radius:20px;overflow:hidden;">
+          <div style="flex:1;overflow:hidden;background:#1a1a1e;"><div class="ph" style="width:100%;height:100%;background:#303c35;"></div></div>
+          <div style="flex:1;background:linear-gradient(165deg,#3ddc97,#10b981);display:flex;align-items:center;justify-content:center;color:#fff;font-size:30px;font-weight:700;">A</div>
+        </div>
+        <button style="position:absolute;left:16px;bottom:16px;display:flex;align-items:center;border:none;padding:0;background:none;cursor:pointer;">
+          <span style="width:34px;height:34px;border-radius:50%;background:#b9ad97;border:2px solid rgba(0,0,0,.55);"></span>
+          <span style="width:34px;height:34px;border-radius:50%;background:#9db29a;border:2px solid rgba(0,0,0,.55);margin-left:-13px;"></span>
+          <span style="display:flex;align-items:center;justify-content:center;height:34px;padding:0 10px 0 17px;margin-left:-13px;border-radius:17px;background:rgba(0,0,0,.5);border:2px solid rgba(0,0,0,.55);color:#fff;font-size:13px;font-weight:700;">+24</span>
+        </button>
+        <div style="position:absolute;right:16px;bottom:16px;display:flex;align-items:center;gap:14px;">
+          <button aria-label="Wave" style="width:44px;height:44px;border-radius:50%;background:#f7f7f5;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2a2a2e" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4.4" r="1.9"/><path d="M11 7v6M11 13l-2.6 6.6M11 13l2.4 6.6M5.5 8.6 11 10l7.5-3.4"/></svg>
+          </button>
+          <button aria-label="RealMoji" style="width:44px;height:44px;border-radius:50%;background:#f7f7f5;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2a2a2e" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="12" r="8.2"/><path d="M7.8 14.4c.85 1.1 1.95 1.65 3.2 1.65s2.35-.55 3.2-1.65"/><circle cx="8.5" cy="10" r=".85" fill="#2a2a2e" stroke="none"/><circle cx="13.5" cy="10" r=".85" fill="#2a2a2e" stroke="none"/><path d="M19 3v4M21 5h-4"/></svg>
+          </button>
+        </div>
+      </div>
+      <div style="margin:12px 12px 0;border-radius:18px;background:#101012;border:1px solid rgba(255,255,255,.07);overflow:visible;">
+        <button style="display:flex;align-items:center;gap:7px;width:100%;background:none;border:none;padding:12px 16px 8px;cursor:pointer;font-family:inherit;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="2" stroke-linejoin="round"><path d="M3.4 4.6h17.2v11.6H8.4L3.4 19.8z"/></svg>
+          <span style="color:rgba(255,255,255,.4);font-size:12px;font-weight:600;">View all 3 comments</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg);"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div style="display:flex;flex-direction:column;gap:3px;padding:0 16px 4px;">
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">zara.h</span><span style="color:rgba(255,255,255,.75);"> this group is unreal</span></div>
+          <div style="color:#fff;font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:700;">ben.r</span><span style="color:rgba(255,255,255,.75);"> someone post already</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px 9px;">
+          <button aria-label="Switch identity" style="position:relative;width:27px;height:27px;flex:0 0 auto;border:none;padding:0;cursor:pointer;background:none;">
+            <span style="display:block;width:27px;height:27px;border-radius:50%;background:linear-gradient(140deg,#c9bda9,#a79bbf);"></span>
+            <span style="position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:50%;background:#3a3a40;border:1.5px solid #101012;display:flex;align-items:center;justify-content:center;">
+              <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.5 21 6.5 17 10.5M21 6.5H9M7 13.5 3 17.5 7 21.5M3 17.5h12"/></svg>
+            </span>
+          </button>
+          <div style="flex:1;display:flex;align-items:center;height:28px;padding:0 12px;border-radius:14px;background:rgba(255,255,255,.055);">
+            <span style="color:rgba(255,255,255,.32);font-size:12.5px;font-weight:500;">Add a comment…</span>
+          </div>
+          <button aria-label="Send" style="width:26px;height:26px;border-radius:50%;flex:0 0 auto;border:none;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,.55)"><path d="M2.2 21.3 22.5 12 2.2 2.7l.1 7.3 12 1.9-12 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

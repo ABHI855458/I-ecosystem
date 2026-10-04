@@ -1,4 +1,4 @@
-import 'dart:ui';
+import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -6,14 +6,26 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants.dart';
 import '../../../../features/groups/design_preview/widgets/avatar.dart';
+import '../../../../features/ping/ping_prompt_sheet.dart' show PingContext;
+import '../../../../features/profile_v2/profile_navigation.dart';
+import '../../../../services/post_service.dart';
+import '../../../../services/presence_service.dart';
+import '../../../../services/reaction_preset_service.dart';
+import '../../../../services/realmoji_service.dart';
+import '../post_card_shared.dart';
+import '../../../../features/profile_v2/profile_v2_icons.dart';
+import '../../../../features/profile_v2/profile_v2_tokens.dart' show PV2;
 
 // ---------------------------------------------------------------------------
 // Real data model for the 4 group-post collage cards (Float/Mosaic/Stack/
 // Strip) — see group_post_card.dart for how this gets loaded from
-// GroupService. No fabricated fields: no streak/fire count, no location,
-// no comment/reaction data, since group_posts has no schema backing any of
-// those (see design_handoff_group_post_cards/README.md's spec vs. what's
-// actually real — this app drops what isn't).
+// GroupService. Still no fabricated location/comment/reaction data — those
+// have no schema backing (see design_handoff_group_post_cards/README.md's
+// spec vs. what's actually real — this app drops what isn't). `streaks` IS
+// real, though: DipService.streaksForGroup, backed by
+// group_ping_member_streak_map() — each member's own reply streak to their
+// group's daily ping (BLUE 3 of STREAK SYSTEM v4). The per-group Dip streak
+// this used to show was removed with the Dip streak mechanic itself.
 // ---------------------------------------------------------------------------
 
 class GroupCardMember {
@@ -30,44 +42,141 @@ class GroupCardPost {
     required this.userId,
     this.caption,
     this.createdAt,
+    this.aspectRatio,
+    this.note,
+    this.place,
+    this.takenAt,
   });
   final String id;
   final String photoUrl;
   final String userId;
   final String? caption;
   final DateTime? createdAt;
+
+  /// This post's own `group_posts.aspect_ratio` — the frame ITS poster
+  /// picked at compose time (PostSizePresetPicker), never a viewer
+  /// preference. Parse with parseStoredAspectRatio.
+  final String? aspectRatio;
+
+  /// Body text shown below the photo — separate from [caption], which
+  /// doubles as the card's header title. Same `group_posts.note` column
+  /// GroupProfilePostCard reads.
+  final String? note;
+
+  /// Location label for the footer pill, falling back to the poster's name
+  /// when unset — same `group_posts.place` column GroupProfilePostCard reads.
+  final String? place;
+
+  /// When the memory actually happened, vs [createdAt] (when it was
+  /// posted) — same `group_posts.taken_at` column GroupProfilePostCard
+  /// prefers for its date badge.
+  final DateTime? takenAt;
 }
+
+/// '9:40 pm' — matches the design's header subtitle. Shared by
+/// DesignGroupCard (feed) and GroupProfilePostCard (group profile) so both
+/// format a post's date identically.
+String groupCardClockTime(DateTime d) {
+  final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  final m = d.minute.toString().padLeft(2, '0');
+  return '$h:$m ${d.hour >= 12 ? 'pm' : 'am'}';
+}
+
+const List<String> kGroupCardWeekdays = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+];
+
+const List<String> kGroupCardMonths = [
+  'JAN',
+  'FEB',
+  'MAR',
+  'APR',
+  'MAY',
+  'JUN',
+  'JUL',
+  'AUG',
+  'SEP',
+  'OCT',
+  'NOV',
+  'DEC',
+];
 
 class GroupCardData {
   const GroupCardData({
     required this.groupId,
     required this.groupName,
+    this.groupIconUrl,
     required this.members,
     required this.posts,
     required this.mainPhotoUrl,
+    this.mainPhotoUrls,
     this.mainCaption,
     this.mainCreatedAt,
+    this.streaks = const {},
+    this.locked = false,
+    this.groupIsPublic = false,
+    this.sharedVia,
   });
 
   final String groupId;
   final String groupName;
 
+  /// Whose share put this post in the viewer's feed (FeedItem.
+  /// groupSharedVia) — the group profile opens via this person.
+  final String? sharedVia;
+
+  /// A private group's post seen only through a shared community
+  /// (FeedItem.groupPostLocked): shown in full layout, photos after the
+  /// first blurred, and opening anything says "Be a friend to see it".
+  final bool locked;
+
+  /// This group has `visibility = 'public'` (FeedItem.groupIsPublic) —
+  /// self-joinable from the group's own screen, so DesignGroupCard skips
+  /// the feed's "Accept" pill for it even when [locked] is false.
+  final bool groupIsPublic;
+
+  /// The group's own DP, once any member has set one — falls back to the
+  /// letter-glyph initial (see DesignGroupCard's own render) when null.
+  final String? groupIconUrl;
+
   /// Real group_members roster (any role), admins-first per
   /// GroupService.fetchMembers's own ordering.
   final List<GroupCardMember> members;
+
+  /// Per-member GROUP-PING REPLY streak, keyed by `users.id`
+  /// (DipService.streaksForGroup). STREAK SYSTEM v4: this used to be the
+  /// per-user Dip streak, which no longer exists — see that method's doc.
+  /// A member absent from this map has never Dipped in this group — treat as
+  /// 0, same as a missing key elsewhere in this file's reaction/ping data.
+  final Map<String, int> streaks;
 
   /// Real group_posts for this group, newest-first, ROTATED so the feed
   /// item's own post (the one that made this card appear in the feed at
   /// all) is index 0 — see group_post_card.dart. Always has >=1 entry.
   final List<GroupCardPost> posts;
 
-  /// The feed item's own photo — same as posts.first.photoUrl, kept as a
-  /// separate field so Float/Mosaic/Strip (which only ever show ONE "main"
-  /// photo, not the full cycling deck Stack uses) don't need to reach into
-  /// the posts list at all.
+  /// The feed item's own cover photo — same as posts.first.photoUrl.
   final String mainPhotoUrl;
+
+  /// The feed item's full photo list when it's a multi-photo post
+  /// (`group_posts.photo_urls`). Null/empty means single-photo — read
+  /// [mainPhotoUrl]. Prefer [photoUrls], which resolves the fallback.
+  final List<String>? mainPhotoUrls;
+
   final String? mainCaption;
   final DateTime? mainCreatedAt;
+
+  /// Every photo of THIS feed item, in display order, cover first.
+  List<String> get photoUrls =>
+      (mainPhotoUrls != null && mainPhotoUrls!.isNotEmpty)
+          ? mainPhotoUrls!
+          : [mainPhotoUrl];
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +184,18 @@ class GroupCardData {
 // style. No shared formatter existed elsewhere in this codebase to reuse
 // (grepped: every other feed screen just hardcodes its own display string).
 // ---------------------------------------------------------------------------
+
+/// Resolves the display name for whichever post GroupCardEngagementButtons/
+/// Ping should target — the feed item's own post (posts.first, per
+/// GroupPostCard's rotation), matched against the real member roster.
+String groupCardPosterName(GroupCardData data) {
+  if (data.posts.isEmpty) return 'someone';
+  final userId = data.posts.first.userId;
+  for (final m in data.members) {
+    if (m.id == userId) return m.name;
+  }
+  return 'someone';
+}
 
 String groupCardTimeAgo(DateTime? dt) {
   if (dt == null) return '';
@@ -123,6 +244,7 @@ class GroupCardMemberCircle extends StatelessWidget {
       ),
       child: ClipOval(
         child: CachedNetworkImage(
+              memCacheWidth: 1080,
           imageUrl: member.avatarUrl!,
           width: size,
           height: size,
@@ -133,6 +255,122 @@ class GroupCardMemberCircle extends StatelessWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Member streak row — horizontally scrollable avatars + group-ping streak,
+// under the group card header. No names in the resting state (spec): a
+// streak-only badge, tap-through to the profile for the name. Streak comes
+// from DipService.streaksForGroup (group_ping_member_streak_map()) — each
+// member's own consecutive-days streak of answering their group's ping.
+// ---------------------------------------------------------------------------
+
+class GroupMemberStreakRow extends StatelessWidget {
+  const GroupMemberStreakRow({super.key, required this.members, required this.streaks});
+
+  final List<GroupCardMember> members;
+  final Map<String, int> streaks;
+
+  static const double _rowHeight = 48; // avatarSize + flame badge overhang
+  static const double _gap = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    if (members.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: _rowHeight,
+      child: ScrollConfiguration(
+        behavior: const _NoScrollbarBehavior(),
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          itemCount: members.length,
+          separatorBuilder: (_, _) => const SizedBox(width: _gap),
+          itemBuilder: (_, i) {
+            final member = members[i];
+            return _MemberStreakAvatar(member: member, streak: streaks[member.id] ?? 0);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _MemberStreakAvatar extends StatelessWidget {
+  const _MemberStreakAvatar({required this.member, required this.streak});
+
+  final GroupCardMember member;
+  final int streak;
+
+  static const double _avatarSize = 34;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => openProfile(context, member.id),
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        // Room for the 1A ring, which sits OUTSIDE the avatar circle now
+        // rather than a badge merely overlapping its edge.
+        width: _avatarSize + 6,
+        height: GroupMemberStreakRow._rowHeight,
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            // Variant 1A's decorative ring, floating outside the photo —
+            // amber when the member has an active streak (their own
+            // "captured" state), the spec's neutral #2e2e33 otherwise. Same
+            // shape language as the RealMoji chips elsewhere in the app —
+            // explicit request: "in 1A design as such" — applied here to
+            // the OTHER thing this app already draws in that language.
+            Container(
+              width: _avatarSize + 6,
+              height: _avatarSize + 6,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  // BLUE when there's a live streak — this is BLUE 3, the
+                  // member's own group-ping reply streak, and every
+                  // relationship streak in the app is blue (see
+                  // PV2.streakBlue). Was orange-red, which read as the
+                  // personal anon streak's colour.
+                  color: streak > 0 ? PV2.streakBlue : const Color(0xFF2E2E33),
+                  width: 1.5,
+                ),
+              ),
+            ),
+            GroupCardMemberCircle(member: member, size: _avatarSize),
+            // The same blue flame badge the Duo post avatar carries
+            // (PV2Icons.blueFlameStreak), always shown — "0" when this
+            // member has no group-ping streak — so every member DP reads
+            // the same and nothing pops in once the streaks load. Explicit
+            // request: "on the group posts member dp as well the group
+            // ping streaks flame shall also be shown".
+            Positioned(
+              right: -7,
+              bottom: 0,
+              child: PV2Icons.blueFlameStreak(
+                streak,
+                flameSize: 22,
+                showZero: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NoScrollbarBehavior extends ScrollBehavior {
+  const _NoScrollbarBehavior();
+
+  @override
+  Widget buildScrollbar(BuildContext context, Widget child, ScrollableDetails details) => child;
+
+  @override
+  Widget buildOverscrollIndicator(BuildContext context, Widget child, ScrollableDetails details) => child;
 }
 
 /// Rectangular (not circular) member tile for Float's floating selfie tiles
@@ -151,6 +389,7 @@ class GroupCardMemberTile extends StatelessWidget {
       return ClipRRect(
         borderRadius: BorderRadius.circular(radius),
         child: CachedNetworkImage(
+              memCacheWidth: 1080,
           imageUrl: member.avatarUrl!,
           fit: BoxFit.cover,
           errorWidget: (_, _, _) => _fallback(),
@@ -183,8 +422,13 @@ class GroupCardMemberTile extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class GroupCardHeader extends StatelessWidget {
-  const GroupCardHeader({super.key, required this.data});
+  const GroupCardHeader({super.key, required this.data, this.trailing});
   final GroupCardData data;
+
+  /// Overrides the trailing "···" menu — GroupCardShell passes a
+  /// LivePresencePill here (post_card_shared.dart), matching PersonalPostCard's
+  /// identical header-trailing slot (post_card.dart's _AuthorRow).
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -219,10 +463,13 @@ class GroupCardHeader extends StatelessWidget {
             ],
           ),
         ),
-        Text(
-          '···',
-          style: GoogleFonts.spaceGrotesk(fontSize: 20, letterSpacing: 1, height: 1, color: AppColors.textMuted.withValues(alpha: 0.75)),
-        ),
+        if (trailing != null)
+          trailing!
+        else
+          Text(
+            '···',
+            style: GoogleFonts.spaceGrotesk(fontSize: 20, letterSpacing: 1, height: 1, color: AppColors.textMuted.withValues(alpha: 0.75)),
+          ),
       ],
     );
   }
@@ -256,46 +503,67 @@ class _AvatarStack extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Bell/smiley icon button pair — visual only (no real ping/reaction wiring
-// specified for these cards; EveryonePostCard's own real reaction system is
-// keyed off `posts.id`, which group_posts rows don't have).
+// Ping + RealMoji buttons — REAL wiring now (group_post_id migration adds
+// group-post support to reactions/post_realmoji_reactions, see
+// supabase/schema.sql). Self-contained StatefulWidget (its own
+// PostReactions-mixin State) rather than reading state from an ancestor,
+// since each of the 4 layout files (float/mosaic/stack/strip) instantiates
+// this independently at its own position — same PostPingButton/
+// PostReactionCorner pair PersonalPostCard uses, same tray-opening style,
+// just keyed on groupPostId instead of postId. Replaces the old
+// GroupCardIconButtons (bell/smiley, visual-only).
 // ---------------------------------------------------------------------------
 
-class GroupCardIconButtons extends StatelessWidget {
-  const GroupCardIconButtons({super.key, this.vertical = true, this.size = 44, this.flat = false});
+class GroupCardEngagementButtons extends StatefulWidget {
+  const GroupCardEngagementButtons({
+    super.key,
+    required this.groupPostId,
+    required this.posterName,
+  });
 
-  final bool vertical;
-  final double size;
+  final String groupPostId;
+  final String posterName;
 
-  /// Strip's variant is flat (no blur, solid dark fill) per spec.
-  final bool flat;
+  @override
+  State<GroupCardEngagementButtons> createState() => _GroupCardEngagementButtonsState();
+}
+
+class _GroupCardEngagementButtonsState extends State<GroupCardEngagementButtons>
+    with PostReactions<GroupCardEngagementButtons> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(loadMyRealmojiReaction(null, groupPostId: widget.groupPostId));
+  }
 
   @override
   Widget build(BuildContext context) {
-    final children = [_button('🔔'), SizedBox(width: vertical ? 0 : 10, height: vertical ? 10 : 0), _button('😊')];
-    return vertical
-        ? Column(mainAxisSize: MainAxisSize.min, children: children)
-        : Row(mainAxisSize: MainAxisSize.min, children: children);
-  }
-
-  Widget _button(String emoji) {
-    final content = Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: flat ? const Color(0xFF15151A) : const Color.fromRGBO(10, 12, 18, 0.62),
-        border: Border.all(color: flat ? const Color(0xFF23232B) : Colors.white.withValues(alpha: 0.12)),
-      ),
-      alignment: Alignment.center,
-      child: Text(emoji, style: TextStyle(fontSize: size * 0.38)),
-    );
-    if (flat) return content;
-    return ClipOval(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: content,
-      ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PostPingButton(onTap: () => openPing(pingContext: PingContext.everyone, targetName: widget.posterName)),
+        const SizedBox(width: 14),
+        PostReactionCorner(
+          // §2: 34dp per spec — see PersonalPostCard's identical note.
+          size: 34,
+          allowFaceReactions: true,
+          myFaceReaction: null,
+          myEmoji: myRealmojiReaction?.glyph,
+          uploading: uploadingFaceReaction,
+          onTap: openReactionTray,
+          onClose: closePresetTray,
+          showTray: showPresetTray,
+          category: ReactionPresetCategory.everyone,
+          onSelect: (preset) => selectPreset(null, preset, groupPostId: widget.groupPostId),
+          onAddNew: () {},
+          onCaptureRealmoji: (type) => captureRealmojiAndReact(
+            null,
+            ReactionPresetCategory.everyone,
+            type,
+            groupPostId: widget.groupPostId,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -324,13 +592,63 @@ class GroupCardSkeleton extends StatelessWidget {
 }
 
 /// Card shell — background/border/radius/padding common to all 4 variants.
-class GroupCardShell extends StatelessWidget {
+/// Also owns the Live-presence pill/dropdown (header-adjacent) and the
+/// comment card (below body) — the two engagement pieces that don't vary
+/// per layout, mirroring PersonalPostCard's identical use of the same
+/// shared widgets (post_card_shared.dart) for parity between group and
+/// personal posts. The Ping+RealMoji buttons DO vary in position per
+/// layout, so those stay embedded in each layout's own `body`
+/// (GroupCardEngagementButtons, above).
+class GroupCardShell extends StatefulWidget {
   const GroupCardShell({super.key, required this.data, required this.body});
   final GroupCardData data;
   final Widget body;
 
   @override
+  State<GroupCardShell> createState() => _GroupCardShellState();
+}
+
+class _GroupCardShellState extends State<GroupCardShell> {
+  bool _showLiveDropdown = false;
+  List<PresenceUser> _present = const [];
+
+  String? get _groupPostId =>
+      widget.data.posts.isNotEmpty ? widget.data.posts.first.id : null;
+
+  @override
+  void initState() {
+    super.initState();
+    _touchAndLoadPresence();
+  }
+
+  @override
+  void didUpdateWidget(GroupCardShell old) {
+    super.didUpdateWidget(old);
+    final oldGpid = old.data.posts.isNotEmpty ? old.data.posts.first.id : null;
+    if (oldGpid != _groupPostId) _touchAndLoadPresence();
+  }
+
+  void _touchAndLoadPresence() {
+    final gpid = _groupPostId;
+    if (gpid == null) return;
+    unawaited(PresenceService.instance.touch(groupPostId: gpid));
+    // Permanent view record — see the same call in DesignGroupCard.
+    unawaited(PostService.instance.recordGroupPostView(gpid));
+    unawaited(_loadPresence());
+  }
+
+  Future<void> _loadPresence() async {
+    final gpid = _groupPostId;
+    if (gpid == null) return;
+    final entries = await PresenceService.instance.fetchPresence(groupPostId: gpid);
+    if (!mounted) return;
+    setState(() => _present = entries.map(PresenceUser.fromEntry).toList());
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final groupPostId = _groupPostId;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -342,9 +660,36 @@ class GroupCardShell extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GroupCardHeader(data: data),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              GroupCardHeader(
+                data: widget.data,
+                trailing: LivePresencePill(
+                  present: _present,
+                  compact: true,
+                  onTap: () {
+                    setState(() => _showLiveDropdown = !_showLiveDropdown);
+                    if (_showLiveDropdown) unawaited(_loadPresence());
+                  },
+                ),
+              ),
+              if (_showLiveDropdown)
+                Positioned(
+                  top: 44,
+                  right: 0,
+                  child: LivePresenceDropdown(present: _present, width: 180, borderRadius: 14),
+                ),
+            ],
+          ),
           const SizedBox(height: 14),
-          body,
+          widget.body,
+          // reactors/reactionCount left at defaults (hides the mini RealMoji
+          // rail) — GroupCardShell has no reactor list in scope; reaction
+          // data here lives per-layout in GroupCardEngagementButtons'
+          // PostReactions mixin instance, not centrally on this shell. Wire
+          // through if/when that data gets lifted up.
+          if (groupPostId != null) PostCommentCard(groupPostId: groupPostId, isGroup: true),
         ],
       ),
     );

@@ -78,6 +78,7 @@ class PhotoPostCard extends StatefulWidget {
     required this.allowFaceReactions,
     required this.pingContext,
     this.pingTargetName,
+    this.onSentPrompt,
     this.personaPhotoUrl,
     this.posterScore,
     this.branch,
@@ -117,6 +118,12 @@ class PhotoPostCard extends StatefulWidget {
   /// doesn't render) — null falls back to 'someone'. Passing a real name
   /// here does not put a name on the card; the card still shows none.
   final String? pingTargetName;
+
+  /// Forwarded straight to showPingPromptSheet — a caller with somewhere
+  /// real to send the prompt (e.g. the Anonymous feed's ping_post_author
+  /// RPC) passes this; a caller with nowhere real to send it just omits
+  /// it, same posture as DesignGroupCard's own use of this pattern.
+  final PingSendHandler? onSentPrompt;
 
   /// The poster's anon persona photo — never the real profile photo. Null
   /// falls back to a plain silhouette glyph.
@@ -368,6 +375,7 @@ class _PhotoPostCardState extends State<PhotoPostCard>
                         myEmoji: reactions.myEmoji,
                         uploadingReaction: uploadingFaceReaction,
                         onReactionTap: openReactionTray,
+                        onReactionClose: closePresetTray,
                         showReactionTray: showPresetTray,
                         reactionCategory: widget.allowFaceReactions
                             ? ReactionPresetCategory.everyone
@@ -542,6 +550,7 @@ class _PhotoPostCardState extends State<PhotoPostCard>
                                         onTap: () => openPing(
                                           pingContext: widget.pingContext,
                                           targetName: widget.pingTargetName,
+                                          onSentPrompt: widget.onSentPrompt,
                                         ),
                                         width: geo2.stickFigureSize.width,
                                         height: geo2.stickFigureSize.height,
@@ -565,6 +574,7 @@ class _PhotoPostCardState extends State<PhotoPostCard>
                                           myEmoji: myRealmojiReaction?.glyph,
                                           uploading: uploadingFaceReaction,
                                           onTap: openReactionTray,
+                                          onClose: closePresetTray,
                                           showTray: showPresetTray,
                                           category:
                                               ReactionPresetCategory.anonymous,

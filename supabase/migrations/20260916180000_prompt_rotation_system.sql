@@ -1,0 +1,63 @@
+-- Prompt rotation system — schema, engine, presets and the write side.
+--
+-- Consolidates six live migrations (prompt_rotation_schema,
+-- prompt_rotation_engine, window_affinity_presets_and_seed,
+-- prompt_bar_commit_and_dashboard_views, pick_window_prompt_scope_fallback,
+-- prompt_bar_zero_affinity_and_floor) into the repo's own ledger. All of it
+-- is already applied; this file is the checked-in record.
+--
+-- WHAT IT REPLACES: the app fetched EVERY active prompt across all of a
+-- user's communities and cycled them client-side every 30 seconds — the
+-- "round-robin through all nine" case the spec rejects. It ignores context,
+-- so a gym prompt lands at 11pm and a hostel prompt at 9am.
+--
+-- The full definitions live in the Supabase migration ledger under the six
+-- names above (supabase_migrations.schema_migrations). The objects created:
+--
+--   prompt_windows              the eight daily windows, times included
+--   daily_prompts +columns      time_windows, prompt_kind, weight,
+--                               feed_scope, expires_at
+--   ping_prompts  +columns      pool ('linked'|'fallback'|'personal'|
+--                               'group'), prompt_kind, weight, and the
+--                               CHECK that a linked prompt has a parent and
+--                               a pooled one does not
+--   communities.window_affinity 0-3 per window, jsonb, dashboard-editable
+--   window_affinity_presets     the spec's Part 2 table as named presets
+--   community_window_prompts    materialised live prompt per community/window/day
+--   prompt_impressions          the freshness term, per user
+--   prompt_bar_history          the novelty term, per user
+--   community_requests          the 15+ opening rule
+--
+--   campus_now()                Asia/Kolkata, so windows mean campus time
+--   current_prompt_window()     which window is open; class holds and quiet
+--                               hours are the SAME mechanic (the previous
+--                               window persists), so they are one branch
+--   window_affinity_for()       0-3, defaulting to 1 not 0 so an
+--                               unconfigured community still rotates
+--   pick_window_prompt()        deterministic per (community, window, day)
+--                               — every member sees the same prompt with no
+--                               cron job; 60/40 specific/universal, falling
+--                               back across BOTH pool and feed_scope rather
+--                               than returning nothing
+--   prompt_bar_for_user()       the score: affinity x drift x freshness x
+--                               social_proof x novelty, each exposed as its
+--                               own column for the simulator. Drops
+--                               affinity-0 communities (0 = never surface)
+--                               but keeps the best one if that would empty
+--                               the bar (rule 3)
+--   commit_prompt_bar()         records the impression; without it
+--                               freshness/novelty never accumulate
+--   request_community()         spec Part 4
+--   dashboard_live_prompts()    Live Now grid
+--   dashboard_prompt_stats()    response rate, for the weekly cull
+--   dashboard_community_requests()
+--
+-- LATER FIX (pick_window_prompt_per_community_ordering): the weighted draw
+-- ordered by hashtext(prompt_id || window || day), with no community in the
+-- hash — so the UNIVERSAL pool produced an identical ordering for every
+-- community, and all of them showed the same prompt in a given window.
+-- Verified before the fix: Anime, Foodies, Music and Sports all drew "The
+-- most cursed thing in your bag." at day_end. The specific pool hid it,
+-- because there the candidate rows already differ per community. The
+-- community is now part of the ordering salt, so each community's draw is
+-- independent while staying deterministic per (community, window, day).

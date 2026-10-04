@@ -47,6 +47,7 @@ class _PhotoBackground extends StatelessWidget {
     }
     if (item.photoUrl != null) {
       return CachedNetworkImage(
+              memCacheWidth: 1080,
         imageUrl: item.photoUrl!,
         fit: BoxFit.cover,
         errorWidget: (_, _, _) => _colorFill(item.postId),

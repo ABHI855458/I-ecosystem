@@ -114,6 +114,7 @@ class _Peek extends StatelessWidget {
                 child: AspectRatio(
                   aspectRatio: 1,
                   child: CachedNetworkImage(
+              memCacheWidth: 1080,
                     imageUrl: photo,
                     fit: BoxFit.cover,
                     errorWidget: (_, _, _) => Container(color: Colors.black12),

@@ -8,7 +8,7 @@ import 'widgets/section_eyebrow.dart';
 import 'widgets/stat_pill.dart';
 
 /// Direction 1c "Roster" — people first, each member gets a card with
-/// their latest dip. See
+/// their latest post. See
 /// design-refs/design_handoff_group_profile/README.md §"Direction 1c".
 /// Mock data only; does not touch the real group_profile_screen.dart.
 class GroupProfileRosterScreen extends StatefulWidget {
@@ -29,8 +29,8 @@ class _GroupProfileRosterScreenState extends State<GroupProfileRosterScreen> {
     id: 'you',
     name: 'You',
     isAdmin: true,
-    dipCount: 12,
-    lastDippedLabel: 'Dipped 2h ago',
+    postCount: 12,
+    lastPostedLabel: 'Posted 2h ago',
     hasPostedToday: true,
     last5Days: [true, true, true, true, true],
   );
@@ -199,7 +199,7 @@ class _GroupProfileRosterScreenState extends State<GroupProfileRosterScreen> {
                         itemBuilder: (context, i) {
                           final grad = Avatar.gradientFor(_data.members[i % _data.members.length].id);
                           return GestureDetector(
-                            onTap: () => _openDetail('Recent dip #${i + 1}'),
+                            onTap: () => _openDetail('Recent post #${i + 1}'),
                             child: Container(
                               width: 108,
                               decoration: BoxDecoration(
@@ -253,7 +253,7 @@ class _RosterCard extends StatelessWidget {
                 children: [
                   Text(member.name, style: GoogleFonts.spaceGrotesk(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.5))),
                   const SizedBox(height: 4),
-                  Text("Hasn't dipped today", style: GoogleFonts.dmSans(fontSize: 12.5, color: Colors.white.withValues(alpha: 0.3))),
+                  Text("Hasn't posted today", style: GoogleFonts.dmSans(fontSize: 12.5, color: Colors.white.withValues(alpha: 0.3))),
                 ],
               ),
             ),
@@ -319,22 +319,22 @@ class _RosterCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${member.lastDippedLabel} · ${member.dipCount} dips',
+                    '${member.lastPostedLabel} · ${member.postCount} posts',
                     style: GoogleFonts.dmSans(fontSize: 12.5, color: Colors.white.withValues(alpha: 0.45)),
                   ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      for (final dipped in member.last5Days) ...[
+                      for (final posted in member.last5Days) ...[
                         Container(
                           width: 22,
                           height: 6,
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: dipped ? 0.5 : 0.12),
+                            color: Colors.white.withValues(alpha: posted ? 0.5 : 0.12),
                             borderRadius: BorderRadius.circular(3),
                           ),
                         ),
-                        if (dipped != member.last5Days.last) const SizedBox(width: 4),
+                        if (posted != member.last5Days.last) const SizedBox(width: 4),
                       ],
                     ],
                   ),

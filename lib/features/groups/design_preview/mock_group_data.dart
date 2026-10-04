@@ -9,8 +9,8 @@ class MockMember {
     required this.id,
     required this.name,
     required this.isAdmin,
-    required this.dipCount,
-    required this.lastDippedLabel,
+    required this.postCount,
+    required this.lastPostedLabel,
     required this.hasPostedToday,
     required this.last5Days,
   });
@@ -18,8 +18,8 @@ class MockMember {
   final String id;
   final String name;
   final bool isAdmin;
-  final int dipCount;
-  final String lastDippedLabel;
+  final int postCount;
+  final String lastPostedLabel;
   final bool hasPostedToday;
 
   /// Oldest → newest, left to right, per the 1c "consistency bar" spec.
@@ -44,7 +44,7 @@ class MockGroupData {
     required this.startedLabel,
     required this.isPrivate,
     required this.bio,
-    required this.totalDips,
+    required this.totalPosts,
     required this.streak,
     required this.onTimePercent,
     required this.members,
@@ -55,7 +55,7 @@ class MockGroupData {
   final String startedLabel;
   final bool isPrivate;
   final String bio;
-  final int totalDips;
+  final int totalPosts;
   final int streak;
   final int onTimePercent;
   final List<MockMember> members;
@@ -68,8 +68,8 @@ class MockGroupData {
       id: 'sarah',
       name: 'Sarah',
       isAdmin: true,
-      dipCount: 38,
-      lastDippedLabel: 'Dipped 2h ago',
+      postCount: 38,
+      lastPostedLabel: 'Posted 2h ago',
       hasPostedToday: true,
       last5Days: [true, true, true, true, false],
     ),
@@ -77,8 +77,8 @@ class MockGroupData {
       id: 'maya',
       name: 'Maya',
       isAdmin: false,
-      dipCount: 31,
-      lastDippedLabel: 'Dipped 5h ago',
+      postCount: 31,
+      lastPostedLabel: 'Posted 5h ago',
       hasPostedToday: true,
       last5Days: [true, true, false, true, true],
     ),
@@ -86,8 +86,8 @@ class MockGroupData {
       id: 'arjun',
       name: 'Arjun',
       isAdmin: false,
-      dipCount: 29,
-      lastDippedLabel: 'Dipped 8h ago',
+      postCount: 29,
+      lastPostedLabel: 'Posted 8h ago',
       hasPostedToday: true,
       last5Days: [true, false, true, true, true],
     ),
@@ -95,8 +95,8 @@ class MockGroupData {
       id: 'priya',
       name: 'Priya',
       isAdmin: false,
-      dipCount: 25,
-      lastDippedLabel: 'Dipped 11h ago',
+      postCount: 25,
+      lastPostedLabel: 'Posted 11h ago',
       hasPostedToday: true,
       last5Days: [false, true, true, true, true],
     ),
@@ -104,8 +104,8 @@ class MockGroupData {
       id: 'kian',
       name: 'Kian',
       isAdmin: false,
-      dipCount: 22,
-      lastDippedLabel: "Hasn't dipped today",
+      postCount: 22,
+      lastPostedLabel: "Hasn't posted today",
       hasPostedToday: false,
       last5Days: [true, true, true, false, true],
     ),
@@ -113,15 +113,15 @@ class MockGroupData {
       id: 'dev',
       name: 'Dev',
       isAdmin: false,
-      dipCount: 18,
-      lastDippedLabel: "Hasn't dipped today",
+      postCount: 18,
+      lastPostedLabel: "Hasn't posted today",
       hasPostedToday: false,
       last5Days: [true, false, true, true, false],
     ),
   ];
 
   // 28 cells (4 full weeks) — mirrors the design doc's own calendar grid
-  // length. Mostly-dipped with a few scattered misses; index 20 is "today";
+  // length. Mostly-posted with a few scattered misses; index 20 is "today";
   // everything after it is "future" (hasn't happened yet).
   static List<MockCalendarDay> _buildCalendar() {
     const missedIndices = {2, 8, 19};
@@ -136,8 +136,8 @@ class MockGroupData {
     name: 'Weekend Crew 🌊',
     startedLabel: 'Mar 2025',
     isPrivate: true,
-    bio: "Coastal drives, questionable playlists, one dip a day whether we like it or not.",
-    totalDips: 128,
+    bio: "Coastal drives, questionable playlists, one post a day whether we like it or not.",
+    totalPosts: 128,
     streak: 41,
     onTimePercent: 92,
     members: _members,

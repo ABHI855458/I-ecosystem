@@ -13,6 +13,7 @@ import '../../main_shell.dart' show kTabBarBottomOffset, kTabBarHeight;
 import '../../screens/feed/widgets/photo_post_card.dart';
 import '../../screens/feed/widgets/text_post_card.dart';
 import '../../services/feed_service.dart';
+import '../../services/ping_service.dart';
 import '../../services/post_service.dart';
 import '../../shared/feed_notif_bar.dart';
 import '../ping/ping_prompt_sheet.dart';
@@ -428,6 +429,21 @@ class _AnonymousTabState extends State<AnonymousTab> {
 
   ValueNotifier<double> _focusFor(int postId) =>
       _focusNotifiers.putIfAbsent(postId, () => ValueNotifier(0.0));
+
+  /// Pings the post's author without the caller ever learning who that is
+  /// (server-resolved by ping_post_author) — only for a post with a real
+  /// backend id; the old static demo entries have none, so their ping
+  /// button stays exactly as decorative as it always was.
+  void _pingPostAuthor(_AnonPost post, String prompt) {
+    final realId = post.realId;
+    if (realId == null) return;
+    PingService.instance.pingPostAuthor(postId: realId, prompt: prompt).catchError((Object e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is PingLimitExceeded ? e.toString() : "Couldn't send that ping.")),
+      );
+    });
+  }
 
   void _updateFocus(double page) {
     final posts = _filtered;
@@ -910,6 +926,8 @@ class _AnonymousTabState extends State<AnonymousTab> {
                                       allowFaceReactions: false,
                                       pingContext: PingContext.anonymous,
                                       pingTargetName: post.handle,
+                                      onSentPrompt: (prompt, {photoUrl}) =>
+                                          _pingPostAuthor(post, prompt),
                                       posterScore: post.posterScore,
                                       personaPhotoUrl: post.personaPhotoUrl,
                                       branch: branch,
@@ -925,6 +943,8 @@ class _AnonymousTabState extends State<AnonymousTab> {
                                       allowFaceReactions: false,
                                       pingContext: PingContext.anonymous,
                                       pingTargetName: post.handle,
+                                      onSentPrompt: (prompt, {photoUrl}) =>
+                                          _pingPostAuthor(post, prompt),
                                       posterScore: post.posterScore,
                                       personaPhotoUrl: post.personaPhotoUrl,
                                       branch: branch,
@@ -1127,6 +1147,7 @@ class _AnonMedia extends StatelessWidget {
     final url = post.photoUrl;
     if (url != null) {
       return CachedNetworkImage(
+              memCacheWidth: 1080,
         imageUrl: url,
         fit: BoxFit.cover,
         placeholder: (context, url) =>

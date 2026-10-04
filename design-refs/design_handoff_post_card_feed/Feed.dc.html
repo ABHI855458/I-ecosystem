@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./image-slot.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #5ac8e0; text-decoration: none; }
+  a:hover { color: #7fdcf0; }
+  @keyframes livePulse {
+    0% { box-shadow: 0 0 0 0 rgba(255,69,58,0.55); }
+    70% { box-shadow: 0 0 0 6px rgba(255,69,58,0); }
+    100% { box-shadow: 0 0 0 0 rgba(255,69,58,0); }
+  }
+  @keyframes ddIn {
+    from { opacity: 0; transform: translateY(-8px) scale(.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes expandIn {
+    from { opacity: 0; max-height: 0; }
+    to { opacity: 1; max-height: 520px; }
+  }
+  .hs::-webkit-scrollbar { display: none; }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#000;display:flex;justify-content:center;">
+  <div style="width:430px;max-width:100vw;">
+
+    <sc-for list="{{ posts }}" as="post" hint-placeholder-count="2">
+      <div style="border-bottom:8px solid #000;">
+
+        <!-- Header row above the post -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 11px;">
+          <div style="display:flex;align-items:center;gap:11px;min-width:0;">
+            <div style="width:42px;height:42px;border-radius:50%;flex:0 0 auto;background:{{ post.avatar }};"></div>
+            <div style="min-width:0;">
+              <div style="display:flex;align-items:center;gap:5px;">
+                <span style="color:#fff;font-size:15.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ post.user }}</span>
+                <sc-if value="{{ post.verified }}">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="#3897f0" style="flex:0 0 auto;"><path d="M12 2l2.4 1.8 3-.2 1 2.8 2.6 1.5-.9 2.9.9 2.9-2.6 1.5-1 2.8-3-.2L12 22l-2.4-1.8-3 .2-1-2.8L3 16.3l.9-2.9L3 10.5 5.6 9l1-2.8 3 .2z"/><path d="M10.6 14.6l-2.2-2.2 1.1-1.1 1.1 1.1 3.3-3.3 1.1 1.1z" fill="#fff"/></svg>
+                </sc-if>
+              </div>
+              <div style="color:rgba(255,255,255,.5);font-size:12.5px;font-weight:500;margin-top:1px;">{{ post.date }}</div>
+            </div>
+          </div>
+
+          <!-- Live "N here" pill, right corner above post -->
+          <button class="live-keep" onClick="{{ post.toggleLive }}" style="display:flex;align-items:center;gap:7px;height:34px;padding:0 13px 0 5px;border:none;border-radius:17px;background:#faf8f4;color:#2e2a22;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;flex:0 0 auto;box-shadow:0 5px 14px -8px rgba(0,0,0,.5);">
+            <span style="display:flex;">
+              <span style="width:22px;height:22px;border-radius:50%;background:#b9ad97;border:1.5px solid #faf8f4;"></span>
+              <span style="width:22px;height:22px;border-radius:50%;background:#9db29a;border:1.5px solid #faf8f4;margin-left:-9px;"></span>
+              <span style="width:22px;height:22px;border-radius:50%;background:#a79bbf;border:1.5px solid #faf8f4;margin-left:-9px;"></span>
+            </span>
+            <span style="width:8px;height:8px;border-radius:50%;background:#37c9e6;box-shadow:0 0 7px 1px rgba(55,201,230,.8);"></span>
+            <span>{{ post.hereCount }} here</span>
+          </button>
+        </div>
+
+        <!-- Photo -->
+        <div style="position:relative;margin:0 12px;border-radius:26px;aspect-ratio:{{ post.ratio }};overflow:hidden;">
+          <image-slot id="{{ post.slotId }}" shape="rect" placeholder="{{ post.slotHint }}"></image-slot>
+          <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.22) 0%,transparent 18%,transparent 60%,rgba(0,0,0,.42) 100%);pointer-events:none;"></div>
+
+          <!-- Picture-in-picture inset, top-left -->
+          <div style="position:absolute;top:14px;left:14px;width:34%;aspect-ratio:3 / 4;border-radius:14px;overflow:hidden;border:2px solid rgba(255,255,255,.9);box-shadow:0 6px 18px -6px rgba(0,0,0,.7);">
+            <image-slot id="{{ post.pipId }}" shape="rect" placeholder="inset"></image-slot>
+          </div>
+
+          <!-- Live dropdown: who's here now -->
+          <sc-if value="{{ post.isLiveOpen }}">
+            <div class="live-keep" style="position:absolute;top:12px;right:12px;left:12px;z-index:6;border-radius:18px;background:rgba(28,28,30,.72);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,.1);box-shadow:0 20px 42px -14px rgba(0,0,0,.75);padding:11px 3px 11px;animation:ddIn .22s cubic-bezier(.2,.8,.2,1);">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:0 12px 10px;">
+                <span style="display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.55);font-size:11.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;">
+                  <span style="width:6px;height:6px;border-radius:50%;background:#ff453a;"></span>
+                  live
+                </span>
+              </div>
+              <div class="hs" style="display:flex;gap:12px;overflow-x:auto;padding:1px 12px;scrollbar-width:none;">
+                <sc-for list="{{ post.present }}" as="p" hint-placeholder-count="7">
+                  <div style="flex:0 0 auto;width:50px;display:flex;flex-direction:column;align-items:center;gap:6px;">
+                    <div style="position:relative;width:44px;height:44px;">
+                      <div style="width:44px;height:44px;border-radius:50%;background:{{ p.color }};"></div>
+                      <div style="position:absolute;right:-2px;bottom:-2px;width:19px;height:19px;border-radius:50%;background:#1c1c1e;display:flex;align-items:center;justify-content:center;font-size:10px;">{{ p.emoji }}</div>
+                    </div>
+                    <div style="max-width:50px;color:rgba(255,255,255,.82);font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.name }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- Right action rail (the two button widgets) -->
+          <div style="position:absolute;right:14px;bottom:16px;display:flex;flex-direction:column;align-items:center;gap:12px;">
+            <button aria-label="Accessibility" style="width:44px;height:44px;border-radius:50%;background:rgba(250,248,244,.95);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 20px -8px rgba(0,0,0,.6);">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#1c1c1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="1.7"/><path d="M4 8.2c2.6 1 5.1 1.5 8 1.5s5.4-.5 8-1.5"/><path d="M12 9.7V15"/><path d="M12 15l-2.7 5.3M12 15l2.7 5.3"/></svg>
+            </button>
+            <button aria-label="Add reaction" style="position:relative;width:44px;height:44px;border-radius:50%;background:#1c1c1e;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 20px -8px rgba(0,0,0,.6);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9db29a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M8 13.5c.8 1.1 1.9 1.7 3 1.7s2.2-.6 3-1.7"/><circle cx="8.5" cy="9.5" r=".3" fill="#9db29a"/><circle cx="13.5" cy="9.5" r=".3" fill="#9db29a"/></svg>
+              <span style="position:absolute;top:-2px;right:-2px;width:16px;height:16px;border-radius:50%;background:#ff453a;color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1;">+</span>
+            </button>
+          </div>
+
+          <!-- Reactions pill, bottom-left (tap to expand) -->
+          <button class="rx-keep" onClick="{{ post.toggleReactions }}" style="position:absolute;left:14px;bottom:16px;display:flex;align-items:center;gap:9px;height:40px;padding:0 14px 0 6px;border:none;border-radius:20px;background:rgba(28,28,30,.62);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);cursor:pointer;box-shadow:0 8px 20px -8px rgba(0,0,0,.5);">
+            <span style="display:flex;">
+              <span style="width:28px;height:28px;border-radius:50%;background:#b9ad97;border:2px solid rgba(28,28,30,.9);"></span>
+              <span style="width:28px;height:28px;border-radius:50%;background:#9db29a;border:2px solid rgba(28,28,30,.9);margin-left:-12px;"></span>
+              <span style="width:28px;height:28px;border-radius:50%;background:#a79bbf;border:2px solid rgba(28,28,30,.9);margin-left:-12px;"></span>
+            </span>
+            <span style="color:#fff;font-size:14px;font-weight:700;">+{{ post.reactions }}</span>
+          </button>
+        </div>
+
+        <!-- Reactions expanded: horizontal scroll -->
+        <sc-if value="{{ post.isReactionsOpen }}">
+          <div class="rx-keep" style="animation:ddIn .22s ease;padding:12px 0 2px;">
+            <div style="color:rgba(255,255,255,.6);font-size:13px;font-weight:700;padding:0 14px 10px;">Reactions · {{ post.reactions }}</div>
+            <div class="hs" style="display:flex;gap:16px;overflow-x:auto;padding:2px 14px 4px;scrollbar-width:none;">
+              <sc-for list="{{ post.reactors }}" as="r" hint-placeholder-count="6">
+                <div style="flex:0 0 auto;width:62px;display:flex;flex-direction:column;align-items:center;gap:8px;">
+                  <div style="position:relative;width:56px;height:56px;">
+                    <div style="width:56px;height:56px;border-radius:50%;background:{{ r.color }};"></div>
+                    <div style="position:absolute;right:-2px;bottom:-2px;width:23px;height:23px;border-radius:50%;background:#1c1c1e;display:flex;align-items:center;justify-content:center;font-size:12px;">{{ r.emoji }}</div>
+                  </div>
+                  <div style="max-width:62px;color:rgba(255,255,255,.82);font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.name }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- Comment section widget -->
+        <div style="margin:10px 12px;border-radius:18px;background:#111113;border:1px solid rgba(255,255,255,.06);overflow:hidden;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px 8px;">
+            <span style="color:#fff;font-size:13px;font-weight:700;">Comments</span>
+            <button style="background:none;border:none;padding:0;cursor:pointer;color:rgba(255,255,255,.5);font-family:inherit;font-size:12px;font-weight:600;">View all {{ post.commentCount }}</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;padding:0 14px 11px;">
+            <sc-for list="{{ post.comments }}" as="c" hint-placeholder-count="2">
+              <div style="display:flex;gap:9px;">
+                <div style="width:27px;height:27px;border-radius:50%;flex:0 0 auto;background:{{ c.color }};"></div>
+                <div style="min-width:0;">
+                  <div style="color:#fff;font-size:13px;line-height:1.3;">
+                    <span style="font-weight:700;">{{ c.user }}</span> <span style="color:rgba(255,255,255,.85);">{{ c.text }}</span>
+                  </div>
+                  <div style="color:rgba(255,255,255,.4);font-size:11px;font-weight:600;margin-top:2px;">{{ c.ago }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border-top:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);">
+            <button onClick="{{ toggleAnon }}" aria-label="Switch identity" style="width:32px;height:32px;border-radius:50%;flex:0 0 auto;border:none;padding:0;cursor:pointer;position:relative;overflow:visible;">
+              <sc-if value="{{ isAnon }}">
+                <span style="display:flex;width:32px;height:32px;border-radius:50%;background:#26262a;align-items:center;justify-content:center;">
+                  <svg width="19" height="19" viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="6.5" rx="3.25" fill="#cfcfd4"/><circle cx="8.5" cy="12.2" r="1.5" fill="#26262a"/><circle cx="15.5" cy="12.2" r="1.5" fill="#26262a"/></svg>
+                </span>
+              </sc-if>
+              <sc-if value="{{ isReal }}">
+                <span style="display:block;width:32px;height:32px;border-radius:50%;background:linear-gradient(140deg,#b9ad97,#a79bbf);"></span>
+              </sc-if>
+              <span style="position:absolute;right:-3px;bottom:-3px;width:15px;height:15px;border-radius:50%;background:#37c9e6;display:flex;align-items:center;justify-content:center;border:2px solid #111113;">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#08080a" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2v6M14 5h6M20 14v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5"/></svg>
+              </span>
+            </button>
+            <div style="flex:1;min-width:0;">
+              <div style="color:rgba(255,255,255,.4);font-size:13px;font-weight:500;">{{ commentPlaceholder }}</div>
+              <div style="color:rgba(255,255,255,.35);font-size:10.5px;font-weight:600;margin-top:1px;">Posting as <span style="color:#37c9e6;">{{ idLabel }}</span> · tap avatar to switch</div>
+            </div>
+            <button aria-label="Send" style="width:30px;height:30px;border-radius:50%;flex:0 0 auto;border:none;background:#37c9e6;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#08080a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </sc-for>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { live: null, reactions: null, anon: false };
+
+  componentDidMount() {
+    this._onDown = (e) => {
+      const t = e.target;
+      this.setState(s => {
+        let live = s.live, reactions = s.reactions;
+        if (live && !(t.closest && t.closest('.live-keep'))) live = null;
+        if (reactions && !(t.closest && t.closest('.rx-keep'))) reactions = null;
+        if (live === s.live && reactions === s.reactions) return null;
+        return { live, reactions };
+      });
+    };
+    this._onScroll = () => {
+      this.setState(s => (s.live || s.reactions) ? { live: null, reactions: null } : null);
+    };
+    document.addEventListener('pointerdown', this._onDown, true);
+    window.addEventListener('scroll', this._onScroll);
+  }
+
+  componentWillUnmount() {
+    document.removeEventListener('pointerdown', this._onDown, true);
+    window.removeEventListener('scroll', this._onScroll);
+  }
+
+  toggle(key, id) {
+    return () => this.setState(s => ({ [key]: s[key] === id ? null : id }));
+  }
+
+  renderVals() {
+    const present = [
+      { name: "quietm…", color: "#ddd6c8", emoji: "🔥" },
+      { name: "paper.c…", color: "#d9e0d4", emoji: "❤️" },
+      { name: "ringer_02", color: "#e2ddec", emoji: "👀" },
+      { name: "no.nam…", color: "#eadfe0", emoji: "😂" },
+      { name: "slow.tide", color: "#d7e2e6", emoji: "💀" },
+      { name: "anon", color: "#e6ddc9", emoji: "🔥" },
+      { name: "half.light", color: "#e6d9d4", emoji: "❤️" },
+    ];
+    const defs = [
+      {
+        id: "a", user: "theo_b", avatar: "#8a8f98", date: "just now", verified: false,
+        slotId: "post-a", pipId: "post-a-pip", slotHint: "Drop post photo", ratio: "4 / 5",
+        hereCount: 7, reactions: 42, commentCount: 3,
+        reactors: [
+          { name: "quietm_", color: "#ddd6c8", emoji: "🔥" },
+          { name: "paper.crane", color: "#d9e0d4", emoji: "❤️" },
+          { name: "ringer_02", color: "#e2ddec", emoji: "👀" },
+          { name: "no.name", color: "#eadfe0", emoji: "😂" },
+          { name: "slow.tide", color: "#d7e2e6", emoji: "💀" },
+          { name: "anon", color: "#e6ddc9", emoji: "🔥" },
+          { name: "half.light", color: "#e6d9d4", emoji: "❤️" },
+          { name: "dust.echo", color: "#d3ddd9", emoji: "😍" },
+        ],
+        comments: [
+          { user: "mira_k", text: "the framing on this is unreal", color: "#e2ddec", ago: "2m" },
+          { user: "dust.echo", text: "where is this?? 😍", color: "#d9e0d4", ago: "5m" },
+          { user: "theo_b", text: "somewhere very white lol", color: "#ddd6c8", ago: "1m" },
+        ],
+      },
+      {
+        id: "b", user: "mori.days", avatar: "#b9ad97", date: "13 Aug 2026", verified: true,
+        slotId: "post-b", pipId: "post-b-pip", slotHint: "Drop post photo", ratio: "1 / 1",
+        hereCount: 4, reactions: 12, commentCount: 5,
+        reactors: [
+          { name: "no.name", color: "#eadfe0", emoji: "😂" },
+          { name: "anon", color: "#e6ddc9", emoji: "🔥" },
+          { name: "half.light", color: "#e6d9d4", emoji: "❤️" },
+          { name: "kaz", color: "#d7e2e6", emoji: "🤤" },
+          { name: "mira_k", color: "#e2ddec", emoji: "❤️" },
+          { name: "slow.tide", color: "#ddd6c8", emoji: "👀" },
+        ],
+        comments: [
+          { user: "niko_2150", text: "looks so good 🤤", color: "#eadfe0", ago: "3h" },
+          { user: "kaz", text: "save me a seat next time", color: "#d7e2e6", ago: "2h" },
+        ],
+      },
+    ];
+    const anon = this.state.anon;
+    const toggleAnon = () => this.setState(s => ({ anon: !s.anon }));
+    const posts = defs.map(d => ({
+      ...d,
+      present,
+      isLiveOpen: this.state.live === d.id,
+      isReactionsOpen: this.state.reactions === d.id,
+      toggleLive: this.toggle("live", d.id),
+      toggleReactions: this.toggle("reactions", d.id),
+    }));
+    return {
+      posts,
+      toggleAnon,
+      isAnon: anon,
+      isReal: !anon,
+      idLabel: anon ? "anon" : "theo_b",
+      commentPlaceholder: anon ? "Comment anonymously…" : "Add a comment…",
+    };
+  }
+}
+</script>
+</body>
+</html>

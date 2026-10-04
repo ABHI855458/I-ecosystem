@@ -14,9 +14,9 @@ import 'group_profile_screen.dart';
 
 // ---------------------------------------------------------------------------
 // GroupRosterScreen — "Roster" direction (1c), real data. Reached from
-// GroupProfileCoverScreen's Members tab. Each member card shows real dip
-// count, real last-dipped relative time, a real 5-day consistency bar
-// (computed from that member's actual post dates), and real "hasn't dipped
+// GroupProfileCoverScreen's Members tab. Each member card shows real post
+// count, real last-posted relative time, a real 5-day consistency bar
+// (computed from that member's actual post dates), and real "hasn't posted
 // today" detection — all client-side over GroupService.fetchMembers +
 // fetchPosts, same pattern GroupProfileScreen already uses for its Today
 // strip and calendar.
@@ -131,8 +131,8 @@ class _GroupRosterScreenState extends State<GroupRosterScreen> {
             final myPosts = data.posts.where((p) => p['user_id'] == userId).toList()
               ..sort((a, b) => (b['created_at'] as String? ?? '').compareTo(a['created_at'] as String? ?? ''));
             final lastPost = myPosts.isEmpty ? null : myPosts.first;
-            final lastDippedAt = lastPost == null ? null : DateTime.tryParse(lastPost['created_at'] as String? ?? '')?.toLocal();
-            final hasPostedToday = lastDippedAt != null && DateTime(lastDippedAt.year, lastDippedAt.month, lastDippedAt.day) == today;
+            final lastPostedAt = lastPost == null ? null : DateTime.tryParse(lastPost['created_at'] as String? ?? '')?.toLocal();
+            final hasPostedToday = lastPostedAt != null && DateTime(lastPostedAt.year, lastPostedAt.month, lastPostedAt.day) == today;
             final last5Days = List.generate(5, (i) {
               final day = today.subtract(Duration(days: 4 - i));
               return myPosts.any((p) {
@@ -144,8 +144,8 @@ class _GroupRosterScreenState extends State<GroupRosterScreen> {
               userId: userId ?? '',
               name: name,
               isAdmin: m['role'] == 'admin',
-              dipCount: myPosts.length,
-              lastDippedLabel: lastDippedAt == null ? null : formatRelativeTime(lastDippedAt, withAgo: true),
+              postCount: myPosts.length,
+              lastPostedLabel: lastPostedAt == null ? null : formatRelativeTime(lastPostedAt, withAgo: true),
               hasPostedToday: hasPostedToday,
               latestPhotoUrl: lastPost?['photo_url'] as String?,
               last5Days: last5Days,
@@ -181,7 +181,7 @@ class _GroupRosterScreenState extends State<GroupRosterScreen> {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          '${data.members.length} ${data.members.length == 1 ? 'person' : 'people'}, ${data.posts.length} dips',
+                          '${data.members.length} ${data.members.length == 1 ? 'person' : 'people'}, ${data.posts.length} posts',
                           style: GoogleFonts.dmSans(fontSize: 14, height: 1.5, color: Colors.white.withValues(alpha: 0.55)),
                         ),
                         const SizedBox(height: 16),
@@ -230,7 +230,8 @@ class _GroupRosterScreenState extends State<GroupRosterScreen> {
                                   width: 108,
                                   clipBehavior: Clip.antiAlias,
                                   decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: Colors.white.withValues(alpha: 0.05)),
-                                  child: photoUrl == null ? null : CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover),
+                                  child: photoUrl == null ? null : CachedNetworkImage(
+              memCacheWidth: 1080,imageUrl: photoUrl, fit: BoxFit.cover),
                                 );
                               },
                             ),
@@ -262,8 +263,8 @@ class _MemberStat {
     required this.userId,
     required this.name,
     required this.isAdmin,
-    required this.dipCount,
-    required this.lastDippedLabel,
+    required this.postCount,
+    required this.lastPostedLabel,
     required this.hasPostedToday,
     required this.latestPhotoUrl,
     required this.last5Days,
@@ -271,8 +272,8 @@ class _MemberStat {
   final String userId;
   final String name;
   final bool isAdmin;
-  final int dipCount;
-  final String? lastDippedLabel;
+  final int postCount;
+  final String? lastPostedLabel;
   final bool hasPostedToday;
   final String? latestPhotoUrl;
   final List<bool> last5Days;
@@ -300,7 +301,7 @@ class _RosterCard extends StatelessWidget {
                 children: [
                   Text(member.name, style: GoogleFonts.spaceGrotesk(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.5))),
                   const SizedBox(height: 4),
-                  Text("Hasn't dipped today", style: GoogleFonts.dmSans(fontSize: 12.5, color: Colors.white.withValues(alpha: 0.3))),
+                  Text("Hasn't posted today", style: GoogleFonts.dmSans(fontSize: 12.5, color: Colors.white.withValues(alpha: 0.3))),
                 ],
               ),
             ),
@@ -332,7 +333,8 @@ class _RosterCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(13),
               gradient: member.latestPhotoUrl == null ? LinearGradient(colors: Avatar.gradientFor(member.userId), begin: Alignment.topLeft, end: Alignment.bottomRight) : null,
             ),
-            child: member.latestPhotoUrl != null ? CachedNetworkImage(imageUrl: member.latestPhotoUrl!, fit: BoxFit.cover, width: 58, height: 72) : null,
+            child: member.latestPhotoUrl != null ? CachedNetworkImage(
+              memCacheWidth: 174,imageUrl: member.latestPhotoUrl!, fit: BoxFit.cover, width: 58, height: 72) : null,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -354,15 +356,15 @@ class _RosterCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${member.lastDippedLabel ?? 'Dipped'} · ${member.dipCount} ${member.dipCount == 1 ? 'dip' : 'dips'}',
+                  '${member.lastPostedLabel ?? 'Posted'} · ${member.postCount} ${member.postCount == 1 ? 'post' : 'posts'}',
                   style: GoogleFonts.dmSans(fontSize: 12.5, color: Colors.white.withValues(alpha: 0.45)),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    for (final dipped in member.last5Days) ...[
-                      Container(width: 22, height: 6, decoration: BoxDecoration(color: Colors.white.withValues(alpha: dipped ? 0.5 : 0.12), borderRadius: BorderRadius.circular(3))),
-                      if (dipped != member.last5Days.last) const SizedBox(width: 4),
+                    for (final posted in member.last5Days) ...[
+                      Container(width: 22, height: 6, decoration: BoxDecoration(color: Colors.white.withValues(alpha: posted ? 0.5 : 0.12), borderRadius: BorderRadius.circular(3))),
+                      if (posted != member.last5Days.last) const SizedBox(width: 4),
                     ],
                   ],
                 ),

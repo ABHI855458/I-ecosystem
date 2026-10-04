@@ -1,0 +1,31 @@
+# Palster — consolidated marketing + legal site.
+[build]
+  publish = "."
+
+# Clean URLs: /privacy serves privacy.html, etc. Netlify does this by
+# default, but declaring it means a future config change can't silently
+# break the in-app links (AppStrings.privacyPolicyUrl) or the Play Console
+# data-safety URLs, which are all extensionless.
+[[redirects]]
+  from = "/privacy.html"
+  to = "/privacy"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/eula.html"
+  to = "/eula"
+  status = 301
+  force = true
+
+# The old single-page site used in-page anchors for the same documents.
+# Anyone holding one of those links lands on the real page now.
+[[redirects]]
+  from = "/index.html#privacy"
+  to = "/privacy"
+  status = 301
+
+[[redirects]]
+  from = "/delete"
+  to = "/delete-account"
+  status = 301

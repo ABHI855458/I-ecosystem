@@ -33,6 +33,7 @@ class ReactorCluster extends StatelessWidget {
     super.key,
     required this.reactors,
     this.totalCount,
+    this.onReactorTap,
   });
 
   /// Newest-first, already sliced to at most 3.
@@ -42,6 +43,10 @@ class ReactorCluster extends StatelessWidget {
   /// drives the "+N" overflow chip when it exceeds [reactors].length. Null
   /// or <= reactors.length hides the chip entirely.
   final int? totalCount;
+
+  /// Fired with the tapped reactor's id — Friends/Everyone feed only, per
+  /// global profile routing. Null leaves faces non-tappable.
+  final ValueChanged<String>? onReactorTap;
 
   static const double _kBoxWidth = 76;
   static const double _kBoxHeight = 92;
@@ -87,11 +92,15 @@ class ReactorCluster extends StatelessWidget {
       bottom: step * _kStepDy,
       child: Semantics(
         label: '${reactor.name} reacted',
-        child: _ReactorFace(
-          key: ValueKey(reactor.id),
-          avatarUrl: reactor.avatarUrl,
-          size: size,
-          staggerMs: step * 500,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onReactorTap == null ? null : () => onReactorTap!(reactor.id),
+          child: _ReactorFace(
+            key: ValueKey(reactor.id),
+            avatarUrl: reactor.avatarUrl,
+            size: size,
+            staggerMs: step * 500,
+          ),
         ),
       ),
     );
@@ -188,6 +197,7 @@ class _ReactorFaceState extends State<_ReactorFace> with SingleTickerProviderSta
                 child: widget.avatarUrl == null
                     ? _fallback(widget.size)
                     : CachedNetworkImage(
+              memCacheWidth: 1080,
                         imageUrl: widget.avatarUrl!,
                         width: widget.size,
                         height: widget.size,

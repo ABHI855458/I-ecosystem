@@ -51,6 +51,7 @@ class PresetAvatar extends StatelessWidget {
         children: [
           ClipOval(
             child: CachedNetworkImage(
+              memCacheWidth: 1080,
               imageUrl: photoUrl,
               width: size,
               height: size,

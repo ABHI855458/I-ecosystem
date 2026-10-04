@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/feature_flags.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -6,7 +7,9 @@ import '../../core/constants.dart';
 import '../../core/supabase_config.dart';
 import '../../main_shell.dart';
 import '../../services/current_user_service.dart';
+import '../../screens/onboarding/onboarding_duo_screen.dart';
 import '../../screens/onboarding/select_clubs_screen.dart';
+import '../../services/us_album_service.dart';
 import 'auth_screen.dart';
 import 'onboarding_screen.dart';
 
@@ -41,12 +44,18 @@ class _AuthGateState extends State<AuthGate> {
   late Session? _session = supabase.auth.currentSession;
   bool? _onboardingComplete;
   bool? _hasCommunity;
+  bool? _hasDuos;
 
   @override
   void initState() {
     super.initState();
     supabase.auth.onAuthStateChange.listen(_onAuthStateChange);
-    if (_session != null) _checkOnboarding();
+    if (_session != null) {
+      // Remembered on-device from the last launch — no splash, no network.
+      _onboardingComplete = CurrentUserService.instance.knownOnboardingComplete;
+      _hasCommunity = CurrentUserService.instance.knownHasCommunity;
+      _checkOnboarding();
+    }
   }
 
   void _onAuthStateChange(AuthState data) {
@@ -55,6 +64,14 @@ class _AuthGateState extends State<AuthGate> {
       '[AuthGate._onAuthStateChange] event=${data.event} session=${data.session != null}',
     );
     final signedOut = data.session == null && _session != null;
+    // Same account (e.g. the startup initialSession / token refresh): keep
+    // the gates we already know instead of flashing the splash again.
+    final sameUser = data.session != null &&
+        data.session!.user.id == _session?.user.id;
+    if (sameUser) {
+      _session = data.session;
+      return;
+    }
     setState(() {
       _session = data.session;
       // Re-check on every fresh sign-in (a different account may have
@@ -62,6 +79,7 @@ class _AuthGateState extends State<AuthGate> {
       // state, ProfileScreen's logout already calls reset() on the caches.
       _onboardingComplete = null;
       _hasCommunity = null;
+      _hasDuos = null;
     });
     if (signedOut) {
       CurrentUserService.instance.reset();
@@ -99,10 +117,44 @@ class _AuthGateState extends State<AuthGate> {
       final has = await CurrentUserService.instance.hasJoinedAnyCommunity();
       debugPrint('[AuthGate._checkCommunityStep] resolved: hasCommunity=$has');
       if (mounted) setState(() => _hasCommunity = has);
+      // Fast onboarding ignores the Duo gate (see build), so don't spend a
+      // network round trip (or two) on it before the feed can show.
+      if (has && !kFastOnboarding) _checkDuoStep();
     } catch (e, st) {
       debugPrint('[AuthGate._checkCommunityStep] hasJoinedAnyCommunity failed: $e\n$st');
       // Fail open, same reasoning as onboarding's own catch above.
       if (mounted) setState(() => _hasCommunity = true);
+      _checkDuoStep();
+    }
+  }
+
+  /// Mandatory Duo step for users who already finished onboarding before it
+  /// existed (or left the app mid-step): fewer than [kMinOnboardingDuos]
+  /// Duo requests sent → OnboardingDuoScreen before the feed.
+  Future<void> _checkDuoStep() async {
+    try {
+      final partners = await DuoService.instance.fetchDuoPartnerIds();
+      debugPrint('[AuthGate._checkDuoStep] duo partners=${partners.length}');
+      var met = partners.length >= kMinOnboardingDuos;
+      if (!met) {
+        // Same capped requirement the Duo screen shows: never demand more
+        // Duos than there are people in your clubs to send them to, or an
+        // early / small-club user gets bounced back to a screen they can't
+        // finish, on every login.
+        final candidates = await loadDuoCandidates(null);
+        final unsent =
+            candidates.where((p) => !partners.contains(p['id'])).length;
+        met = partners.length >=
+            onboardingDuosRequired(
+              sentCount: partners.length,
+              availableUnsent: unsent,
+            );
+      }
+      if (mounted) setState(() => _hasDuos = met);
+    } catch (e, st) {
+      debugPrint('[AuthGate._checkDuoStep] failed: $e\n$st');
+      // Fail open, same reasoning as onboarding's own catch above.
+      if (mounted) setState(() => _hasDuos = true);
     }
   }
 
@@ -149,7 +201,13 @@ class _AuthGateState extends State<AuthGate> {
       debugPrint('[AuthGate.build] no community membership -> SelectClubsScreen');
       return const SelectClubsScreen();
     }
-    debugPrint('[AuthGate.build] onboarding + community step complete -> MainShell');
+    final hasDuos = kFastOnboarding ? true : _hasDuos;
+    if (hasDuos == null) return const _SplashScreen();
+    if (!hasDuos) {
+      debugPrint('[AuthGate.build] fewer than $kMinOnboardingDuos duos -> OnboardingDuoScreen');
+      return const OnboardingDuoScreen();
+    }
+    debugPrint('[AuthGate.build] onboarding + community + duo steps complete -> MainShell');
     return const MainShell();
   }
 }
@@ -161,6 +219,17 @@ class _AuthGateState extends State<AuthGate> {
 // this and whatever screen it hands off to.
 // ---------------------------------------------------------------------------
 
+/// The launch screen, shown while [AuthGate] is still resolving whether
+/// there's a session.
+///
+/// BUG FIX / explicit request: "this shall have the name Cliq and app logo
+/// as such, in good font." This used to render a bare "I" letterform with
+/// no icon at all — the one showcase surface that's supposed to carry the
+/// app's public brand (see AppStrings.appName's own doc: home screen icon
+/// + login page + this) still showed the project's internal single-letter
+/// placeholder. Now mirrors AuthScreen's own `_Wordmark` (same font, same
+/// accent underline) with the real app icon above it, rather than
+/// inventing a second, different treatment for the same brand.
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
 
@@ -172,13 +241,33 @@ class _SplashScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(22),
+              child: Image.asset(
+                'assets/brand/logo.png',
+                width: 84,
+                height: 84,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 22),
             Text(
-              'I',
+              AppStrings.appName,
               style: GoogleFonts.plusJakartaSans(
-                fontSize: 72,
+                fontSize: 40,
                 fontWeight: FontWeight.w800,
+                letterSpacing: -1.2,
                 color: AppColors.textPrimary,
                 height: 1.0,
+              ),
+            ),
+            const SizedBox(height: 9),
+            Container(
+              width: 24,
+              height: 3,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 28),

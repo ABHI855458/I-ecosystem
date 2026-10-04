@@ -10,7 +10,18 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/constants.dart';
 import '../../shared/score_tier.dart';
 import '../notifications/notifications_screen.dart';
+import 'ping_expanded_card.dart';
+import 'ping_feed_models.dart';
+import 'ping_feed_rows.dart';
+import 'ping_group_wall.dart';
+import 'ping_open_loops.dart';
+import 'ping_page.dart' show PingPage, kGround;
+import 'ping_prompt_sheet.dart';
+import 'ping_reply_detail_screen.dart';
 import 'ping_reveal_screen.dart';
+import 'ping_visual_kit.dart';
+import '../profile_v2/profile_v2_icons.dart';
+import '../profile_v2/profile_v2_tokens.dart';
 
 // ---------------------------------------------------------------------------
 // Enums + Data models
@@ -99,11 +110,7 @@ const _pings = [
     photoColor: Color(0xFF2A3040),
     hasUnrevealedReply: true,
     replyPhotoColor: Color(0xFF3A2050),
-    replyPhotoColors: [
-      Color(0xFF3A2050),
-      Color(0xFF204060),
-      Color(0xFF503020),
-    ],
+    replyPhotoColors: [Color(0xFF3A2050), Color(0xFF204060), Color(0xFF503020)],
   ),
   _PingEntry(
     username: 'jordan_23',
@@ -113,10 +120,7 @@ const _pings = [
     photoColor: Color(0xFF30281A),
     hasUnrevealedReply: true,
     replyPhotoColor: Color(0xFF2A1830),
-    replyPhotoColors: [
-      Color(0xFF2A1830),
-      Color(0xFF1A3828),
-    ],
+    replyPhotoColors: [Color(0xFF2A1830), Color(0xFF1A3828)],
   ),
   _PingEntry(
     username: 'study_bug',
@@ -156,11 +160,7 @@ const _groups = [
   _GroupEntry(
     name: 'Study Crew',
     memberNames: ['study_bug', 'coffee_talk', 'library_mode'],
-    replyColors: [
-      Color(0xFF1E2A28),
-      Color(0xFF182030),
-      Color(0xFF1A2830),
-    ],
+    replyColors: [Color(0xFF1E2A28), Color(0xFF182030), Color(0xFF1A2830)],
     prompt: 'What are you studying today?',
   ),
   _GroupEntry(
@@ -189,11 +189,7 @@ const _anonThreads = [
     originalPost:
         "Does anyone else feel like they're performing a version of themselves that isn't really them?",
     messages: [
-      _AnonMessage(
-        text: 'yes, literally every day',
-        isMe: false,
-        time: '2h',
-      ),
+      _AnonMessage(text: 'yes, literally every day', isMe: false, time: '2h'),
       _AnonMessage(
         type: _MsgType.photo,
         isMe: true,
@@ -206,11 +202,7 @@ const _anonThreads = [
         time: '1h',
         voiceSecs: 12,
       ),
-      _AnonMessage(
-        text: 'that resonated. a lot.',
-        isMe: true,
-        time: '1h',
-      ),
+      _AnonMessage(text: 'that resonated. a lot.', isMe: true, time: '1h'),
     ],
   ),
   _AnonThread(
@@ -222,22 +214,14 @@ const _anonThreads = [
         isMe: false,
         time: '5h',
       ),
-      _AnonMessage(
-        text: 'what are you going to do',
-        isMe: true,
-        time: '4h',
-      ),
+      _AnonMessage(text: 'what are you going to do', isMe: true, time: '4h'),
       _AnonMessage(
         type: _MsgType.photo,
         isMe: false,
         time: '4h',
         photoColor: Color(0xFF281828),
       ),
-      _AnonMessage(
-        text: 'yeah. one day at a time',
-        isMe: true,
-        time: '3h',
-      ),
+      _AnonMessage(text: 'yeah. one day at a time', isMe: true, time: '3h'),
       _AnonMessage(text: 'you get it 🙏', isMe: false, time: '2h'),
     ],
   ),
@@ -269,7 +253,10 @@ bool _replyWindowExpired(DateTime sentAt, int windowHours) =>
 /// Gentle phrasing on purpose — this is an ambient indicator, not a
 /// stressful countdown.
 String _windowLabel(DateTime sentAt, int windowHours) {
-  final left = _replyWindowExpiresAt(sentAt, windowHours).difference(DateTime.now());
+  final left = _replyWindowExpiresAt(
+    sentAt,
+    windowHours,
+  ).difference(DateTime.now());
   if (left.isNegative) return 'reply window closed';
   if (left.inHours >= 1) return '${left.inHours}h left to reply';
   if (left.inMinutes >= 1) return '${left.inMinutes}m left to reply';
@@ -277,10 +264,11 @@ String _windowLabel(DateTime sentAt, int windowHours) {
 }
 
 /// A reply stays viewable forever once received, but the "Ping Back"
-/// shortcut at the top of its row only lasts 24h from the first time it was
-/// opened.
+/// shortcut at the top of its row only lasts 5 days from the first time it
+/// was opened — was 24h; matches ping_back_anonymous()'s server-side window.
 bool _pingBackStillAvailable(DateTime? viewedAt) =>
-    viewedAt != null && DateTime.now().difference(viewedAt) < const Duration(hours: 24);
+    viewedAt != null &&
+    DateTime.now().difference(viewedAt) < const Duration(days: 5);
 
 /// Friends "Sent" bucket — pings the user sent, awaiting a reply. Mutable
 /// (not const) because [seen] flips true once flipped by the demo timer in
@@ -339,11 +327,7 @@ class _ReplyUi {
 /// [viewedAt]/[pingBackAvailable] drive the 24h ping-back banner for
 /// "Replies"-bucket groups, same as Friends' [_ReplyUi].
 class _GroupUi {
-  _GroupUi({
-    required this.group,
-    required this.state,
-    required this.sentAt,
-  });
+  _GroupUi({required this.group, required this.state, required this.sentAt});
 
   final _GroupEntry group;
   final _PingState state;
@@ -382,7 +366,8 @@ final _groupUi = [
 /// never land in "Replies", and there's no per-message seen flag either, so
 /// (unlike Friends/Groups) anon "Sent" rows don't show a seen indicator.
 class _AnonThreadUi {
-  _AnonThreadUi(this.thread) : sentAt = _parseRelativeHours(thread.messages.last.time);
+  _AnonThreadUi(this.thread)
+    : sentAt = _parseRelativeHours(thread.messages.last.time);
 
   final _AnonThread thread;
   final DateTime sentAt;
@@ -410,75 +395,1094 @@ DateTime _parseRelativeHours(String label) {
 // PingScreen
 // ---------------------------------------------------------------------------
 
-class PingScreen extends StatefulWidget {
+/// The Ping tab.
+///
+/// Renders [PingPage] (lib/features/ping/ping_page.dart) — a direct port of
+/// the design's own reference Flutter implementation from the Claude Design
+/// project. Everything visual/interactive lives there; this widget exists
+/// only to keep the call sites in main_shell.dart and main.dart's debug
+/// harness working unchanged.
+///
+/// The older hand-assembled feed (_PingScreenState and the
+/// _FriendsPingTab/_GroupsPingTab/_AnonPingTab machinery further down this
+/// file) is superseded and no longer rendered. It is left in place rather
+/// than deleted because the legacy sheets at the tail of this file
+/// (_PingBackSheet, _NewPingSheet, _CreateGroupSheet) are still reachable
+/// via buildPingRepliesFeedScreen / showPingChoiceSheet, which main.dart
+/// imports.
+class PingScreen extends StatelessWidget {
   const PingScreen({super.key, this.initialTab = 0});
+
+  /// Kept for source compatibility with existing call sites (main.dart's
+  /// debug harness) — the design has no tabs, so this is unused.
   final int initialTab;
 
   @override
-  State<PingScreen> createState() => _PingScreenState();
+  Widget build(BuildContext context) =>
+      const Scaffold(backgroundColor: kGround, body: PingPage());
 }
 
-class _PingScreenState extends State<PingScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabCtrl;
+// ---------------------------------------------------------------------------
+// PingScreen — rebuilt per design-refs/no implemented/Ping Page.dc.html:
+// one merged feed (no more Friends/Groups/Anonymous tabs) combining
+// person/group/anonymous pings into shared To-Reply/Replies/Sent sections.
+// See lib/features/ping/ping_feed_models.dart, ping_feed_rows.dart,
+// ping_expanded_card.dart, ping_hold_reveal.dart for the pieces this
+// assembles. The old _FriendsPingTab/_GroupsPingTab/_AnonPingTab/
+// _PingCategoryBar/TabController machinery below this class is superseded,
+// not deleted (per explicit instruction not to rip out code that might be
+// wanted again) — nothing still references it from here.
+// ---------------------------------------------------------------------------
+
+/// Legacy hand-assembled feed — superseded by [PingPage]. Not rendered
+/// anywhere; retained only so the legacy sheets at the tail of this file
+/// (still used by buildPingRepliesFeedScreen / showPingChoiceSheet) keep
+/// compiling. Hosted by [_LegacyPingScreen] so it no longer needs
+/// PingScreen to be stateful.
+class _LegacyPingScreen extends StatefulWidget {
+  const _LegacyPingScreen();
+  @override
+  State<_LegacyPingScreen> createState() => _PingScreenState();
+}
+
+class _PingScreenState extends State<_LegacyPingScreen> {
+  late List<PingFeedEntry> _entries;
+  late List<OpenLoop> _openLoops;
+  late List<PingGroup> _groups;
+  String? _expandedId;
+  String? _composeFor;
+  bool _composeIsGroup = false;
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this, initialIndex: widget.initialTab);
+    _entries = seedPingFeed();
+    _openLoops = seedOpenLoops();
+    _groups = seedPingGroups();
   }
 
-  @override
-  void dispose() {
-    _tabCtrl.dispose();
-    super.dispose();
+  List<PingFeedEntry> _bucket(PingBucket b, {bool excludeGroups = false}) =>
+      _entries
+          .where(
+            (e) =>
+                e.bucket == b &&
+                (!excludeGroups || e.origin != PingOrigin.group),
+          )
+          .toList();
+
+  void _reveal(PingFeedEntry entry, PingBucket bucket) {
+    setState(() {
+      if (bucket == PingBucket.toReply) {
+        entry.revealedAt = DateTime.now();
+      } else {
+        entry.viewedAt = DateTime.now();
+      }
+    });
+  }
+
+  void _revealGroupMember(GroupMember member) {
+    setState(() => member.state = GroupMemberState.answeredOpened);
+  }
+
+  /// Tapping an unviewed Reply row: mark it viewed, ensure an OPEN LOOPS
+  /// row exists for the ping-back window that just started (since the row
+  /// itself is about to disappear from REPLIES — see the `replies` list's
+  /// `!e.isViewed` filter — the ping-back opportunity has to live
+  /// somewhere else), then open the reply full-screen.
+  void _revealReply(PingFeedEntry entry) {
+    setState(() {
+      entry.viewedAt = DateTime.now();
+      final alreadyLooped = _openLoops.any((l) => l.id == entry.id);
+      if (!alreadyLooped && entry.pingBackAvailable) {
+        _openLoops.add(
+          OpenLoop(
+            id: entry.id,
+            name: entry.displayName,
+            avatarColor: entry.avatarColor,
+            isAnonymous: entry.origin == PingOrigin.anonymous,
+            reason: OpenLoopReason.theirReply,
+            expiresAt: entry.pingBackRemaining == null
+                ? DateTime.now()
+                : DateTime.now().add(entry.pingBackRemaining!),
+          ),
+        );
+      }
+    });
+    showFullScreenReplyPhoto(
+      context,
+      entry,
+      onPingBack: () => _openPingBackSheet(entry),
+    );
+  }
+
+  void _toggleExpanded(String id) {
+    HapticFeedback.selectionClick();
+    setState(() => _expandedId = _expandedId == id ? null : id);
+  }
+
+  /// The one prompt-picker used everywhere a ping goes out — friend-strip
+  /// taps, "Ping back" buttons, group-wall unlock's ping-back. Same modal
+  /// sheet (avatar + "Pick a prompt or write your own" + colorful prompt
+  /// grid) already used elsewhere in the app for pinging from a post.
+  void _openPersonPromptSheet(String name) {
+    HapticFeedback.selectionClick();
+    final person = _kSendPeople.firstWhere((p) => p.$1 == name);
+    showPingPromptSheet(
+      context,
+      targetName: name,
+      pingContext: PingContext.everyone,
+      glass: true,
+      heightFraction: 0.5,
+      roundedTopOnly: true,
+      onSentPrompt: (prompt, {photoUrl}) =>
+          _sendFromCompose(person.$1, person.$3, prompt),
+    );
+  }
+
+  /// "Ping back" from inside PingExpandedCard — same picker, but on send
+  /// also consumes the original entry/loop rather than just starting a
+  /// fresh outbound ping.
+  void _openPingBackSheet(PingFeedEntry entry) {
+    HapticFeedback.selectionClick();
+    showPingPromptSheet(
+      context,
+      targetName: entry.renderedName,
+      pingContext: entry.origin == PingOrigin.anonymous
+          ? PingContext.anonymous
+          : PingContext.everyone,
+      glass: true,
+      heightFraction: 0.5,
+      roundedTopOnly: true,
+      onSentPrompt: (prompt, {photoUrl}) {
+        _sendFromCompose(entry.renderedName, entry.avatarColor, prompt);
+        setState(() {
+          entry.pingedBack = true;
+          _openLoops.removeWhere((l) => l.id == entry.id);
+          _expandedId = null;
+        });
+      },
+    );
+  }
+
+  /// Same, targeted at an OPEN LOOPS row instead of a PingFeedEntry.
+  void _openPingBackLoopSheet(OpenLoop loop) {
+    HapticFeedback.selectionClick();
+    showPingPromptSheet(
+      context,
+      targetName: loop.renderedName,
+      pingContext: loop.isAnonymous
+          ? PingContext.anonymous
+          : PingContext.everyone,
+      glass: true,
+      heightFraction: 0.5,
+      roundedTopOnly: true,
+      onSentPrompt: (prompt, {photoUrl}) {
+        _sendFromCompose(loop.renderedName, loop.avatarColor, prompt);
+        setState(() => _openLoops.removeWhere((l) => l.id == loop.id));
+      },
+    );
+  }
+
+  void _openCompose(String id, {bool isGroup = false}) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      final same = _composeFor == id && _composeIsGroup == isGroup;
+      _composeFor = same ? null : id;
+      _composeIsGroup = same ? false : isGroup;
+    });
+  }
+
+  void _sendFromCompose(String name, Color color, String prompt) {
+    setState(() {
+      _entries.insert(
+        0,
+        PingFeedEntry(
+          id: 'sent-${DateTime.now().microsecondsSinceEpoch}',
+          origin: _composeIsGroup ? PingOrigin.group : PingOrigin.person,
+          bucket: PingBucket.sent,
+          displayName: name,
+          avatarColor: color,
+          prompt: prompt,
+          sentAt: DateTime.now(),
+          groupName: _composeIsGroup ? name : null,
+        ),
+      );
+      _composeFor = null;
+    });
+  }
+
+  void _sendGroupCompose(
+    String groupName,
+    Color color,
+    String prompt,
+    int memberCount,
+  ) {
+    setState(() {
+      _entries.insert(
+        0,
+        PingFeedEntry(
+          id: 'sent-${DateTime.now().microsecondsSinceEpoch}',
+          origin: PingOrigin.group,
+          bucket: PingBucket.sent,
+          displayName: groupName,
+          avatarColor: color,
+          prompt: prompt,
+          sentAt: DateTime.now(),
+          groupName: groupName,
+        ),
+      );
+      _composeFor = null;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
-    final bottomPad = MediaQuery.of(context).padding.bottom;
+    // Group-origin To-Reply entries render via GROUP WALL instead, per
+    // spec — "replaces the Replies pattern for groups" — so they're
+    // excluded from the plain ToReplyRow list.
+    final toReply = _bucket(PingBucket.toReply, excludeGroups: true);
+    final groupWalls = _entries
+        .where(
+          (e) => e.bucket == PingBucket.toReply && e.origin == PingOrigin.group,
+        )
+        .toList();
+    // Once opened full-screen, a reply disappears from this list for good —
+    // its still-open ping-back window (if any) surfaces in OPEN LOOPS
+    // instead (see _revealReply), not as a lingering row here.
+    final replies = _bucket(
+      PingBucket.replies,
+    ).where((e) => !e.isViewed).toList();
+    final sent = _bucket(PingBucket.sent);
+    final isEmpty =
+        toReply.isEmpty &&
+        groupWalls.isEmpty &&
+        replies.isEmpty &&
+        sent.isEmpty;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: pingGround,
       body: Stack(
         children: [
-          // Ambient "living network" layer — behind everything, ignores
-          // touches, cross-fades hue as you swipe between categories.
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _tabCtrl.animation!,
-              builder: (context, _) {
-                final v = _tabCtrl.animation!.value.clamp(0.0, 2.0);
-                final lo = v.floor().clamp(0, 2);
-                final hi = v.ceil().clamp(0, 2);
-                final accent =
-                    Color.lerp(_categoryAccent(lo), _categoryAccent(hi), v - lo)!;
-                return _AmbientBackground(accent: accent);
-              },
-            ),
+          const Positioned.fill(child: _AmbientBackground()),
+          SafeArea(
+            child: isEmpty
+                ? const _PingEmptyState()
+                : ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      24,
+                      topPad > 0 ? 8 : 28,
+                      24,
+                      32,
+                    ),
+                    physics: const BouncingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
+                    ),
+                    children: [
+                      _PingHeader(
+                        score: ViewerScoreService.instance.score.value,
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'PING SOMEONE',
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.18 * 11,
+                          color: Colors.white.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _PingSomeoneStrip(
+                        people: _kSendPeople,
+                        composeFor: null,
+                        onAvatarTap: (id) => _openPersonPromptSheet(id),
+                      ),
+                      const SizedBox(height: 12),
+                      _GroupChipsRow(
+                        groups: _groups,
+                        composeFor: _composeIsGroup ? _composeFor : null,
+                        onGroupTap: (name) => _openCompose(name, isGroup: true),
+                        onNewGroup: () =>
+                            _openCompose('__new_group__', isGroup: true),
+                      ),
+                      if (_openLoops.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        OpenLoopsSection(
+                          loops: _openLoops,
+                          onPingBack: _openPingBackLoopSheet,
+                        ),
+                      ],
+                      if (_composeFor != null) ...[
+                        const SizedBox(height: 12),
+                        _GroupComposeSheetInline(
+                          groupName: _composeFor == '__new_group__'
+                              ? null
+                              : _composeFor,
+                          people: _kSendPeople,
+                          onClose: () => setState(() => _composeFor = null),
+                          onSend: (groupName, prompt, memberCount) =>
+                              _sendGroupCompose(
+                                groupName,
+                                AppColors.electricPurple,
+                                prompt,
+                                memberCount,
+                              ),
+                        ),
+                      ],
+                      if (toReply.isNotEmpty) ...[
+                        const SizedBox(height: 28),
+                        PingSectionLabel(
+                          label: 'TO REPLY',
+                          count: toReply.length,
+                        ),
+                        const SizedBox(height: 8),
+                        for (final e in toReply) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            // One box at a time — expanded replaces the row
+                            // entirely rather than stacking below it (the
+                            // row's own avatar/prompt are already shown
+                            // inside PingExpandedCard's header).
+                            child: _expandedId == e.id
+                                ? PingExpandedCard(
+                                    entry: e,
+                                    onClose: () =>
+                                        setState(() => _expandedId = null),
+                                    onPingBack: () => _openPingBackSheet(e),
+                                  )
+                                : ToReplyRow(
+                                    entry: e,
+                                    onTap: () => _toggleExpanded(e.id),
+                                    onRevealed: () {
+                                      _reveal(e, PingBucket.toReply);
+                                      _toggleExpanded(e.id);
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ],
+                      if (replies.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        PingSectionLabel(label: 'REPLIES', opacity: 0.55),
+                        const SizedBox(height: 8),
+                        for (final e in replies)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: ReplyRow(
+                              entry: e,
+                              onTap: () => _revealReply(e),
+                            ),
+                          ),
+                      ],
+                      if (groupWalls.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        for (final e in groupWalls)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Column(
+                              children: [
+                                GroupWallCard(
+                                  entry: e,
+                                  onMemberRevealed: _revealGroupMember,
+                                  onExpandToReply: () => _toggleExpanded(e.id),
+                                ),
+                                if (_expandedId == e.id)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 10),
+                                    child: PingExpandedCard(
+                                      entry: e,
+                                      onClose: () => setState(() {
+                                        _expandedId = null;
+                                      }),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                      ],
+                      if (sent.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        PingSectionLabel(label: 'SENT', opacity: 0.40),
+                        const SizedBox(height: 8),
+                        for (final e in sent)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: SentRow(entry: e),
+                          ),
+                      ],
+                      const SizedBox(height: 24),
+                      Center(
+                        child: Text(
+                          "that's everything · no feed, no streaks",
+                          style: GoogleFonts.jetBrainsMono(
+                            fontSize: 10.5,
+                            color: Colors.white.withValues(alpha: 0.20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Header row — title + Ping Score. Score value sourced from
+// ViewerScoreService (the only real score signal available, per
+// exploration; not wired to the unused users.ping_score Supabase column);
+// the tier pill is the page's own PingScoreTag (see ping_visual_kit.dart),
+// not the shared app-wide TierBadge — the design's 3-tier ladder
+// (Deeply Present / Showing Up / Getting Started) is specific to this page.
+// ---------------------------------------------------------------------------
+
+class _PingHeader extends StatelessWidget {
+  const _PingHeader({required this.score});
+  final int score;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(height: topPad + 10),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: _PingCategoryBar(controller: _tabCtrl),
+              Text(
+                'CAMPUS · RVCE',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 10,
+                  letterSpacing: 0.22 * 10,
+                  color: Colors.white.withValues(alpha: 0.34),
+                ),
               ),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabCtrl,
-                  children: [
-                    _FriendsPingTab(bottomPad: bottomPad),
-                    _GroupsPingTab(bottomPad: bottomPad),
-                    _AnonPingTab(bottomPad: bottomPad),
-                  ],
+              const SizedBox(height: 4),
+              Text(
+                'Ping',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 27,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.02 * 27,
+                  color: Colors.white,
                 ),
               ),
             ],
           ),
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '$score',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+            Text(
+              'score',
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                color: Colors.white.withValues(alpha: 0.4),
+              ),
+            ),
+            const SizedBox(height: 4),
+            PingScoreTag(score: score),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _PingSomeoneStrip extends StatelessWidget {
+  const _PingSomeoneStrip({
+    required this.people,
+    required this.composeFor,
+    required this.onAvatarTap,
+  });
+
+  final List<(String, int, Color)> people;
+  final String? composeFor;
+  final void Function(String personId) onAvatarTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 84,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        // +1 — the trailing inert "arrives only" anonymous slot, per spec's
+        // "Additional Features": anonymous pings can only be RECEIVED, so
+        // this chip never opens compose, just signals the concept exists.
+        itemCount: people.length + 1,
+        itemBuilder: (context, i) {
+          if (i == people.length) {
+            return Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Opacity(
+                opacity: 0.5,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: 52,
+                      height: 52,
+                      child: DottedBorderBox(
+                        color: pingClay.withValues(alpha: 0.5),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: [
+                                pingClay.withValues(alpha: 0.20),
+                                pingClay.withValues(alpha: 0.05),
+                              ],
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              '?',
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: pingClay.withValues(alpha: 0.90),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'arrives only',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 9,
+                        color: Colors.white.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          final (name, streak, color) = people[i];
+          final selected = composeFor == name;
+          return Padding(
+            padding: EdgeInsets.only(right: 14, left: i == 0 ? 2 : 0),
+            child: GestureDetector(
+              onTap: () => onAvatarTap(name),
+              child: Column(
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: pingAvatarGradient(color),
+                          border: Border.all(
+                            color: selected
+                                ? AppColors.neonCyan
+                                : Colors.white.withValues(alpha: 0.14),
+                            width: selected ? 2 : 1,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            name[0].toUpperCase(),
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(
+                                0xFF0B0B0D,
+                              ).withValues(alpha: 0.75),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // No badge at all for a friend with no streak yet — a new
+                      // follow the user hasn't pinged before should read as
+                      // just a plain avatar, not "🔥0".
+                      if (streak > 0)
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF16151A),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Blue vector flame — see ping_page.dart's
+                                // own note on why the emoji can't be used.
+                                PV2Icons.iceFlame(8),
+                                const SizedBox(width: 2),
+                                Text(
+                                  '${streak % 30}',
+                                  style: GoogleFonts.jetBrainsMono(
+                                    fontSize: 8,
+                                    color: PV2.streakBlue,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    name,
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      color: Colors.white.withValues(alpha: 0.55),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Group chips row — below the friend strip. Dashed cyan "+ New group" chip
+// leads, then existing groups as overlapping-avatar chips + name + member
+// count. Per spec's "Additional Features" → "Group pings".
+// ---------------------------------------------------------------------------
+
+class _GroupChipsRow extends StatelessWidget {
+  const _GroupChipsRow({
+    required this.groups,
+    required this.composeFor,
+    required this.onGroupTap,
+    required this.onNewGroup,
+  });
+
+  final List<PingGroup> groups;
+  final String? composeFor;
+  final void Function(String groupName) onGroupTap;
+  final VoidCallback onNewGroup;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          GestureDetector(
+            onTap: onNewGroup,
+            child: Container(
+              margin: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(
+                  color: composeFor == '__new_group__'
+                      ? AppColors.neonCyan
+                      : AppColors.neonCyan.withValues(alpha: 0.4),
+                  width: composeFor == '__new_group__' ? 1.6 : 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.add_rounded,
+                    size: 14,
+                    color: AppColors.neonCyan.withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'New group',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.neonCyan.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          for (final g in groups)
+            GestureDetector(
+              onTap: () => onGroupTap(g.name),
+              child: Container(
+                margin: const EdgeInsets.only(right: 10),
+                padding: const EdgeInsets.fromLTRB(6, 6, 12, 6),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(99),
+                  color: Colors.white.withValues(alpha: 0.06),
+                  border: Border.all(
+                    color: composeFor == g.name
+                        ? AppColors.electricPurple
+                        : Colors.white.withValues(alpha: 0.1),
+                    width: composeFor == g.name ? 1.6 : 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 20 + (g.memberColors.length - 1) * 13.0,
+                      height: 20,
+                      child: Stack(
+                        children: [
+                          for (var i = 0; i < g.memberColors.length; i++)
+                            Positioned(
+                              left: i * 13.0,
+                              child: Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: pingAvatarGradient(
+                                    g.memberColors[i],
+                                  ),
+                                  border: Border.all(
+                                    color: const Color(0xFF0A0A0D),
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      g.name,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${g.memberCount} people',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 9.5,
+                        color: Colors.white.withValues(alpha: 0.35),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Group compose — member-picker grid above the same prompt list the 1:1
+// sheet uses. One send fans the prompt out to every picked member.
+// ---------------------------------------------------------------------------
+
+class _GroupComposeSheetInline extends StatefulWidget {
+  const _GroupComposeSheetInline({
+    required this.groupName,
+    required this.people,
+    required this.onClose,
+    required this.onSend,
+  });
+
+  /// Null when composing via "+ New group" (no group picked yet).
+  final String? groupName;
+  final List<(String, int, Color)> people;
+  final VoidCallback onClose;
+  final void Function(String groupName, String prompt, int memberCount) onSend;
+
+  @override
+  State<_GroupComposeSheetInline> createState() =>
+      _GroupComposeSheetInlineState();
+}
+
+class _GroupComposeSheetInlineState extends State<_GroupComposeSheetInline> {
+  final _ctrl = TextEditingController();
+  final Set<String> _picked = {};
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _togglePick(String name) => setState(
+    () => _picked.contains(name) ? _picked.remove(name) : _picked.add(name),
+  );
+
+  void _send(String prompt) {
+    final name = widget.groupName ?? 'New group (${_picked.length})';
+    widget.onSend(name, prompt, _picked.length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: pingR4(28, 12, 26, 14),
+        color: const Color(0xFF12121A),
+        border: Border.all(
+          color: AppColors.electricPurple.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.groupName ?? 'New group',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: widget.onClose,
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: Colors.white.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (widget.groupName == null) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+              child: Text(
+                "WHO'S IN · ${_picked.length} PICKED",
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 9.5,
+                  letterSpacing: 0.6,
+                  color: AppColors.electricPurple.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 74,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  for (final p in widget.people)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: GestureDetector(
+                        onTap: () => _togglePick(p.$1),
+                        child: Column(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: p.$3,
+                                border: Border.all(
+                                  color: _picked.contains(p.$1)
+                                      ? AppColors.electricPurple
+                                      : Colors.white.withValues(alpha: 0.14),
+                                  width: _picked.contains(p.$1) ? 2 : 1,
+                                ),
+                              ),
+                              child: _picked.contains(p.$1)
+                                  ? const Icon(
+                                      Icons.check_rounded,
+                                      color: Colors.white,
+                                      size: 18,
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              p.$1,
+                              style: GoogleFonts.inter(
+                                fontSize: 9.5,
+                                color: Colors.white.withValues(alpha: 0.55),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 220),
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                for (final p in _kSendPhotoPrompts)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: GestureDetector(
+                      onTap: () => _send(p),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          color: Colors.white.withValues(alpha: 0.05),
+                        ),
+                        child: Text(
+                          p,
+                          style: GoogleFonts.inter(
+                            fontSize: 13.5,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 40,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(99),
+                      color: Colors.white.withValues(alpha: 0.06),
+                    ),
+                    child: TextField(
+                      controller: _ctrl,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: Colors.white,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'or write your own prompt…',
+                        hintStyle: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: Colors.white.withValues(alpha: 0.3),
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: _ctrl.text.trim().isEmpty
+                      ? null
+                      : () => _send(_ctrl.text.trim()),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: _ctrl.text.trim().isEmpty
+                          ? null
+                          : pingSendGradient,
+                      color: _ctrl.text.trim().isEmpty
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : null,
+                    ),
+                    child: Icon(
+                      Icons.arrow_upward_rounded,
+                      size: 18,
+                      color: _ctrl.text.trim().isEmpty
+                          ? Colors.white.withValues(alpha: 0.3)
+                          : const Color(0xFF0A0A0D),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PingEmptyState extends StatelessWidget {
+  const _PingEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 90,
+              height: 90,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    AppColors.electricPurple.withValues(alpha: 0.35),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Nothing pinging yet',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 21,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Ping a friend a quick question — a photo reply is worth a thousand texts.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 14.5,
+                color: Colors.white.withValues(alpha: 0.5),
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -497,137 +1501,122 @@ Color _categoryAccent(int categoryIndex) {
     case 1:
       return AppColors.electricPurple;
     default:
-      return AppColors.vibrantMagenta;
+      return pingClay;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Ambient background — soft glowing "ping streaks" that occasionally
-// travel across the screen plus a handful of slow-breathing points,
-// suggesting a live network without ever demanding attention. Purely
-// decorative: IgnorePointer + its own RepaintBoundary, so its per-frame
-// repaint never touches the row list drawn above it. One AnimationController
-// driving a few Path/circle draws per frame — cheap enough to stay smooth.
+// Ambient background — three large, softly blurred radial blobs drifting
+// slowly (18s/22s/26s, independent loops) per COLORS_AND_SHAPES.md §1.9 /
+// the reference implementation's `_Ambient`. Replaces an earlier unrelated
+// "traveling streak" effect that didn't match the design at all — the
+// design calls for slow blob drift, not comets. Purely decorative:
+// IgnorePointer, so it never intercepts row taps/holds.
 // ---------------------------------------------------------------------------
 
 class _AmbientBackground extends StatefulWidget {
-  const _AmbientBackground({required this.accent});
-  final Color accent;
+  const _AmbientBackground();
 
   @override
   State<_AmbientBackground> createState() => _AmbientBackgroundState();
 }
 
 class _AmbientBackgroundState extends State<_AmbientBackground>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 14))
-      ..repeat();
-  }
+    with TickerProviderStateMixin {
+  late final _a = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 18),
+  )..repeat(reverse: true);
+  late final _b = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 22),
+  )..repeat(reverse: true);
+  late final _c = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 26),
+  )..repeat(reverse: true);
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _a.dispose();
+    _b.dispose();
+    _c.dispose();
     super.dispose();
+  }
+
+  Widget _blob(
+    Animation<double> ctrl,
+    Offset from,
+    Offset to,
+    double size,
+    Color color,
+  ) {
+    return AnimatedBuilder(
+      animation: ctrl,
+      builder: (_, _) {
+        final o = Offset.lerp(
+          from,
+          to,
+          Curves.easeInOut.transform(ctrl.value),
+        )!;
+        return Positioned(
+          left: o.dx,
+          top: o.dy,
+          child: ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+            child: Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [color, Colors.transparent],
+                  stops: const [0, 0.68],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: RepaintBoundary(
-        child: AnimatedBuilder(
-          animation: _ctrl,
-          builder: (context, _) => CustomPaint(
-            painter: _AmbientPainter(t: _ctrl.value, accent: widget.accent),
-            size: Size.infinite,
+        child: DecoratedBox(
+          decoration: const BoxDecoration(color: pingGround),
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              _blob(
+                _a,
+                const Offset(-90, -140),
+                const Offset(-72, -162),
+                340,
+                pingCyan.withValues(alpha: 0.16),
+              ),
+              _blob(
+                _b,
+                const Offset(280, 220),
+                const Offset(256, 236),
+                320,
+                pingCyan.withValues(alpha: 0.15),
+              ),
+              _blob(
+                _c,
+                const Offset(40, 620),
+                const Offset(58, 598),
+                300,
+                const Color(0xFFB08968).withValues(alpha: 0.10),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
-}
-
-class _AmbientStreak {
-  const _AmbientStreak(this.start, this.end, this.phase);
-  final Offset start; // fractional screen position, 0..1
-  final Offset end;
-  final double phase; // 0..1 offset into the shared loop
-}
-
-// Fixed, hand-placed rather than randomized per-frame — a stable "constellation"
-// reads as intentional; regenerating positions every build would look noisy.
-const _ambientStreaks = [
-  _AmbientStreak(Offset(-0.15, 0.16), Offset(1.15, 0.52), 0.0),
-  _AmbientStreak(Offset(1.15, 0.08), Offset(-0.15, 0.42), 0.35),
-  _AmbientStreak(Offset(-0.15, 0.78), Offset(1.15, 0.34), 0.62),
-  _AmbientStreak(Offset(1.10, 0.90), Offset(0.05, 0.62), 0.85),
-];
-
-const _ambientPoints = [
-  Offset(0.16, 0.10),
-  Offset(0.86, 0.18),
-  Offset(0.74, 0.46),
-  Offset(0.18, 0.53),
-  Offset(0.55, 0.74),
-  Offset(0.90, 0.86),
-];
-
-class _AmbientPainter extends CustomPainter {
-  const _AmbientPainter({required this.t, required this.accent});
-  final double t;
-  final Color accent;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Traveling glow streaks — each runs its own lap of the shared loop,
-    // fading in/out via a sin envelope so it reads as "occasional," not
-    // constant.
-    for (final s in _ambientStreaks) {
-      final localT = (t + s.phase) % 1.0;
-      final envelope = math.sin(localT * math.pi).clamp(0.0, 1.0);
-      if (envelope <= 0.02) continue;
-      final pos = Offset.lerp(s.start, s.end, localT)!;
-      final dir = s.end - s.start;
-      final norm = dir.distance == 0 ? const Offset(1, 0) : dir / dir.distance;
-      final head = Offset(pos.dx * size.width, pos.dy * size.height);
-      final tail = head - Offset(norm.dx, norm.dy) * 90;
-
-      final paint = Paint()
-        ..shader = ui.Gradient.linear(
-          tail,
-          head,
-          [accent.withValues(alpha: 0.0), accent.withValues(alpha: 0.30 * envelope)],
-        )
-        ..strokeWidth = 2.4
-        ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-      canvas.drawLine(tail, head, paint);
-    }
-
-    // Slow-breathing ping points
-    for (int i = 0; i < _ambientPoints.length; i++) {
-      final p = _ambientPoints[i];
-      final phase = i * 0.9;
-      final breathe = 0.5 + 0.5 * math.sin(t * 2 * math.pi * 1.4 + phase);
-      final center = Offset(p.dx * size.width, p.dy * size.height);
-      final radius = 2.5 + breathe * 2.5;
-      final alpha = 0.10 + breathe * 0.16;
-      canvas.drawCircle(
-        center,
-        radius,
-        Paint()
-          ..color = accent.withValues(alpha: alpha)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_AmbientPainter old) => old.t != t || old.accent != accent;
 }
 
 // ---------------------------------------------------------------------------
@@ -636,6 +1625,9 @@ class _AmbientPainter extends CustomPainter {
 // segment glowing in that category's accent color.
 // ---------------------------------------------------------------------------
 
+// Superseded by PingPage; retained per this file's own note not to rip out
+// machinery that may be wanted again.
+// ignore: unused_element
 class _PingCategoryBar extends StatelessWidget {
   const _PingCategoryBar({required this.controller});
 
@@ -675,7 +1667,9 @@ class _PingCategoryBar extends StatelessWidget {
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(15),
                             border: controller.index == i
-                                ? Border.all(color: accent.withValues(alpha: 0.55))
+                                ? Border.all(
+                                    color: accent.withValues(alpha: 0.55),
+                                  )
                                 : null,
                             boxShadow: controller.index == i
                                 ? [
@@ -747,11 +1741,7 @@ class _SectionLabel extends StatelessWidget {
 /// everything else (Sent, seen Replies) is quieter — the only difference
 /// is opacity/brightness, never color.
 class _GlassRow extends StatelessWidget {
-  const _GlassRow({
-    required this.child,
-    this.onTap,
-    this.prominent = false,
-  });
+  const _GlassRow({required this.child, this.onTap, this.prominent = false});
 
   final Widget child;
   final VoidCallback? onTap;
@@ -773,7 +1763,9 @@ class _GlassRow extends StatelessWidget {
                 color: Colors.white.withValues(alpha: prominent ? 0.09 : 0.045),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: prominent ? 0.16 : 0.10),
+                  color: Colors.white.withValues(
+                    alpha: prominent ? 0.16 : 0.10,
+                  ),
                 ),
               ),
               child: child,
@@ -818,7 +1810,11 @@ class _NewPingEntry extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Icon(icon, size: 16, color: Colors.white.withValues(alpha: 0.55)),
+                  Icon(
+                    icon,
+                    size: 16,
+                    color: Colors.white.withValues(alpha: 0.55),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -830,8 +1826,11 @@ class _NewPingEntry extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded,
-                      size: 16, color: Colors.white.withValues(alpha: 0.30)),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
+                    color: Colors.white.withValues(alpha: 0.30),
+                  ),
                 ],
               ),
             ),
@@ -872,7 +1871,9 @@ class _PingAvatar extends StatelessWidget {
         shape: BoxShape.circle,
         color: (color ?? const Color(0xFF1C1C22)).withValues(alpha: 0.90),
         border: Border.all(
-          color: glow != null ? glow!.withValues(alpha: 0.65) : Colors.white.withValues(alpha: 0.14),
+          color: glow != null
+              ? glow!.withValues(alpha: 0.65)
+              : Colors.white.withValues(alpha: 0.14),
           width: glow != null ? 1.4 : 1.0,
         ),
       ),
@@ -894,7 +1895,9 @@ class _PingAvatar extends StatelessWidget {
       return DecoratedBox(
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: g.withValues(alpha: 0.32), blurRadius: 10)],
+          boxShadow: [
+            BoxShadow(color: g.withValues(alpha: 0.32), blurRadius: 10),
+          ],
         ),
         child: avatar,
       );
@@ -904,7 +1907,9 @@ class _PingAvatar extends StatelessWidget {
       minAlpha: urgent ? 0.35 : 0.25,
       maxAlpha: urgent ? 0.75 : 0.55,
       blur: urgent ? 18 : 14,
-      period: urgent ? const Duration(milliseconds: 1300) : const Duration(milliseconds: 2000),
+      period: urgent
+          ? const Duration(milliseconds: 1300)
+          : const Duration(milliseconds: 2000),
       child: avatar,
     );
   }
@@ -935,13 +1940,15 @@ class _PulseGlow extends StatefulWidget {
   State<_PulseGlow> createState() => _PulseGlowState();
 }
 
-class _PulseGlowState extends State<_PulseGlow> with SingleTickerProviderStateMixin {
+class _PulseGlowState extends State<_PulseGlow>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: widget.period)..repeat(reverse: true);
+    _ctrl = AnimationController(vsync: this, duration: widget.period)
+      ..repeat(reverse: true);
   }
 
   @override
@@ -957,12 +1964,17 @@ class _PulseGlowState extends State<_PulseGlow> with SingleTickerProviderStateMi
         animation: _ctrl,
         builder: (context, child) {
           final t = Curves.easeInOut.transform(_ctrl.value);
-          final alpha = widget.minAlpha + (widget.maxAlpha - widget.minAlpha) * t;
+          final alpha =
+              widget.minAlpha + (widget.maxAlpha - widget.minAlpha) * t;
           return DecoratedBox(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               boxShadow: [
-                BoxShadow(color: widget.color.withValues(alpha: alpha), blurRadius: widget.blur, spreadRadius: 1),
+                BoxShadow(
+                  color: widget.color.withValues(alpha: alpha),
+                  blurRadius: widget.blur,
+                  spreadRadius: 1,
+                ),
               ],
             ),
             child: child,
@@ -975,31 +1987,31 @@ class _PulseGlowState extends State<_PulseGlow> with SingleTickerProviderStateMi
 }
 
 Widget _ageText(String label) => Text(
-      label,
-      style: GoogleFonts.jetBrainsMono(
-        fontSize: 10,
-        color: Colors.white.withValues(alpha: 0.40),
-      ),
-    );
+  label,
+  style: GoogleFonts.jetBrainsMono(
+    fontSize: 10,
+    color: Colors.white.withValues(alpha: 0.40),
+  ),
+);
 
 Widget _seenChip(bool seen) => Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          seen ? Icons.done_all_rounded : Icons.schedule_rounded,
-          size: 12,
-          color: Colors.white.withValues(alpha: seen ? 0.55 : 0.30),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          seen ? 'seen' : 'unseen',
-          style: GoogleFonts.jetBrainsMono(
-            fontSize: 10,
-            color: Colors.white.withValues(alpha: seen ? 0.55 : 0.30),
-          ),
-        ),
-      ],
-    );
+  mainAxisSize: MainAxisSize.min,
+  children: [
+    Icon(
+      seen ? Icons.done_all_rounded : Icons.schedule_rounded,
+      size: 12,
+      color: Colors.white.withValues(alpha: seen ? 0.55 : 0.30),
+    ),
+    const SizedBox(width: 4),
+    Text(
+      seen ? 'seen' : 'unseen',
+      style: GoogleFonts.jetBrainsMono(
+        fontSize: 10,
+        color: Colors.white.withValues(alpha: seen ? 0.55 : 0.30),
+      ),
+    ),
+  ],
+);
 
 class _EmptyCategory extends StatelessWidget {
   const _EmptyCategory(this.text);
@@ -1074,7 +2086,9 @@ class _ExpandableReplyCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: expanded ? 0.07 : 0.09),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: accent.withValues(alpha: expanded ? 0.55 : 0.30)),
+              border: Border.all(
+                color: accent.withValues(alpha: expanded ? 0.55 : 0.30),
+              ),
               boxShadow: [
                 BoxShadow(
                   color: accent.withValues(alpha: expanded ? 0.28 : 0.12),
@@ -1125,8 +2139,10 @@ class _ExpandableReplyCard extends StatelessWidget {
               onTap: onCollapse,
               child: Padding(
                 padding: const EdgeInsets.all(4),
-                child: Icon(Icons.keyboard_arrow_up_rounded,
-                    color: Colors.white.withValues(alpha: 0.55)),
+                child: Icon(
+                  Icons.keyboard_arrow_up_rounded,
+                  color: Colors.white.withValues(alpha: 0.55),
+                ),
               ),
             ),
           ],
@@ -1191,13 +2207,18 @@ class _InlineCameraSurfaceState extends State<_InlineCameraSurface> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.camera_alt_outlined,
-                            size: 28, color: Colors.white.withValues(alpha: 0.18)),
+                        Icon(
+                          Icons.camera_alt_outlined,
+                          size: 28,
+                          color: Colors.white.withValues(alpha: 0.18),
+                        ),
                         const SizedBox(height: 6),
                         Text(
                           'rear camera',
                           style: GoogleFonts.jetBrainsMono(
-                              fontSize: 10, color: Colors.white.withValues(alpha: 0.16)),
+                            fontSize: 10,
+                            color: Colors.white.withValues(alpha: 0.16),
+                          ),
                         ),
                       ],
                     ),
@@ -1212,8 +2233,11 @@ class _InlineCameraSurfaceState extends State<_InlineCameraSurface> {
                       width: 42,
                       height: 56,
                       color: const Color(0xFF13131A),
-                      child: Icon(Icons.face_retouching_natural,
-                          size: 16, color: Colors.white.withValues(alpha: 0.18)),
+                      child: Icon(
+                        Icons.face_retouching_natural,
+                        size: 16,
+                        color: Colors.white.withValues(alpha: 0.18),
+                      ),
                     ),
                   ),
                 ),
@@ -1224,8 +2248,11 @@ class _InlineCameraSurfaceState extends State<_InlineCameraSurface> {
                     child: Container(
                       color: Colors.black.withValues(alpha: 0.55),
                       child: Center(
-                        child: Icon(Icons.check_circle_rounded,
-                            color: widget.accent, size: 34),
+                        child: Icon(
+                          Icons.check_circle_rounded,
+                          color: widget.accent,
+                          size: 34,
+                        ),
                       ),
                     ),
                   ),
@@ -1242,7 +2269,10 @@ class _InlineCameraSurfaceState extends State<_InlineCameraSurface> {
                 _sentCount == 0
                     ? 'tap the shutter to reply'
                     : '$_sentCount sent — send another anytime',
-                style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.40)),
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.40),
+                ),
               ),
             ),
             GestureDetector(
@@ -1253,9 +2283,16 @@ class _InlineCameraSurfaceState extends State<_InlineCameraSurface> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.white,
-                  border: Border.all(color: widget.accent.withValues(alpha: 0.70), width: 2),
+                  border: Border.all(
+                    color: widget.accent.withValues(alpha: 0.70),
+                    width: 2,
+                  ),
                   boxShadow: [
-                    BoxShadow(color: widget.accent.withValues(alpha: 0.55), blurRadius: 16, spreadRadius: 1),
+                    BoxShadow(
+                      color: widget.accent.withValues(alpha: 0.55),
+                      blurRadius: 16,
+                      spreadRadius: 1,
+                    ),
                   ],
                 ),
               ),
@@ -1272,7 +2309,8 @@ class _InlineGroupReplySurface extends StatefulWidget {
   final Color accent;
 
   @override
-  State<_InlineGroupReplySurface> createState() => _InlineGroupReplySurfaceState();
+  State<_InlineGroupReplySurface> createState() =>
+      _InlineGroupReplySurfaceState();
 }
 
 class _InlineGroupReplySurfaceState extends State<_InlineGroupReplySurface> {
@@ -1302,7 +2340,10 @@ class _InlineGroupReplySurfaceState extends State<_InlineGroupReplySurface> {
                 onTap: () => setState(() => _selected = i),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: _selected == i
                         ? widget.accent.withValues(alpha: 0.22)
@@ -1318,8 +2359,12 @@ class _InlineGroupReplySurfaceState extends State<_InlineGroupReplySurface> {
                     _kPingBackPrompts[i],
                     style: GoogleFonts.inter(
                       fontSize: 12,
-                      color: _selected == i ? Colors.white : Colors.white.withValues(alpha: 0.60),
-                      fontWeight: _selected == i ? FontWeight.w600 : FontWeight.w400,
+                      color: _selected == i
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.60),
+                      fontWeight: _selected == i
+                          ? FontWeight.w600
+                          : FontWeight.w400,
                     ),
                   ),
                 ),
@@ -1331,32 +2376,48 @@ class _InlineGroupReplySurfaceState extends State<_InlineGroupReplySurface> {
           children: [
             Expanded(
               child: Text(
-                _sentCount == 0 ? 'pick one to send' : '$_sentCount sent — send another anytime',
-                style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.40)),
+                _sentCount == 0
+                    ? 'pick one to send'
+                    : '$_sentCount sent — send another anytime',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.40),
+                ),
               ),
             ),
             GestureDetector(
               onTap: _selected == null ? null : _send,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
-                  color: _selected == null ? Colors.white.withValues(alpha: 0.08) : widget.accent,
+                  color: _selected == null
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : widget.accent,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.send_rounded,
-                        size: 14,
-                        color: _selected == null ? Colors.white.withValues(alpha: 0.30) : Colors.black),
+                    Icon(
+                      Icons.send_rounded,
+                      size: 14,
+                      color: _selected == null
+                          ? Colors.white.withValues(alpha: 0.30)
+                          : Colors.black,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       'Send',
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: _selected == null ? Colors.white.withValues(alpha: 0.30) : Colors.black,
+                        color: _selected == null
+                            ? Colors.white.withValues(alpha: 0.30)
+                            : Colors.black,
                       ),
                     ),
                   ],
@@ -1415,7 +2476,10 @@ class _InlineAnonComposerState extends State<_InlineAnonComposer> {
             minLines: 1,
             decoration: InputDecoration(
               hintText: 'Say something back…',
-              hintStyle: GoogleFonts.inter(fontSize: 13, color: Colors.white.withValues(alpha: 0.30)),
+              hintStyle: GoogleFonts.inter(
+                fontSize: 13,
+                color: Colors.white.withValues(alpha: 0.30),
+              ),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.all(12),
             ),
@@ -1427,15 +2491,23 @@ class _InlineAnonComposerState extends State<_InlineAnonComposer> {
           children: [
             Expanded(
               child: Text(
-                _sentCount == 0 ? 'stays anonymous' : '$_sentCount sent — send another anytime',
-                style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.40)),
+                _sentCount == 0
+                    ? 'stays anonymous'
+                    : '$_sentCount sent — send another anytime',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.40),
+                ),
               ),
             ),
             GestureDetector(
               onTap: _ctrl.text.trim().isEmpty ? null : _send,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: _ctrl.text.trim().isEmpty
                       ? Colors.white.withValues(alpha: 0.08)
@@ -1445,7 +2517,9 @@ class _InlineAnonComposerState extends State<_InlineAnonComposer> {
                 child: Icon(
                   Icons.send_rounded,
                   size: 16,
-                  color: _ctrl.text.trim().isEmpty ? Colors.white.withValues(alpha: 0.30) : Colors.black,
+                  color: _ctrl.text.trim().isEmpty
+                      ? Colors.white.withValues(alpha: 0.30)
+                      : Colors.black,
                 ),
               ),
             ),
@@ -1526,8 +2600,9 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
     super.dispose();
   }
 
-  List<PingItem> get _visibleToReply =>
-      _toReply.where((p) => !_replyWindowExpired(p.sentAt, p.windowHours)).toList();
+  List<PingItem> get _visibleToReply => _toReply
+      .where((p) => !_replyWindowExpired(p.sentAt, p.windowHours))
+      .toList();
 
   void _toggleExpanded(String id) {
     HapticFeedback.selectionClick();
@@ -1538,24 +2613,24 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
     HapticFeedback.lightImpact();
     Navigator.of(context)
         .push<void>(
-      MaterialPageRoute<void>(
-        fullscreenDialog: true,
-        builder: (_) => _PingRepliesFeedScreen(
-          senderName: r.entry.username,
-          replies: r.entry.replyPhotoColors.isNotEmpty
-              ? r.entry.replyPhotoColors
-              : [r.entry.replyPhotoColor],
-        ),
-      ),
-    )
+          MaterialPageRoute<void>(
+            fullscreenDialog: true,
+            builder: (_) => _PingRepliesFeedScreen(
+              senderName: r.entry.username,
+              replies: r.entry.replyPhotoColors.isNotEmpty
+                  ? r.entry.replyPhotoColors
+                  : [r.entry.replyPhotoColor],
+            ),
+          ),
+        )
         .then((_) {
-      if (!mounted) return;
-      setState(() {
-        r.unrevealed = false;
-        // First view only — re-opening later doesn't reset the 24h window.
-        r.viewedAt ??= DateTime.now();
-      });
-    });
+          if (!mounted) return;
+          setState(() {
+            r.unrevealed = false;
+            // First view only — re-opening later doesn't reset the 24h window.
+            r.viewedAt ??= DateTime.now();
+          });
+        });
   }
 
   void _pingBack(String name) {
@@ -1580,7 +2655,12 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
       setState(() {
         _sent.insert(
           0,
-          _SentPing(name: name, prompt: prompt, sentAgo: 'just now', windowHours: hours),
+          _SentPing(
+            name: name,
+            prompt: prompt,
+            sentAgo: 'just now',
+            windowHours: hours,
+          ),
         );
       });
       showPingSentToast(context, name);
@@ -1590,10 +2670,13 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
   @override
   Widget build(BuildContext context) {
     final visibleToReply = _visibleToReply;
-    final hasAny = visibleToReply.isNotEmpty || _sent.isNotEmpty || _replies.isNotEmpty;
+    final hasAny =
+        visibleToReply.isNotEmpty || _sent.isNotEmpty || _replies.isNotEmpty;
 
     return ListView(
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: EdgeInsets.fromLTRB(16, 4, 16, widget.bottomPad + 24),
       children: [
         _NewPingEntry(
@@ -1615,8 +2698,11 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
                 children: [
                   _ageText(_windowLabel(ping.sentAt, ping.windowHours)),
                   const SizedBox(width: 6),
-                  Icon(Icons.keyboard_arrow_down_rounded,
-                      size: 18, color: _accent.withValues(alpha: 0.65)),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: _accent.withValues(alpha: 0.65),
+                  ),
                 ],
               ),
               headerBuilder: (expanded) {
@@ -1646,12 +2732,17 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
                           ),
                           const SizedBox(height: 2),
                           ImageFiltered(
-                            imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                            imageFilter: ui.ImageFilter.blur(
+                              sigmaX: blur,
+                              sigmaY: blur,
+                            ),
                             child: Text(
                               ping.prompt,
                               style: GoogleFonts.inter(
                                 fontSize: expanded ? 13 : 12,
-                                color: Colors.white.withValues(alpha: expanded ? 0.75 : 0.55),
+                                color: Colors.white.withValues(
+                                  alpha: expanded ? 0.75 : 0.55,
+                                ),
                               ),
                               maxLines: expanded ? 2 : 1,
                               overflow: TextOverflow.ellipsis,
@@ -1663,7 +2754,8 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
                   ],
                 );
               },
-              surfaceBuilder: (context) => _InlineCameraSurface(accent: _accent),
+              surfaceBuilder: (context) =>
+                  _InlineCameraSurface(accent: _accent),
             ),
           const SizedBox(height: 8),
         ],
@@ -1673,7 +2765,10 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
             _GlassRow(
               child: Row(
                 children: [
-                  _PingAvatar(label: s.name, glow: _accent.withValues(alpha: 0.6)),
+                  _PingAvatar(
+                    label: s.name,
+                    glow: _accent.withValues(alpha: 0.6),
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -1731,8 +2826,11 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
                       onTap: () => _pingBack(r.entry.username),
                       child: Row(
                         children: [
-                          Icon(Icons.replay_rounded,
-                              size: 13, color: Colors.white.withValues(alpha: 0.55)),
+                          Icon(
+                            Icons.replay_rounded,
+                            size: 13,
+                            color: Colors.white.withValues(alpha: 0.55),
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
@@ -1745,14 +2843,20 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
                               ),
                             ),
                           ),
-                          Icon(Icons.chevron_right_rounded,
-                              size: 14, color: Colors.white.withValues(alpha: 0.35)),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 14,
+                            color: Colors.white.withValues(alpha: 0.35),
+                          ),
                         ],
                       ),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+                      child: Divider(
+                        height: 1,
+                        color: Colors.white.withValues(alpha: 0.08),
+                      ),
                     ),
                   ],
                   Row(
@@ -1783,9 +2887,13 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
                                   const SizedBox(width: 6),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.14),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.14,
+                                      ),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(
@@ -1793,7 +2901,9 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
                                       style: GoogleFonts.jetBrainsMono(
                                         fontSize: 8,
                                         fontWeight: FontWeight.w700,
-                                        color: Colors.white.withValues(alpha: 0.75),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.75,
+                                        ),
                                         letterSpacing: 0.5,
                                       ),
                                     ),
@@ -1805,11 +2915,14 @@ class _FriendsPingTabState extends State<_FriendsPingTab> {
                             Text(
                               r.unrevealed
                                   ? 'hold to reveal their reply'
-                                  : (r.entry.isPhoto ? 'photo · seen' : r.entry.textReply),
+                                  : (r.entry.isPhoto
+                                        ? 'photo · seen'
+                                        : r.entry.textReply),
                               style: GoogleFonts.inter(
                                 fontSize: 12,
-                                color:
-                                    Colors.white.withValues(alpha: r.unrevealed ? 0.55 : 0.35),
+                                color: Colors.white.withValues(
+                                  alpha: r.unrevealed ? 0.55 : 0.35,
+                                ),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -1862,12 +2975,16 @@ class _GroupsPingTabState extends State<_GroupsPingTab> {
 
   void _openGroup(_GroupUi g) {
     Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => _GroupDetailView(group: g.group)))
+        .push(
+          MaterialPageRoute<void>(
+            builder: (_) => _GroupDetailView(group: g.group),
+          ),
+        )
         .then((_) {
-      if (!mounted) return;
-      // First view only — starts the 24h "Ping Back" banner window.
-      setState(() => g.viewedAt ??= DateTime.now());
-    });
+          if (!mounted) return;
+          // First view only — starts the 24h "Ping Back" banner window.
+          setState(() => g.viewedAt ??= DateTime.now());
+        });
   }
 
   // Groups don't have a dedicated "reply to the daily prompt" screen — the
@@ -1889,16 +3006,22 @@ class _GroupsPingTabState extends State<_GroupsPingTab> {
   @override
   Widget build(BuildContext context) {
     final toReply = _groupUi
-        .where((g) =>
-            g.state == _PingState.toReply &&
-            !g.answered &&
-            !_replyWindowExpired(g.sentAt, g.windowHours))
+        .where(
+          (g) =>
+              g.state == _PingState.toReply &&
+              !g.answered &&
+              !_replyWindowExpired(g.sentAt, g.windowHours),
+        )
         .toList();
     final sent = _groupUi.where((g) => g.state == _PingState.sent).toList();
-    final replies = _groupUi.where((g) => g.state == _PingState.replies).toList();
+    final replies = _groupUi
+        .where((g) => g.state == _PingState.replies)
+        .toList();
 
     return ListView(
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: EdgeInsets.fromLTRB(16, 4, 16, widget.bottomPad + 24),
       children: [
         _NewPingEntry(
@@ -1921,8 +3044,11 @@ class _GroupsPingTabState extends State<_GroupsPingTab> {
                 children: [
                   _ageText(_windowLabel(g.sentAt, g.windowHours)),
                   const SizedBox(width: 6),
-                  Icon(Icons.keyboard_arrow_down_rounded,
-                      size: 18, color: _accent.withValues(alpha: 0.65)),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: _accent.withValues(alpha: 0.65),
+                  ),
                 ],
               ),
               headerBuilder: (expanded) {
@@ -1947,12 +3073,17 @@ class _GroupsPingTabState extends State<_GroupsPingTab> {
                           ),
                           const SizedBox(height: 2),
                           ImageFiltered(
-                            imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                            imageFilter: ui.ImageFilter.blur(
+                              sigmaX: blur,
+                              sigmaY: blur,
+                            ),
                             child: Text(
                               '"${g.group.prompt}"',
                               style: GoogleFonts.inter(
                                 fontSize: expanded ? 13 : 12,
-                                color: Colors.white.withValues(alpha: expanded ? 0.75 : 0.45),
+                                color: Colors.white.withValues(
+                                  alpha: expanded ? 0.75 : 0.45,
+                                ),
                                 fontStyle: FontStyle.italic,
                               ),
                               maxLines: expanded ? 2 : 1,
@@ -1965,7 +3096,8 @@ class _GroupsPingTabState extends State<_GroupsPingTab> {
                   ],
                 );
               },
-              surfaceBuilder: (context) => _InlineGroupReplySurface(accent: _accent),
+              surfaceBuilder: (context) =>
+                  _InlineGroupReplySurface(accent: _accent),
             ),
           const SizedBox(height: 8),
         ],
@@ -2003,8 +3135,11 @@ class _GroupsPingTabState extends State<_GroupsPingTab> {
                       onTap: () => _replyToGroup(g),
                       child: Row(
                         children: [
-                          Icon(Icons.replay_rounded,
-                              size: 13, color: Colors.white.withValues(alpha: 0.55)),
+                          Icon(
+                            Icons.replay_rounded,
+                            size: 13,
+                            color: Colors.white.withValues(alpha: 0.55),
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
@@ -2017,14 +3152,20 @@ class _GroupsPingTabState extends State<_GroupsPingTab> {
                               ),
                             ),
                           ),
-                          Icon(Icons.chevron_right_rounded,
-                              size: 14, color: Colors.white.withValues(alpha: 0.35)),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 14,
+                            color: Colors.white.withValues(alpha: 0.35),
+                          ),
                         ],
                       ),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+                      child: Divider(
+                        height: 1,
+                        color: Colors.white.withValues(alpha: 0.08),
+                      ),
                     ),
                   ],
                   _groupRowContent(g),
@@ -2283,11 +3424,15 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
               TextField(
                 controller: _nameCtrl,
                 style: GoogleFonts.inter(
-                    fontSize: 14, color: AppColors.textPrimary),
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
                 decoration: InputDecoration(
                   hintText: 'e.g. "The Squad"',
                   hintStyle: GoogleFonts.inter(
-                      fontSize: 14, color: AppColors.textMuted),
+                    fontSize: 14,
+                    color: AppColors.textMuted,
+                  ),
                   filled: true,
                   fillColor: AppColors.cardSurface,
                   border: OutlineInputBorder(
@@ -2301,7 +3446,8 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: AppColors.primary.withValues(alpha: 0.60)),
+                      color: AppColors.primary.withValues(alpha: 0.60),
+                    ),
                   ),
                   contentPadding: const EdgeInsets.all(12),
                 ),
@@ -2329,8 +3475,11 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
                     final on = _selected.contains(i);
                     return GestureDetector(
                       onTap: () => setState(() {
-                        if (on) { _selected.remove(i); }
-                        else { _selected.add(i); }
+                        if (on) {
+                          _selected.remove(i);
+                        } else {
+                          _selected.add(i);
+                        }
                       }),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -2362,9 +3511,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            name.length > 9
-                                ? '${name.substring(0, 8)}…'
-                                : name,
+                            name.length > 9 ? '${name.substring(0, 8)}…' : name,
                             style: GoogleFonts.jetBrainsMono(
                               fontSize: 9,
                               color: on
@@ -2474,7 +3621,7 @@ class _AnonPingTab extends StatefulWidget {
 }
 
 class _AnonPingTabState extends State<_AnonPingTab> {
-  static const _accent = AppColors.vibrantMagenta;
+  static const _accent = pingClay;
 
   String? _expandedId;
 
@@ -2495,31 +3642,38 @@ class _AnonPingTabState extends State<_AnonPingTab> {
   void _openThread(_AnonThreadUi u) {
     Navigator.of(context)
         .push(
-      MaterialPageRoute<void>(
-        builder: (_) => _AnonThreadView(
-          thread: u.thread,
-          // No reliable "did they send anything" signal from the pop value
-          // (the thread view manages its own message list internally), so
-          // this fires the moment a reply is actually sent instead.
-          onReplied: () => u.answered = true,
-        ),
-      ),
-    )
+          MaterialPageRoute<void>(
+            builder: (_) => _AnonThreadView(
+              thread: u.thread,
+              // No reliable "did they send anything" signal from the pop value
+              // (the thread view manages its own message list internally), so
+              // this fires the moment a reply is actually sent instead.
+              onReplied: () => u.answered = true,
+            ),
+          ),
+        )
         .then((_) {
-      if (mounted) setState(() {});
-    });
+          if (mounted) setState(() {});
+        });
   }
 
   @override
   Widget build(BuildContext context) {
     final toReply = _anonThreadUi
-        .where((u) =>
-            u.state == _PingState.toReply && !_replyWindowExpired(u.sentAt, u.windowHours))
+        .where(
+          (u) =>
+              u.state == _PingState.toReply &&
+              !_replyWindowExpired(u.sentAt, u.windowHours),
+        )
         .toList();
-    final sent = _anonThreadUi.where((u) => u.state == _PingState.sent).toList();
+    final sent = _anonThreadUi
+        .where((u) => u.state == _PingState.sent)
+        .toList();
 
     return ListView(
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: EdgeInsets.fromLTRB(16, 4, 16, widget.bottomPad + 24),
       children: [
         _NewPingEntry(
@@ -2542,8 +3696,11 @@ class _AnonPingTabState extends State<_AnonPingTab> {
                 children: [
                   _ageText(_windowLabel(u.sentAt, u.windowHours)),
                   const SizedBox(width: 6),
-                  Icon(Icons.keyboard_arrow_down_rounded,
-                      size: 18, color: _accent.withValues(alpha: 0.65)),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: _accent.withValues(alpha: 0.65),
+                  ),
                 ],
               ),
               headerBuilder: (expanded) {
@@ -2551,7 +3708,9 @@ class _AnonPingTabState extends State<_AnonPingTab> {
                 final last = u.thread.messages.last;
                 final preview = last.type == _MsgType.text
                     ? last.text
-                    : (last.type == _MsgType.photo ? '📷 Photo' : '🎤 Voice note');
+                    : (last.type == _MsgType.photo
+                          ? '📷 Photo'
+                          : '🎤 Voice note');
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -2572,12 +3731,17 @@ class _AnonPingTabState extends State<_AnonPingTab> {
                           ),
                           const SizedBox(height: 2),
                           ImageFiltered(
-                            imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                            imageFilter: ui.ImageFilter.blur(
+                              sigmaX: blur,
+                              sigmaY: blur,
+                            ),
                             child: Text(
                               preview,
                               style: GoogleFonts.inter(
                                 fontSize: expanded ? 13 : 12,
-                                color: Colors.white.withValues(alpha: expanded ? 0.70 : 0.45),
+                                color: Colors.white.withValues(
+                                  alpha: expanded ? 0.70 : 0.45,
+                                ),
                               ),
                               maxLines: expanded ? 2 : 1,
                               overflow: TextOverflow.ellipsis,
@@ -2596,10 +3760,7 @@ class _AnonPingTabState extends State<_AnonPingTab> {
         if (sent.isNotEmpty) ...[
           const _SectionLabel('SENT'),
           for (final u in sent)
-            _GlassRow(
-              onTap: () => _openThread(u),
-              child: _anonRowContent(u),
-            ),
+            _GlassRow(onTap: () => _openThread(u), child: _anonRowContent(u)),
         ],
       ],
     );
@@ -2704,7 +3865,9 @@ class _AnonThreadViewState extends State<_AnonThreadView> {
     final text = _textCtrl.text.trim();
     if (text.isEmpty) return;
     setState(() {
-      _messages.add(_AnonMessage(type: _MsgType.text, isMe: true, time: 'now', text: text));
+      _messages.add(
+        _AnonMessage(type: _MsgType.text, isMe: true, time: 'now', text: text),
+      );
       _textCtrl.clear();
     });
     widget.onReplied?.call();
@@ -2716,12 +3879,14 @@ class _AnonThreadViewState extends State<_AnonThreadView> {
     final image = await picker.pickImage(source: ImageSource.gallery);
     if (image == null || !mounted) return;
     setState(() {
-      _messages.add(const _AnonMessage(
-        type: _MsgType.photo,
-        isMe: true,
-        time: 'now',
-        photoColor: Color(0xFF2A3050),
-      ));
+      _messages.add(
+        const _AnonMessage(
+          type: _MsgType.photo,
+          isMe: true,
+          time: 'now',
+          photoColor: Color(0xFF2A3050),
+        ),
+      );
     });
     widget.onReplied?.call();
     _scrollToBottom();
@@ -2736,12 +3901,14 @@ class _AnonThreadViewState extends State<_AnonThreadView> {
         onSend: (int secs) {
           Navigator.of(context).pop();
           setState(() {
-            _messages.add(_AnonMessage(
-              type: _MsgType.voice,
-              isMe: true,
-              time: 'now',
-              voiceSecs: secs,
-            ));
+            _messages.add(
+              _AnonMessage(
+                type: _MsgType.voice,
+                isMe: true,
+                time: 'now',
+                voiceSecs: secs,
+              ),
+            );
           });
           widget.onReplied?.call();
           _scrollToBottom();
@@ -3281,10 +4448,7 @@ class _FullScreenPhoto extends StatelessWidget {
       body: GestureDetector(
         onTap: () => Navigator.of(context).pop(),
         child: Center(
-          child: AspectRatio(
-            aspectRatio: 1.0,
-            child: Container(color: color),
-          ),
+          child: AspectRatio(aspectRatio: 1.0, child: Container(color: color)),
         ),
       ),
     );
@@ -3309,7 +4473,20 @@ class _VoiceBubbleState extends State<_VoiceBubble>
   late final AnimationController _ctrl;
   bool _isPlaying = false;
 
-  static const _barHeights = [0.3, 0.7, 0.5, 0.9, 0.4, 0.8, 0.6, 0.7, 0.4, 0.5, 0.8, 0.3];
+  static const _barHeights = [
+    0.3,
+    0.7,
+    0.5,
+    0.9,
+    0.4,
+    0.8,
+    0.6,
+    0.7,
+    0.4,
+    0.5,
+    0.8,
+    0.3,
+  ];
 
   @override
   void initState() {
@@ -3381,7 +4558,9 @@ class _VoiceBubbleState extends State<_VoiceBubble>
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      _isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
                       color: AppColors.primary,
                       size: 18,
                     ),
@@ -3399,7 +4578,10 @@ class _VoiceBubbleState extends State<_VoiceBubble>
                           Container(
                             width: 3,
                             height: _isPlaying
-                                ? math.max(4, h * 22 * (_ctrl.value * 0.6 + 0.4))
+                                ? math.max(
+                                    4,
+                                    h * 22 * (_ctrl.value * 0.6 + 0.4),
+                                  )
                                 : (4 + h * 10),
                             decoration: BoxDecoration(
                               color: _isPlaying
@@ -3428,7 +4610,10 @@ class _VoiceBubbleState extends State<_VoiceBubble>
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF6B3FA0).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(6),
@@ -3485,7 +4670,22 @@ class _VoiceRecordSheetState extends State<_VoiceRecordSheet>
   Timer? _timer;
   bool _previewPlaying = false;
 
-  static const _barHeights = [0.4, 0.8, 0.6, 1.0, 0.5, 0.9, 0.7, 0.8, 0.5, 0.4, 0.9, 0.6, 0.3, 0.7];
+  static const _barHeights = [
+    0.4,
+    0.8,
+    0.6,
+    1.0,
+    0.5,
+    0.9,
+    0.7,
+    0.8,
+    0.5,
+    0.4,
+    0.9,
+    0.6,
+    0.3,
+    0.7,
+  ];
 
   @override
   void initState() {
@@ -3645,7 +4845,11 @@ class _VoiceRecordSheetState extends State<_VoiceRecordSheet>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.stop_rounded, color: Colors.white, size: 16),
+                        const Icon(
+                          Icons.stop_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Stop',
@@ -3711,7 +4915,9 @@ class _VoiceRecordSheetState extends State<_VoiceRecordSheet>
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  _previewPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  _previewPlaying
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
                   color: AppColors.primary,
                   size: 22,
                 ),
@@ -3731,7 +4937,10 @@ class _VoiceRecordSheetState extends State<_VoiceRecordSheet>
                         Container(
                           width: 4,
                           height: _previewPlaying
-                              ? math.max(4, h * 30 * (_waveCtrl.value * 0.5 + 0.5))
+                              ? math.max(
+                                  4,
+                                  h * 30 * (_waveCtrl.value * 0.5 + 0.5),
+                                )
                               : (4 + h * 12),
                           decoration: BoxDecoration(
                             color: _previewPlaying
@@ -3797,7 +5006,11 @@ class _VoiceRecordSheetState extends State<_VoiceRecordSheet>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.refresh_rounded, size: 14, color: AppColors.textMuted),
+                    const Icon(
+                      Icons.refresh_rounded,
+                      size: 14,
+                      color: AppColors.textMuted,
+                    ),
                     const SizedBox(width: 5),
                     Text(
                       'Re-record',
@@ -3826,7 +5039,11 @@ class _VoiceRecordSheetState extends State<_VoiceRecordSheet>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.send_rounded, size: 14, color: Colors.white),
+                    const Icon(
+                      Icons.send_rounded,
+                      size: 14,
+                      color: Colors.white,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       'Send',
@@ -3881,10 +5098,7 @@ class _StackedAvatars extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: AppColors.background,
-                  border: Border.all(
-                    color: AppColors.cardSurface,
-                    width: 1.5,
-                  ),
+                  border: Border.all(color: AppColors.cardSurface, width: 1.5),
                 ),
                 child: Center(
                   child: Text(
@@ -3933,17 +5147,15 @@ class _UnrevealedPhotoReplyState extends State<_UnrevealedPhotoReply>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )
-      ..addListener(_onHoldProgress)
-      ..addStatusListener((s) {
-        if (s == AnimationStatus.completed && mounted) {
-          HapticFeedback.heavyImpact();
-          setState(() => _revealed = true);
-        }
-      });
+    _ctrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 3))
+          ..addListener(_onHoldProgress)
+          ..addStatusListener((s) {
+            if (s == AnimationStatus.completed && mounted) {
+              HapticFeedback.heavyImpact();
+              setState(() => _revealed = true);
+            }
+          });
   }
 
   @override
@@ -3990,9 +5202,7 @@ class _UnrevealedPhotoReplyState extends State<_UnrevealedPhotoReply>
           child: AnimatedBuilder(
             animation: _ctrl,
             builder: (context, child) {
-              final blurSigma = _revealed
-                  ? 0.0
-                  : 20.0 * (1.0 - _ctrl.value);
+              final blurSigma = _revealed ? 0.0 : 20.0 * (1.0 - _ctrl.value);
               return Stack(
                 fit: StackFit.expand,
                 children: [
@@ -4021,11 +5231,13 @@ class _UnrevealedPhotoReplyState extends State<_UnrevealedPhotoReply>
                                 CircularProgressIndicator(
                                   value: _ctrl.value,
                                   strokeWidth: 3,
-                                  backgroundColor:
-                                      Colors.white.withValues(alpha: 0.15),
+                                  backgroundColor: Colors.white.withValues(
+                                    alpha: 0.15,
+                                  ),
                                   valueColor:
                                       const AlwaysStoppedAnimation<Color>(
-                                          Colors.white),
+                                        Colors.white,
+                                      ),
                                 ),
                                 Icon(
                                   _holding
@@ -4068,7 +5280,9 @@ class _UnrevealedPhotoReplyState extends State<_UnrevealedPhotoReply>
                       right: 8,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.55),
                           borderRadius: BorderRadius.circular(6),
@@ -4268,7 +5482,9 @@ class _PingReceiveScreenState extends State<_PingReceiveScreen> {
 
             // ── Top gradient scrim ────────────────────────────────────────
             Positioned(
-              top: 0, left: 0, right: 0,
+              top: 0,
+              left: 0,
+              right: 0,
               height: size.height * 0.55,
               child: Container(
                 decoration: BoxDecoration(
@@ -4455,10 +5671,7 @@ class _PingReceiveScreenState extends State<_PingReceiveScreen> {
               autofocus: true,
               maxLines: 4,
               minLines: 2,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: Colors.white,
-              ),
+              style: GoogleFonts.inter(fontSize: 14, color: Colors.white),
               decoration: InputDecoration(
                 hintText: 'Type your reply…',
                 hintStyle: GoogleFonts.inter(
@@ -4477,7 +5690,9 @@ class _PingReceiveScreenState extends State<_PingReceiveScreen> {
                 onTap: () => setState(() => _textMode = false),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(12),
@@ -4485,8 +5700,11 @@ class _PingReceiveScreenState extends State<_PingReceiveScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.camera_alt_outlined,
-                          color: Colors.white, size: 16),
+                      const Icon(
+                        Icons.camera_alt_outlined,
+                        color: Colors.white,
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'Camera',
@@ -4508,7 +5726,9 @@ class _PingReceiveScreenState extends State<_PingReceiveScreen> {
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 10),
+                    horizontal: 24,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary,
                     borderRadius: BorderRadius.circular(12),
@@ -4645,17 +5865,27 @@ class _NewPingSheetState extends State<_NewPingSheet> {
     );
   }
 
-  void _selectPhotoPrompt(int i) =>
-      setState(() { _section = _PromptSection.photo; _photoIdx = i; _writeOwn = false; });
+  void _selectPhotoPrompt(int i) => setState(() {
+    _section = _PromptSection.photo;
+    _photoIdx = i;
+    _writeOwn = false;
+  });
 
-  void _selectTextPrompt(int i) =>
-      setState(() { _section = _PromptSection.text; _textIdx = i; _writeOwn = false; });
+  void _selectTextPrompt(int i) => setState(() {
+    _section = _PromptSection.text;
+    _textIdx = i;
+    _writeOwn = false;
+  });
 
-  void _selectAnonPrompt(int i) =>
-      setState(() { _section = _PromptSection.anon; _anonIdx = i; _writeOwn = false; });
+  void _selectAnonPrompt(int i) => setState(() {
+    _section = _PromptSection.anon;
+    _anonIdx = i;
+    _writeOwn = false;
+  });
 
-  void _toggleWriteOwn() =>
-      setState(() { _writeOwn = !_writeOwn; });
+  void _toggleWriteOwn() => setState(() {
+    _writeOwn = !_writeOwn;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4747,14 +5977,12 @@ class _NewPingSheetState extends State<_NewPingSheet> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _kPingTargets.length,
-                  separatorBuilder: (context, idx) =>
-                      const SizedBox(width: 12),
+                  separatorBuilder: (context, idx) => const SizedBox(width: 12),
                   itemBuilder: (context, i) {
                     final (name, color) = _kPingTargets[i];
                     final selected = _selectedPerson == i;
                     return GestureDetector(
-                      onTap: () =>
-                          setState(() => _selectedPerson = i),
+                      onTap: () => setState(() => _selectedPerson = i),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -4785,9 +6013,7 @@ class _NewPingSheetState extends State<_NewPingSheet> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            name.length > 9
-                                ? '${name.substring(0, 8)}…'
-                                : name,
+                            name.length > 9 ? '${name.substring(0, 8)}…' : name,
                             style: GoogleFonts.jetBrainsMono(
                               fontSize: 9,
                               color: selected
@@ -4825,7 +6051,8 @@ class _NewPingSheetState extends State<_NewPingSheet> {
                   for (int i = 0; i < _kPhotoPrompts.length; i++)
                     _PromptChip(
                       label: _kPhotoPrompts[i],
-                      selected: !_writeOwn &&
+                      selected:
+                          !_writeOwn &&
                           _section == _PromptSection.photo &&
                           _photoIdx == i,
                       onTap: () => _selectPhotoPrompt(i),
@@ -4856,7 +6083,8 @@ class _NewPingSheetState extends State<_NewPingSheet> {
                   for (int i = 0; i < _kTextPrompts.length; i++)
                     _PromptChip(
                       label: _kTextPrompts[i],
-                      selected: !_writeOwn &&
+                      selected:
+                          !_writeOwn &&
                           _section == _PromptSection.text &&
                           _textIdx == i,
                       onTap: () => _selectTextPrompt(i),
@@ -4888,7 +6116,8 @@ class _NewPingSheetState extends State<_NewPingSheet> {
                     for (int i = 0; i < _kAnonPhotoPrompts.length; i++)
                       _PromptChip(
                         label: _kAnonPhotoPrompts[i],
-                        selected: !_writeOwn &&
+                        selected:
+                            !_writeOwn &&
                             _section == _PromptSection.anon &&
                             _anonIdx == i,
                         onTap: () => _selectAnonPrompt(i),
@@ -4904,9 +6133,7 @@ class _NewPingSheetState extends State<_NewPingSheet> {
                 child: Row(
                   children: [
                     Icon(
-                      _writeOwn
-                          ? Icons.edit_rounded
-                          : Icons.edit_outlined,
+                      _writeOwn ? Icons.edit_rounded : Icons.edit_outlined,
                       size: 14,
                       color: _writeOwn
                           ? AppColors.primary
@@ -4948,19 +6175,17 @@ class _NewPingSheetState extends State<_NewPingSheet> {
                     fillColor: AppColors.cardSurface,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide:
-                          BorderSide(color: AppColors.border),
+                      borderSide: BorderSide(color: AppColors.border),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide:
-                          BorderSide(color: AppColors.border),
+                      borderSide: BorderSide(color: AppColors.border),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
-                          color: AppColors.primary
-                              .withValues(alpha: 0.60)),
+                        color: AppColors.primary.withValues(alpha: 0.60),
+                      ),
                     ),
                     counterStyle: GoogleFonts.jetBrainsMono(
                       fontSize: 9,
@@ -5149,8 +6374,7 @@ class _PingBackSheetState extends State<_PingBackSheet> {
   }
 
   bool get _canSend =>
-      _selectedIdx != null ||
-      (_textMode && _textCtrl.text.trim().isNotEmpty);
+      _selectedIdx != null || (_textMode && _textCtrl.text.trim().isNotEmpty);
 
   void _send() {
     HapticFeedback.mediumImpact();
@@ -5225,7 +6449,9 @@ class _PingBackSheetState extends State<_PingBackSheet> {
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 150),
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 8),
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
                               color: _selectedIdx == i && !_textMode
                                   ? Colors.white.withValues(alpha: 0.22)
@@ -5258,8 +6484,10 @@ class _PingBackSheetState extends State<_PingBackSheet> {
                   Row(
                     children: [
                       Expanded(
-                          child: Divider(
-                              color: Colors.white.withValues(alpha: 0.12))),
+                        child: Divider(
+                          color: Colors.white.withValues(alpha: 0.12),
+                        ),
+                      ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
@@ -5271,8 +6499,10 @@ class _PingBackSheetState extends State<_PingBackSheet> {
                         ),
                       ),
                       Expanded(
-                          child: Divider(
-                              color: Colors.white.withValues(alpha: 0.12))),
+                        child: Divider(
+                          color: Colors.white.withValues(alpha: 0.12),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -5285,7 +6515,9 @@ class _PingBackSheetState extends State<_PingBackSheet> {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: _textMode
                             ? Colors.white.withValues(alpha: 0.12)
@@ -5299,11 +6531,13 @@ class _PingBackSheetState extends State<_PingBackSheet> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.edit_rounded,
-                              size: 15,
-                              color: _textMode
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.42)),
+                          Icon(
+                            Icons.edit_rounded,
+                            size: 15,
+                            color: _textMode
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.42),
+                          ),
                           const SizedBox(width: 8),
                           Text(
                             'Type something instead…',
@@ -5325,7 +6559,8 @@ class _PingBackSheetState extends State<_PingBackSheet> {
                         color: Colors.white.withValues(alpha: 0.07),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.20)),
+                          color: Colors.white.withValues(alpha: 0.20),
+                        ),
                       ),
                       child: TextField(
                         controller: _textCtrl,
@@ -5333,8 +6568,10 @@ class _PingBackSheetState extends State<_PingBackSheet> {
                         maxLines: 3,
                         minLines: 2,
                         maxLength: 120,
-                        style:
-                            GoogleFonts.inter(fontSize: 14, color: Colors.white),
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: Colors.white,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Say something…',
                           hintStyle: GoogleFonts.inter(
@@ -5421,14 +6658,21 @@ class _PingBackSheetState extends State<_PingBackSheet> {
 // PingSendSheet — 85% sheet: people list → prompt picker → camera
 // ---------------------------------------------------------------------------
 
-const _kSendPeople = <(String, int, Color)>[
-  ('alex_xyz', 342, Color(0xFF2A3040)),
-  ('jordan_23', 298, Color(0xFF30281A)),
-  ('study_bug', 187, Color(0xFF1E2A28)),
-  ('sunset_chaser', 156, Color(0xFF382818)),
-  ('coffee_talk', 134, Color(0xFF182030)),
-  ('library_mode', 98, Color(0xFF1A2830)),
-  ('fest_vibes', 76, Color(0xFF1E3028)),
+// The "Ping Someone" strip is the user's full follow list, unfiltered by
+// streak — a brand-new user (0 pings sent, no streaks with anyone yet)
+// must still see every person they personally follow here, not just people
+// they already have activity with. `library_mode2`/`campus_life` below
+// (streak 0) exist specifically to prove that a zero-streak follow still
+// renders — never gate `_PingSomeoneStrip`'s itemBuilder on streak > 0.
+final _kSendPeople = <(String, int, Color)>[
+  ('alex_xyz', 342, pingTintFor('alex_xyz')),
+  ('jordan_23', 298, pingTintFor('jordan_23')),
+  ('study_bug', 187, pingTintFor('study_bug')),
+  ('sunset_chaser', 156, pingTintFor('sunset_chaser')),
+  ('coffee_talk', 134, pingTintFor('coffee_talk')),
+  ('library_mode', 98, pingTintFor('library_mode')),
+  ('fest_vibes', 76, pingTintFor('fest_vibes')),
+  ('campus_life', 0, pingTintFor('library_mode')),
 ];
 
 const _kSendPhotoPrompts = <String>[
@@ -5511,7 +6755,11 @@ class _PingSendSheetState extends State<PingSendSheet> {
                 if (_selectedPersonIdx != null) ...[
                   GestureDetector(
                     onTap: _back,
-                    child: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textPrimary, size: 18),
+                    child: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      color: AppColors.textPrimary,
+                      size: 18,
+                    ),
                   ),
                   const SizedBox(width: 12),
                 ],
@@ -5536,7 +6784,11 @@ class _PingSendSheetState extends State<PingSendSheet> {
                       color: Colors.white.withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.close, color: AppColors.textMuted, size: 15),
+                    child: const Icon(
+                      Icons.close,
+                      color: AppColors.textMuted,
+                      size: 15,
+                    ),
                   ),
                 ),
               ],
@@ -5560,9 +6812,10 @@ class _PingSendSheetState extends State<PingSendSheet> {
     final filtered = _searchQuery.isEmpty
         ? _kSendPeople
         : _kSendPeople
-            .where((p) =>
-                p.$1.toLowerCase().contains(_searchQuery.toLowerCase()))
-            .toList();
+              .where(
+                (p) => p.$1.toLowerCase().contains(_searchQuery.toLowerCase()),
+              )
+              .toList();
 
     return Column(
       children: [
@@ -5579,8 +6832,11 @@ class _PingSendSheetState extends State<PingSendSheet> {
             child: Row(
               children: [
                 const SizedBox(width: 14),
-                Icon(Icons.search_rounded,
-                    color: Colors.white.withValues(alpha: 0.35), size: 18),
+                Icon(
+                  Icons.search_rounded,
+                  color: Colors.white.withValues(alpha: 0.35),
+                  size: 18,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
@@ -5622,12 +6878,15 @@ class _PingSendSheetState extends State<PingSendSheet> {
                       filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 12),
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.09)),
+                            color: Colors.white.withValues(alpha: 0.09),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -5638,7 +6897,8 @@ class _PingSendSheetState extends State<PingSendSheet> {
                                 shape: BoxShape.circle,
                                 color: color,
                                 border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.15)),
+                                  color: Colors.white.withValues(alpha: 0.15),
+                                ),
                               ),
                               child: Center(
                                 child: Text(
@@ -5674,8 +6934,9 @@ class _PingSendSheetState extends State<PingSendSheet> {
                                         'score $score',
                                         style: GoogleFonts.jetBrainsMono(
                                           fontSize: 10,
-                                          color:
-                                              Colors.white.withValues(alpha: 0.38),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.38,
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -5727,21 +6988,28 @@ class _PingSendSheetState extends State<PingSendSheet> {
                     onTap: () => setState(() => _windowHours = h),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 7,
+                      ),
                       decoration: BoxDecoration(
                         color: _windowHours == h
                             ? Colors.white.withValues(alpha: 0.16)
                             : Colors.white.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: _windowHours == h ? 0.30 : 0.12),
+                          color: Colors.white.withValues(
+                            alpha: _windowHours == h ? 0.30 : 0.12,
+                          ),
                         ),
                       ),
                       child: Text(
                         '${h}h',
                         style: GoogleFonts.jetBrainsMono(
                           fontSize: 12,
-                          fontWeight: _windowHours == h ? FontWeight.w700 : FontWeight.w400,
+                          fontWeight: _windowHours == h
+                              ? FontWeight.w700
+                              : FontWeight.w400,
                           color: _windowHours == h
                               ? Colors.white
                               : Colors.white.withValues(alpha: 0.50),
@@ -5772,7 +7040,9 @@ class _PingSendSheetState extends State<PingSendSheet> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF833AB4).withValues(alpha: 0.30)),
+                  border: Border.all(
+                    color: const Color(0xFF833AB4).withValues(alpha: 0.30),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -5786,7 +7056,11 @@ class _PingSendSheetState extends State<PingSendSheet> {
                         ),
                       ),
                     ),
-                    const Icon(Icons.send_rounded, color: Color(0xFFE1306C), size: 16),
+                    const Icon(
+                      Icons.send_rounded,
+                      color: Color(0xFFE1306C),
+                      size: 16,
+                    ),
                   ],
                 ),
               ),
@@ -5903,9 +7177,15 @@ class _PingRepliesFeedScreenState extends State<_PingRepliesFeedScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.10),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
                     ),
-                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 16),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -5935,23 +7215,26 @@ class _PingRepliesFeedScreenState extends State<_PingRepliesFeedScreen> {
                 // Page dots
                 Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: List.generate(total, (i) => AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: i == _currentPage ? 18 : 6,
-                    height: 6,
-                    margin: const EdgeInsets.only(left: 4),
-                    decoration: BoxDecoration(
-                      gradient: i == _currentPage
-                          ? const LinearGradient(
-                              colors: [Color(0xFF833AB4), Color(0xFFE1306C)],
-                            )
-                          : null,
-                      color: i == _currentPage
-                          ? null
-                          : Colors.white.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(3),
+                  children: List.generate(
+                    total,
+                    (i) => AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: i == _currentPage ? 18 : 6,
+                      height: 6,
+                      margin: const EdgeInsets.only(left: 4),
+                      decoration: BoxDecoration(
+                        gradient: i == _currentPage
+                            ? const LinearGradient(
+                                colors: [Color(0xFF833AB4), Color(0xFFE1306C)],
+                              )
+                            : null,
+                        color: i == _currentPage
+                            ? null
+                            : Colors.white.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
-                  )),
+                  ),
                 ),
               ],
             ),
@@ -6015,17 +7298,15 @@ class _ReplyFeedPageState extends State<_ReplyFeedPage>
   @override
   void initState() {
     super.initState();
-    _holdCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )
-      ..addListener(_onProgress)
-      ..addStatusListener((s) {
-        if (s == AnimationStatus.completed && mounted) {
-          HapticFeedback.heavyImpact();
-          setState(() => _revealed = true);
-        }
-      });
+    _holdCtrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 3))
+          ..addListener(_onProgress)
+          ..addStatusListener((s) {
+            if (s == AnimationStatus.completed && mounted) {
+              HapticFeedback.heavyImpact();
+              setState(() => _revealed = true);
+            }
+          });
   }
 
   void _onProgress() {
@@ -6096,8 +7377,9 @@ class _ReplyFeedPageState extends State<_ReplyFeedPage>
                               CircularProgressIndicator(
                                 value: _holdCtrl.value,
                                 strokeWidth: 3.5,
-                                backgroundColor:
-                                    Colors.white.withValues(alpha: 0.15),
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.15,
+                                ),
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   Color.lerp(
                                     const Color(0xFF833AB4),
@@ -6136,8 +7418,7 @@ class _ReplyFeedPageState extends State<_ReplyFeedPage>
                               color: Colors.white.withValues(alpha: 0.50),
                             ),
                           ),
-                        if (_holding)
-                          const SizedBox(height: 4),
+                        if (_holding) const SizedBox(height: 4),
                         if (_holding)
                           Text(
                             '${((1 - _holdCtrl.value) * 3).ceil()}s',
@@ -6157,7 +7438,9 @@ class _ReplyFeedPageState extends State<_ReplyFeedPage>
                     left: 14,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.55),
                         borderRadius: BorderRadius.circular(6),
@@ -6176,7 +7459,9 @@ class _ReplyFeedPageState extends State<_ReplyFeedPage>
                     right: 14,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.55),
                         borderRadius: BorderRadius.circular(6),
@@ -6225,8 +7510,9 @@ class _ReplyFeedPageState extends State<_ReplyFeedPage>
                             borderRadius: BorderRadius.circular(50),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF833AB4)
-                                    .withValues(alpha: 0.45),
+                                color: const Color(
+                                  0xFF833AB4,
+                                ).withValues(alpha: 0.45),
                                 blurRadius: 20,
                                 offset: const Offset(0, 6),
                               ),
@@ -6235,8 +7521,11 @@ class _ReplyFeedPageState extends State<_ReplyFeedPage>
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.refresh_rounded,
-                                  color: Colors.white, size: 16),
+                              const Icon(
+                                Icons.refresh_rounded,
+                                color: Colors.white,
+                                size: 16,
+                              ),
                               const SizedBox(width: 8),
                               Text(
                                 'Ping back reply to ${widget.username}',
@@ -6407,9 +7696,7 @@ class _PingChoiceOptionState extends State<_PingChoiceOption> {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: _pressed ? 0.10 : 0.06),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.12),
-            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
           ),
           child: Row(
             children: [
@@ -6484,11 +7771,13 @@ class _PingSentOverlayState extends State<_PingSentOverlay>
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 300))
-      ..forward();
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    )..forward();
     _slide = Tween<Offset>(
-            begin: const Offset(0, -1.8), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+      begin: const Offset(0, -1.8),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
     _opacity = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
     Future.delayed(const Duration(milliseconds: 2000), _dismiss);
   }
@@ -6524,12 +7813,15 @@ class _PingSentOverlayState extends State<_PingSentOverlay>
                     filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 11),
+                        horizontal: 16,
+                        vertical: 11,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.13),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.18)),
+                          color: Colors.white.withValues(alpha: 0.18),
+                        ),
                       ),
                       child: Text(
                         widget.message,

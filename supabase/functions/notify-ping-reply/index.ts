@@ -30,6 +30,20 @@ Deno.serve(async (req) => {
   }
   const recipientId = ping.sender_id as string;
 
+  // Never push someone their OWN reply. This matters most for GROUP pings:
+  // sendGroupPing deliberately includes the sender as a recipient (see
+  // PingService's own doc on anonymous group pings), so when the sender
+  // replies on their own thread, sender_id === replier_id and this used to
+  // push them "🔥 <their own name> replied to your ping."
+  //
+  // The DB trigger notify_ping_reply() has always had this exact guard
+  // (`v_sender = NEW.replier_id → RETURN NEW`), so no in-app notification
+  // row was ever written for a self-reply — only this push escaped, which
+  // is why it read as a notification with nothing behind it in the list.
+  if (recipientId === reply.replier_id) {
+    return jsonResponse({ skipped: "self reply" });
+  }
+
   const won = await claimNotification({
     recipientId,
     eventType: "ping_replied",

@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../features/profile_v2/profile_navigation.dart';
 import '../../../services/realmoji_service.dart';
 
 // ---------------------------------------------------------------------------
@@ -110,6 +111,7 @@ class _ReactorAvatar extends StatelessWidget {
                           style: TextStyle(fontSize: size * 0.5)),
                     )
                   : CachedNetworkImage(
+              memCacheWidth: 1080,
                       imageUrl: reaction.selfieUrl!,
                       fit: BoxFit.cover,
                       errorWidget: (_, _, _) => Container(color: const Color(0xFF17171B)),
@@ -170,22 +172,28 @@ class _ReactorListSheet extends StatelessWidget {
                   final r = reactors[i];
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                    child: Row(
-                      children: [
-                        _ReactorAvatar(reaction: r, size: 34),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            r.userName,
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                        openProfile(context, r.userId);
+                      },
+                      child: Row(
+                        children: [
+                          _ReactorAvatar(reaction: r, size: 34),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              r.userName,
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
-                        ),
-                        Text(r.emojiType.glyph, style: const TextStyle(fontSize: 18)),
-                      ],
+                          Text(r.emojiType.glyph, style: const TextStyle(fontSize: 18)),
+                        ],
+                      ),
                     ),
                   );
                 },

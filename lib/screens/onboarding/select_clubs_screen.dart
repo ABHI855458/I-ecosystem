@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../../main_shell.dart';
+import '../../core/feature_flags.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,8 +10,8 @@ import 'package:shimmer/shimmer.dart';
 import '../../core/constants.dart';
 import '../../core/glass.dart';
 import '../../core/supabase_config.dart';
-import '../../main_shell.dart';
-import '../../services/current_user_service.dart';
+import 'onboarding_circles_screen.dart';
+import 'onboarding_duo_screen.dart';
 
 // ---------------------------------------------------------------------------
 // SelectClubsScreen — shown once per account, right after OnboardingScreen
@@ -58,19 +60,42 @@ class _SelectClubsScreenState extends State<SelectClubsScreen> {
   Future<void> _load() async {
     setState(() => _state = _LoadState.loading);
     try {
-      final rows = await supabase
-          .from('communities')
-          .select('id, name, icon_url')
-          .isFilter('deleted_at', null)
-          .order('name') as List;
+      // LAUNCH-BLOCKING FIX. trg_autojoin_general already inserted this
+      // user's General row before this screen ever renders — but the
+      // community list used to be fetched WITHOUT excluding it, so General
+      // was offered as an unselected chip. _kMinCommunities requires 5 of
+      // 6 total: unless the user happened to leave out General specifically,
+      // the batch insert below hit community_members' PK (community_id,
+      // user_id) and failed as ONE statement — losing every pick, not just
+      // the colliding one. Verified live: General had 11 members (everyone,
+      // from the trigger) while every other community had 1-2 — proof this
+      // was failing for most real users, not a theoretical case.
+      //
+      // Excluding already-joined ids here removes the collision at its
+      // source; the upsert in _joinInBackground below is defense in depth
+      // for any community joined between this fetch and that write.
+      final userId = supabase.auth.currentUser!.id;
+      final results = await Future.wait([
+        supabase
+            .from('communities')
+            .select('id, name, icon_url')
+            .isFilter('deleted_at', null)
+            .order('name'),
+        supabase.from('community_members').select('community_id').eq('user_id', userId),
+      ]);
       if (!mounted) return;
-      _communities = rows.cast<Map<String, dynamic>>();
+      final allRows = (results[0] as List).cast<Map<String, dynamic>>();
+      final joinedIds = (results[1] as List)
+          .cast<Map<String, dynamic>>()
+          .map((r) => r['community_id'] as String)
+          .toSet();
+      _communities = allRows.where((c) => !joinedIds.contains(c['id'])).toList();
       setState(() => _state = _communities.isEmpty ? _LoadState.empty : _LoadState.loaded);
     } catch (e, st) {
       debugPrint('[SelectClubsScreen._load] fetch communities failed: $e\n$st');
       if (mounted) {
         setState(() {
-          _error = "Couldn't load clubs.";
+          _error = "Couldn't load communities.";
           _state = _LoadState.error;
         });
       }
@@ -84,26 +109,91 @@ class _SelectClubsScreenState extends State<SelectClubsScreen> {
     });
   }
 
-  void _finish() {
+  bool _joining = false;
+
+  /// Raised from 1 -> 5. Explicit request: "set the communities while
+  /// joining to set minimum of 5 while joining". Below this, the empty-
+  /// database bypass ([_LoadState.empty]'s own "Explore communities later"
+  /// button, and this button being disabled entirely when there is nothing
+  /// to join) is still the one legitimate way past it — a fresh install
+  /// with under 5 communities SEEDED has no real 5 to pick from, and that
+  /// is a data problem, not something to block signup over.
+  // 5 -> 2 for launch (explicit request: "lower minimum clubs" — less
+  // friction on the first screen; more can be joined any time later).
+  static const _kMinCommunities = 2;
+
+  /// LAUNCH-BLOCKING FIX. _communities now excludes already-joined
+  /// communities (see _load), so this can legitimately offer FEWER than
+  /// [_kMinCommunities] chips — e.g. a user who already joined 2 of the
+  /// live 6 has only 4 left to pick from. The unclamped constant made
+  /// _finish demand 5 picks from a 4-chip screen: Continue stayed enabled,
+  /// every tap toasted "pick N more", and there was no way to ever satisfy
+  /// it — a real dead end, not just this screen requiring more than exists.
+  int get _effectiveMin =>
+      _communities.length < _kMinCommunities ? _communities.length : _kMinCommunities;
+
+  // BUG FIX / explicit request: this used to let you "Continue" (or
+  // "Skip this") with zero clubs picked, joining nothing. Now mandatory —
+  // at least [_effectiveMin] picks, no skip — since the next two
+  // screens (Add Friends, Pin People) both need a real community roster to
+  // show real people from, not an empty one.
+  Future<void> _finish() async {
     final selectedIds = _selected.toList();
-    // Captured before navigating — ScaffoldMessenger resolves to this app's
-    // single root messenger (MaterialApp-level), so it stays valid to show
-    // a SnackBar on even after this screen's own context is gone.
+    final min = _effectiveMin;
+    if (selectedIds.length < min) {
+      final remaining = min - selectedIds.length;
+      showGlassToast(
+        context,
+        selectedIds.isEmpty
+            ? 'Pick at least $min to continue'
+            : 'Pick $remaining more to continue',
+      );
+      return;
+    }
+    if (_joining) return;
+    setState(() => _joining = true);
+
     final messenger = ScaffoldMessenger.of(context);
-
-    if (selectedIds.isEmpty) {
-      showGlassToast(context, 'Pick at least one to personalize your feed');
+    try {
+      await _joinInBackground(selectedIds, messenger);
+    } finally {
+      if (mounted) setState(() => _joining = false);
     }
+    if (!mounted) return;
 
-    // Optimistic: never make the user wait on the network here — navigate
-    // now, join in the background, retry once on failure.
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const MainShell()),
-      (route) => false,
+    // The people pool for the next steps (Friends, pins, Duos) is EVERY
+    // community I'm now in — the clubs just picked PLUS "General", which
+    // everyone is auto-joined to. It used to be only the picked clubs, so a
+    // new student saw just the one or two people who happened to share a
+    // club ("I could only see abishek for pinning and friends, but everyone
+    // is in General").
+    var poolIds = selectedIds;
+    try {
+      final authId = SupabaseConfig.client.auth.currentUser?.id;
+      if (authId != null) {
+        final rows = await SupabaseConfig.client
+            .from('community_members')
+            .select('community_id')
+            .eq('user_id', authId);
+        poolIds = {
+          ...selectedIds,
+          for (final r in rows as List) (r as Map)['community_id'] as String,
+        }.toList();
+      }
+    } catch (_) {
+      // Falls back to just the picked clubs.
+    }
+    if (!mounted) return;
+
+    // Clubs → Circles → app. Circles stay part of sign-up (without them a
+    // new person lands in an empty Friends side with no idea who's who);
+    // in fast onboarding the Circles screen goes straight into the app,
+    // skipping Pin people / Duo (one Duo is asked for after the first post).
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => OnboardingCirclesScreen(communityIds: poolIds),
+      ),
     );
-    if (selectedIds.isNotEmpty) {
-      unawaited(_joinInBackground(selectedIds, messenger));
-    }
   }
 
   Future<void> _joinInBackground(
@@ -111,10 +201,26 @@ class _SelectClubsScreenState extends State<SelectClubsScreen> {
     ScaffoldMessengerState messenger,
   ) async {
     Future<void> attempt() async {
-      final userId = await CurrentUserService.instance.resolveId();
-      await supabase.from('community_members').insert([
-        for (final id in communityIds) {'community_id': id, 'user_id': userId},
-      ]);
+      // community_members.user_id FKs profiles.id (= auth.uid()), NOT
+      // users.id — CurrentUserService.resolveId() returns the latter, which
+      // made every insert here fail its FK (and its `WITH CHECK (user_id =
+      // auth.uid())` policy) silently until the retry above surfaced it as
+      // "unable to join community". See the identity-reconciliation plan;
+      // this is Phase 0, correct under every long-term option there.
+      final userId = supabase.auth.currentUser!.id;
+      // DEFENSE IN DEPTH for the PK collision fixed in _load (General
+      // already excluded there). upsert+onConflict makes this insert
+      // idempotent per row instead of all-or-nothing, so a community
+      // joined by some other path between that fetch and this write (a
+      // second device, a retried request) can no longer fail the WHOLE
+      // batch — only that one row is a no-op, every other pick still
+      // lands. joined_at is deliberately omitted from the payload so an
+      // upsert on an existing row never overwrites its real join date.
+      await supabase.from('community_members').upsert(
+        [for (final id in communityIds) {'community_id': id, 'user_id': userId}],
+        onConflict: 'community_id,user_id',
+        ignoreDuplicates: true,
+      );
     }
 
     try {
@@ -143,7 +249,7 @@ class _SelectClubsScreenState extends State<SelectClubsScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        "Couldn't save your club picks — you can join from a club's page instead.",
+                        "Couldn't save your picks — you can join from a community's page instead.",
                         style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
                       ),
                     ),
@@ -168,7 +274,7 @@ class _SelectClubsScreenState extends State<SelectClubsScreen> {
             children: [
               const SizedBox(height: 24),
               Text(
-                'Choose Your Clubs',
+                'Join Your Communities',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
@@ -177,32 +283,39 @@ class _SelectClubsScreenState extends State<SelectClubsScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Pick communities to shape your feed — you can join more later.',
+                'Pick at least $_kMinCommunities to continue — you can join more later.',
                 style: GoogleFonts.inter(fontSize: 15, color: AppColors.textMuted, height: 1.5),
               ),
               const SizedBox(height: 28),
               Expanded(child: _buildBody()),
               const SizedBox(height: 12),
+              // "Skip this" removed — explicit request ("they shall select
+              // to continue, don't allow skip"). The empty-state's own
+              // "Explore communities later" button (below, _buildBody's
+              // _LoadState.empty branch) is the one legitimate bypass left:
+              // if the communities table itself has nothing to join, there
+              // is no real roster for Add Friends/Pin People to show
+              // either, so that path goes straight to the Duo step.
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _state == _LoadState.empty ? null : _finish,
+                  onPressed: _state == _LoadState.empty || _joining ? null : _finish,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: AppColors.onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: const Text('Continue', style: TextStyle(fontWeight: FontWeight.w700)),
+                  child: _joining
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.onPrimary),
+                        )
+                      : const Text('Continue', style: TextStyle(fontWeight: FontWeight.w700)),
                 ),
               ),
-              Center(
-                child: TextButton(
-                  onPressed: _finish,
-                  child: Text('Skip this', style: GoogleFonts.inter(color: AppColors.textMuted)),
-                ),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 20),
             ],
           ),
         ),
@@ -236,7 +349,7 @@ class _SelectClubsScreenState extends State<SelectClubsScreen> {
               const Icon(Icons.groups_outlined, color: AppColors.textMuted, size: 36),
               const SizedBox(height: 14),
               Text(
-                'No clubs to show yet.',
+                'No communities to show yet.',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -251,7 +364,21 @@ class _SelectClubsScreenState extends State<SelectClubsScreen> {
               ),
               const SizedBox(height: 20),
               TextButton(
-                onPressed: _finish,
+                // Skips _finish(): with zero communities in the app there
+                // is no real roster for the Add Friends/Pin People steps,
+                // and _finish() requires a non-empty selection anyway. The
+                // Duo step is still mandatory (it has search + QR, so it
+                // needs no roster).
+                onPressed: () => kFastOnboarding
+                    ? Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute<void>(builder: (_) => const MainShell()),
+                        (route) => false,
+                      )
+                    : Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const OnboardingDuoScreen(communityIds: []),
+                        ),
+                      ),
                 child: const Text('Explore communities later'),
               ),
             ],

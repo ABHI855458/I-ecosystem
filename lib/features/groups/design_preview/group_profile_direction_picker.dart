@@ -37,7 +37,7 @@ class GroupProfileDirectionPicker extends StatelessWidget {
               _DirectionButton(
                 id: '1a',
                 title: 'Cover',
-                subtitle: 'Collage banner, stats bar, tabbed dip grid.',
+                subtitle: 'Collage banner, stats bar, tabbed posts grid.',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const GroupProfileCoverScreen()),
                 ),

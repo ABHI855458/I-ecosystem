@@ -76,6 +76,22 @@ export async function claimNotification(params: {
  * Sends a push to every device_tokens row for a user. Best-effort per
  * token — one stale/invalid token doesn't stop delivery to the user's
  * other devices.
+ *
+ * BUG FIX (reported: "my friends were getting the same notification
+ * several times"). A device's FCM token rotates more often than assumed
+ * (app updates, Play Services updates, cache clears), and nothing ever
+ * removed a user's OLDER token once a newer one was issued for the same
+ * physical device — device_tokens accumulated indefinitely (one real user
+ * had 6 live rows from one device). This function sent to every row with
+ * no dedup and no cleanup, so that device received every push once per
+ * stale-but-still-technically-deliverable token.
+ *
+ * Now deletes any token FCM confirms is dead ([sendPush]'s `deadToken`) —
+ * self-healing for whatever accumulates from here, on top of the one-time
+ * cleanup in 20260924000000_dedupe_device_tokens.sql for what had already
+ * built up. The real fix that stops NEW accumulation is on the client
+ * side, in registerDeviceToken (notification_service.dart) — this is the
+ * other half, cleaning up what still gets through.
  */
 export async function sendToUser(params: {
   userId: string;
@@ -101,11 +117,26 @@ export async function sendToUser(params: {
     ...(params.data ?? {}),
   };
 
-  await Promise.all(
-    tokens.map((row: { token: string }) =>
-      sendPush({ token: row.token, title: params.title, body: params.body, data: payloadData })
-    ),
+  const results = await Promise.all(
+    tokens.map(async (row: { token: string }) => ({
+      token: row.token,
+      result: await sendPush({ token: row.token, title: params.title, body: params.body, data: payloadData }),
+    })),
   );
+
+  const deadTokens = results.filter((r) => r.result.deadToken).map((r) => r.token);
+  if (deadTokens.length > 0) {
+    const { error: delError } = await supabaseAdmin
+      .from("device_tokens")
+      .delete()
+      .eq("user_id", params.userId)
+      .in("token", deadTokens);
+    if (delError) {
+      console.error("device_tokens cleanup failed:", delError);
+    } else {
+      console.log(`Removed ${deadTokens.length} dead token(s) for user ${params.userId}`);
+    }
+  }
 }
 
 /** First name / handle for notification copy — falls back to anon_name. */

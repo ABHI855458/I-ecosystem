@@ -5,7 +5,7 @@ import 'mock_group_data.dart';
 import 'widgets/avatar.dart';
 import 'widgets/frosted_icon_button.dart';
 
-/// Direction 1a "Cover" — collage banner, stats bar, tabbed dip grid. See
+/// Direction 1a "Cover" — collage banner, stats bar, tabbed posts grid. See
 /// design-refs/design_handoff_group_profile/README.md §"Direction 1a".
 /// Mock data only; does not touch the real group_profile_screen.dart.
 class GroupProfileCoverScreen extends StatefulWidget {
@@ -15,10 +15,10 @@ class GroupProfileCoverScreen extends StatefulWidget {
   State<GroupProfileCoverScreen> createState() => _GroupProfileCoverScreenState();
 }
 
-enum _Tab { dips, members, recaps }
+enum _Tab { posts, members, recaps }
 
 class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
-  _Tab _tab = _Tab.dips;
+  _Tab _tab = _Tab.posts;
   bool _loading = false;
   bool _error = false;
 
@@ -74,14 +74,14 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
     );
   }
 
-  void _openDipDetail(int index) {
+  void _openPostDetail(int index) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF111118),
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text('Dip #${index + 1} — placeholder detail view', style: GoogleFonts.dmSans(color: Colors.white)),
+          child: Text('Post #${index + 1} — placeholder detail view', style: GoogleFonts.dmSans(color: Colors.white)),
         ),
       ),
     );
@@ -158,7 +158,7 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
                         ),
                         child: Row(
                           children: [
-                            _StatCell(value: '${_data.totalDips}', label: 'dips', showDivider: true),
+                            _StatCell(value: '${_data.totalPosts}', label: 'posts', showDivider: true),
                             _StatCell(value: '${_data.streak}', label: 'day streak', showDivider: true),
                             _StatCell(value: '${_data.onTimePercent}%', label: 'on time', showDivider: false),
                           ],
@@ -172,7 +172,7 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
                               height: 44,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-                              child: Text('Post a dip', style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
+                              child: Text('Post to the group', style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -200,7 +200,7 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
 
   Widget _tabBody(int columns) {
     switch (_tab) {
-      case _Tab.dips:
+      case _Tab.posts:
         return Padding(
           padding: const EdgeInsets.all(12),
           child: GridView.builder(
@@ -217,7 +217,7 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
               final grad = _gridGradients[i % _gridGradients.length];
               final chipGrad = Avatar.gradientFor(_data.members[i % _data.members.length].id);
               return GestureDetector(
-                onTap: () => _openDipDetail(i),
+                onTap: () => _openPostDetail(i),
                 child: Container(
                   clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
@@ -409,7 +409,7 @@ class _Tabs extends StatelessWidget {
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)))),
       child: Row(
         children: [
-          _TabItem(label: 'Dips', selected: active == _Tab.dips, onTap: () => onChanged(_Tab.dips)),
+          _TabItem(label: 'Posts', selected: active == _Tab.posts, onTap: () => onChanged(_Tab.posts)),
           const SizedBox(width: 22),
           _TabItem(label: 'Members', selected: active == _Tab.members, onTap: () => onChanged(_Tab.members)),
           const SizedBox(width: 22),

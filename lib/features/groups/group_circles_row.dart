@@ -220,6 +220,7 @@ class _GroupCircle extends StatelessWidget {
                         ),
                       )
                     : CachedNetworkImage(
+              memCacheWidth: 1080,
                         imageUrl: iconUrl,
                         fit: BoxFit.cover,
                         placeholder: (_, _) => Container(color: AppColors.cardSurface),

@@ -101,10 +101,28 @@ export interface PushPayload {
   data: Record<string, string>;
 }
 
-/** Sends one push. Returns false (never throws) on a stale/invalid token so
- * callers can fan out over many tokens without one bad token failing the
- * batch — see notify.ts sendToUser. */
-export async function sendPush(payload: PushPayload): Promise<boolean> {
+export interface SendResult {
+  ok: boolean;
+  /** True when FCM says this token will NEVER work again — the app instance
+   * was uninstalled, or a newer token superseded it. FCM v1's signal for
+   * this is a plain HTTP 404 with `error.status: "UNREGISTERED"` (or, on
+   * some responses, "NOT_FOUND"). Distinct from every other failure
+   * (network blip, quota, malformed payload), which must NOT delete a
+   * token that might still be good on the next attempt. */
+  deadToken: boolean;
+}
+
+/** Sends one push. Never throws — callers fan out over many tokens without
+ * one bad token failing the batch (see notify.ts sendToUser), and [deadToken]
+ * tells the caller which rows are safe to delete from device_tokens.
+ *
+ * BUG FIX: this used to return a bare boolean and nothing downstream ever
+ * acted on a failure — a token FCM had permanently given up on stayed in
+ * device_tokens forever and kept being retried (and, worse, a token that
+ * still half-works during its rotation grace period kept succeeding and
+ * delivering a SEPARATE copy of every push). See sendToUser's own doc for
+ * the "same notification several times" bug this was one half of. */
+export async function sendPush(payload: PushPayload): Promise<SendResult> {
   const projectId = Deno.env.get("FCM_PROJECT_ID");
   const accessToken = await getAccessToken();
 
@@ -131,7 +149,13 @@ export async function sendPush(payload: PushPayload): Promise<boolean> {
   if (!resp.ok) {
     const errText = await resp.text();
     console.error(`FCM send failed for token ${payload.token.slice(0, 12)}…: ${resp.status} ${errText}`);
-    return false;
+    // HTTP 404 is FCM v1's unambiguous "this registration token is gone,
+    // stop sending to it" signal (error.status UNREGISTERED / NOT_FOUND).
+    // Every other status (400 malformed, 401/403 auth, 429/5xx transient)
+    // says nothing about the TOKEN's validity, so those tokens are left
+    // alone — deleting on a transient error would drop a perfectly good
+    // device the next time this exact send would have succeeded.
+    return { ok: false, deadToken: resp.status === 404 };
   }
-  return true;
+  return { ok: true, deadToken: false };
 }

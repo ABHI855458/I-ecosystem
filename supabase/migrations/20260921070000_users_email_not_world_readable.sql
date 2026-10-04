@@ -1,0 +1,42 @@
+-- LAUNCH-BLOCKING: every user's email address was readable by every other
+-- authenticated user.
+--
+-- THE BUG. `users_select` is USING (true) — deliberately, because names,
+-- usernames and avatars are meant to be looked up app-wide. But `email`
+-- carried a column-level SELECT grant to `authenticated` alongside them, so
+-- the permissive row policy exposed it too.
+--
+-- Impersonated probe (real authenticated user, before):
+--   foreign_emails_visible = 8, rows_visible = 8   -- i.e. ALL of them
+-- Required after: foreign_emails_visible = 0 while rows_visible stays 8
+-- (the rows must remain readable; only the column is being withdrawn).
+--
+-- The privacy policy lists email under "Account information" beside bio,
+-- which reads as profile data — it never says your email is visible to
+-- every other student. Confirmed as a bug, not a product decision.
+--
+-- THE FIX. Withdraw the column grant rather than narrowing users_select.
+-- Narrowing the row policy would break every legitimate app-wide lookup
+-- (profiles, search, friend lists, group members). Column-level revocation
+-- removes exactly the one attribute that should never have been shared and
+-- nothing else. This is the same mechanism `birth_date` already uses: no
+-- grant at all, written through a SECURITY DEFINER RPC.
+--
+-- NOTHING BREAKS. Verified before applying:
+--   * No client query selects users.email — the only `.select(...email...)`
+--     in lib/ is `moderators(email)` (community_feed_service.dart:223),
+--     a different table, untouched here.
+--   * No wildcard `.select('*')` against users exists, so nothing picks the
+--     column up implicitly.
+--   * The signed-in user's OWN email comes from the auth session
+--     (`authUser?.email`, e.g. onboarding_screen.dart:70), not this table,
+--     so self-access is unaffected.
+--   * `service_role` keeps full access, so the delete-account edge function
+--     and every other server-side path are unaffected.
+--
+-- If a future feature genuinely needs email lookup (e.g. invite-by-email),
+-- it must go through a SECURITY DEFINER function that takes an address and
+-- returns a boolean/user id — never by restoring this grant.
+
+REVOKE SELECT (email) ON public.users FROM authenticated;
+REVOKE SELECT (email) ON public.users FROM anon;

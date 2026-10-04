@@ -1,24 +1,27 @@
-import 'dart:async';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/constants.dart';
-import '../../services/group_service.dart';
+import '../../services/anon_identity.dart';
+import '../../services/circle_service.dart';
+import '../../services/people_service.dart';
 
 // ---------------------------------------------------------------------------
-// GroupMemberPickerScreen — real-search, multi-select people picker.
+// GroupMemberPickerScreen — multi-select people picker for group-album
+// INVITES. Picked people are invited, not added: they join only by accepting
+// (group_invites — see 20260926000000_circles_replace_friendships.sql).
 //
-// No reusable "add people to X" component existed anywhere in this codebase
-// to actually reuse: profile_screen.dart's _SearchScreen People tab is the
-// closest visual precedent (avatar + name + handle row, same styling
-// borrowed here), but it's a private class searching a hardcoded mock list
-// with a single-select Follow toggle — no real backend query, no multi-
-// select, not exported. This is a new screen, backed by
-// GroupService.searchUsers (the first real user-search query in the app),
-// with a confirm bar instead of per-row follow toggles.
+// Pool: people in any of my circles first, then everyone else in my
+// communities. There's no friendship gate any more — the invite itself is
+// the consent step.
+//
+// The pool is small enough that one fetch up front plus client-side
+// filtering (rather than a debounced query per keystroke against the
+// backend) is simpler and has no meaningful cost — there's no longer a
+// network round-trip to debounce, so the Timer this screen used to carry is
+// gone too.
 // ---------------------------------------------------------------------------
 
 class GroupMemberPickerScreen extends StatefulWidget {
@@ -34,40 +37,42 @@ class GroupMemberPickerScreen extends StatefulWidget {
 
 class _GroupMemberPickerScreenState extends State<GroupMemberPickerScreen> {
   final _queryCtrl = TextEditingController();
-  Timer? _debounce;
 
-  Future<List<Map<String, dynamic>>>? _future;
+  List<Map<String, dynamic>>? _friends;
+  bool _loadError = false;
+
   final Map<String, Map<String, dynamic>> _selected = {};
 
   @override
   void initState() {
     super.initState();
-    _queryCtrl.addListener(_onQueryChanged);
+    _queryCtrl.addListener(() => setState(() {}));
+    _load();
   }
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _queryCtrl.dispose();
     super.dispose();
   }
 
-  void _onQueryChanged() {
-    _debounce?.cancel();
-    final query = _queryCtrl.text.trim();
-    if (query.isEmpty) {
-      setState(() => _future = null);
-      return;
-    }
-    _debounce = Timer(const Duration(milliseconds: 300), () {
+  Future<void> _load() async {
+    setState(() => _loadError = false);
+    try {
+      final results = await Future.wait([
+        CircleService.instance.fetchPeopleInMyCircles(),
+        PeopleService.instance.communityMembers(),
+      ]);
+      final seen = <String>{};
+      final people = [
+        for (final u in [...results[0], ...results[1]])
+          if (seen.add(u['id'] as String)) u,
+      ];
       if (!mounted) return;
-      setState(() {
-        _future = GroupService.instance.searchUsers(
-          query,
-          excludeIds: widget.excludeIds,
-        );
-      });
-    });
+      setState(() => _friends = people);
+    } catch (_) {
+      if (mounted) setState(() => _loadError = true);
+    }
   }
 
   void _toggle(Map<String, dynamic> user) {
@@ -84,6 +89,25 @@ class _GroupMemberPickerScreenState extends State<GroupMemberPickerScreen> {
 
   void _confirm() {
     Navigator.of(context).pop(_selected.values.toList());
+  }
+
+  List<Map<String, dynamic>> get _visibleFriends {
+    final friends = _friends;
+    if (friends == null) return const [];
+    final q = _queryCtrl.text.trim().toLowerCase();
+    return friends.where((u) {
+      if (widget.excludeIds.contains(u['id'])) return false;
+      if (q.isEmpty) return true;
+      final name = (u['name'] as String? ?? '').toLowerCase();
+      final anonName = (activeAnonName(
+                anonName: u['anon_name'] as String?,
+                anonName2: u['anon_name_2'] as String?,
+                activeAnonSlot: u['active_anon_slot'] as int?,
+              ) ??
+              '')
+          .toLowerCase();
+      return name.contains(q) || anonName.contains(q);
+    }).toList();
   }
 
   @override
@@ -130,9 +154,14 @@ class _GroupMemberPickerScreenState extends State<GroupMemberPickerScreen> {
                       autofocus: true,
                       style: GoogleFonts.inter(fontSize: 14, color: AppColors.textPrimary),
                       decoration: InputDecoration(
-                        hintText: 'Search people to add…',
+                        hintText: 'Search people to invite…',
                         hintStyle: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
                         border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        errorBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        focusedErrorBorder: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         prefixIcon: const Icon(Icons.search_rounded, size: 16, color: AppColors.textMuted),
                       ),
@@ -173,9 +202,23 @@ class _GroupMemberPickerScreenState extends State<GroupMemberPickerScreen> {
                       color: AppColors.coral,
                       borderRadius: BorderRadius.circular(14),
                     ),
+                    // heightFactor: 1 — load-bearing, not decoration. BUG
+                    // FIX (reported as "when I tried to add a person it's
+                    // coming like this", with the whole screen filled
+                    // coral): a bare Center has null width/height factors,
+                    // which makes it expand to the LARGEST size its
+                    // constraints allow. Scaffold.bottomNavigationBar
+                    // passes loose constraints (maxHeight = the whole
+                    // Scaffold), so this Container — which has padding but
+                    // no explicit height — grew to fill the entire screen,
+                    // painting it coral with the label floating in the
+                    // middle. It only ever showed once someone was
+                    // selected, because that's when this bar first renders.
+                    // heightFactor: 1 makes it shrink-wrap the label again.
                     child: Center(
+                      heightFactor: 1,
                       child: Text(
-                        'Add ${_selected.length} ${_selected.length == 1 ? 'person' : 'people'}',
+                        'Invite ${_selected.length} ${_selected.length == 1 ? 'person' : 'people'}',
                         style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white),
                       ),
                     ),
@@ -187,51 +230,42 @@ class _GroupMemberPickerScreenState extends State<GroupMemberPickerScreen> {
   }
 
   Widget _buildResults(double bottomPad) {
-    if (_queryCtrl.text.trim().isEmpty) {
-      return _MessageState(
-        icon: Icons.person_search_rounded,
-        message: 'Search by name to add people.',
+    if (_friends == null) {
+      if (_loadError) {
+        return _MessageState(
+          icon: Icons.error_outline_rounded,
+          message: "Couldn't load people.",
+          actionLabel: 'Retry',
+          onAction: _load,
+        );
+      }
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.coral, strokeWidth: 2),
       );
     }
 
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _future,
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.coral, strokeWidth: 2),
-          );
-        }
-        if (snap.hasError) {
-          return _MessageState(
-            icon: Icons.error_outline_rounded,
-            message: "Couldn't search right now.",
-            actionLabel: 'Retry',
-            onAction: () => setState(() {}),
-          );
-        }
+    final results = _visibleFriends;
+    if (results.isEmpty) {
+      final noFriendsAtAll = _friends!.where((u) => !widget.excludeIds.contains(u['id'])).isEmpty;
+      return _MessageState(
+        icon: Icons.person_off_outlined,
+        message: noFriendsAtAll
+            ? 'No one to invite yet — join a community first.'
+            : 'No one matches that search.',
+      );
+    }
 
-        final results = snap.data ?? [];
-        if (results.isEmpty) {
-          return const _MessageState(
-            icon: Icons.person_off_outlined,
-            message: 'No one found.',
-          );
-        }
-
-        return ListView.separated(
-          padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPad + 20),
-          itemCount: results.length,
-          separatorBuilder: (context, _) => const SizedBox(height: 8),
-          itemBuilder: (context, i) {
-            final user = results[i];
-            final id = user['id'] as String;
-            return _PersonRow(
-              user: user,
-              selected: _selected.containsKey(id),
-              onTap: () => _toggle(user),
-            );
-          },
+    return ListView.separated(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPad + 20),
+      itemCount: results.length,
+      separatorBuilder: (context, _) => const SizedBox(height: 8),
+      itemBuilder: (context, i) {
+        final user = results[i];
+        final id = user['id'] as String;
+        return _PersonRow(
+          user: user,
+          selected: _selected.containsKey(id),
+          onTap: () => _toggle(user),
         );
       },
     );
@@ -247,10 +281,15 @@ class _PersonRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final anonName = activeAnonName(
+      anonName: user['anon_name'] as String?,
+      anonName2: user['anon_name_2'] as String?,
+      activeAnonSlot: user['active_anon_slot'] as int?,
+    );
     final name = (user['name'] as String?)?.trim().isNotEmpty == true
         ? user['name'] as String
-        : (user['anon_name'] as String? ?? 'someone');
-    final handle = user['anon_name'] as String?;
+        : (anonName ?? 'someone');
+    final handle = anonName;
     final photoUrl = user['profile_photo_url'] as String?;
 
     return GestureDetector(
@@ -284,6 +323,7 @@ class _PersonRow extends StatelessWidget {
                       ),
                     )
                   : CachedNetworkImage(
+              memCacheWidth: 120,
                       imageUrl: photoUrl,
                       width: 40,
                       height: 40,

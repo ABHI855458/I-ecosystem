@@ -183,7 +183,24 @@ class AppTheme {
 
   static InputDecorationTheme _inputDecorationTheme() {
     return InputDecorationTheme(
-      filled: true,
+      // filled:false is the right DEFAULT for this app, and the fix for a
+      // bug that showed up on three separate screens at once (Ping's "say
+      // something…", Anon's "reply anonymously…", the Friends feed's "add a
+      // comment…"): a black rectangle rendering INSIDE the pill, so each
+      // one looked like two boxes nested together.
+      //
+      // Cause: almost every input here lives inside its own rounded
+      // container and clears the chrome with `border: InputBorder.none`.
+      // That kills the BORDER but not the FILL — the theme's filled:true +
+      // cardSurface kept painting, and with no border shape left to clip
+      // to it painted as a bare rectangle behind the text.
+      //
+      // The handful of fields that genuinely want the framework's filled
+      // look now say so themselves (auth, OTP, onboarding, settings,
+      // reset/forgot password, create-group, bucket-create). Anything that
+      // draws its own container gets nothing extra, which is what it always
+      // meant to ask for.
+      filled: false,
       fillColor: AppColors.cardSurface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       border: OutlineInputBorder(

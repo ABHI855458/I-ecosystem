@@ -54,6 +54,7 @@ class TextPostCard extends StatefulWidget {
     required this.allowFaceReactions,
     required this.pingContext,
     this.pingTargetName,
+    this.onSentPrompt,
     this.personaPhotoUrl,
     this.posterScore,
     this.branch,
@@ -77,6 +78,10 @@ class TextPostCard extends StatefulWidget {
   /// Passed straight through to showPingPromptSheet.
   final PingContext pingContext;
   final String? pingTargetName;
+
+  /// Forwarded straight to showPingPromptSheet — see PhotoPostCard's own
+  /// doc on this field for why it's optional.
+  final PingSendHandler? onSentPrompt;
 
   /// The poster's anon persona photo — never the real profile photo. Null
   /// falls back to a plain silhouette glyph.
@@ -201,6 +206,7 @@ class _TextPostCardState extends State<TextPostCard>
                   uploadingReaction: uploadingFaceReaction,
                   showReactionTray: showPresetTray,
                   onReactionTap: openReactionTray,
+                  onReactionClose: closePresetTray,
                   onReactionSelect: (preset) =>
                       selectPreset(widget.postId, preset),
                   onReactionAddNew: () => openAddPresetFlow(
@@ -215,6 +221,7 @@ class _TextPostCardState extends State<TextPostCard>
                   onPingTap: () => openPing(
                     pingContext: widget.pingContext,
                     targetName: widget.pingTargetName,
+                    onSentPrompt: widget.onSentPrompt,
                   ),
                   commentCount: widget.commentCount,
                   onCommentTap: widget.onCommentTap,
@@ -244,6 +251,7 @@ class _TextReactionsAndCommentsRow extends StatelessWidget {
     required this.uploadingReaction,
     required this.showReactionTray,
     required this.onReactionTap,
+    required this.onReactionClose,
     required this.onReactionSelect,
     required this.onReactionAddNew,
     required this.onReactionCaptureRealmoji,
@@ -259,6 +267,7 @@ class _TextReactionsAndCommentsRow extends StatelessWidget {
   final bool uploadingReaction;
   final bool showReactionTray;
   final VoidCallback onReactionTap;
+  final VoidCallback onReactionClose;
   final ValueChanged<ReactionPreset> onReactionSelect;
   final VoidCallback onReactionAddNew;
   final ValueChanged<RealmojiType> onReactionCaptureRealmoji;
@@ -283,6 +292,7 @@ class _TextReactionsAndCommentsRow extends StatelessWidget {
               myEmoji: myEmoji,
               uploading: uploadingReaction,
               onTap: onReactionTap,
+              onClose: onReactionClose,
               showTray: showReactionTray,
               category: ReactionPresetCategory.anonymous,
               onSelect: onReactionSelect,

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+
+import '../profile_v2/profile_v2_create_flows.dart' show GroupPostScreen;
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,14 +13,13 @@ import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../services/current_user_service.dart';
 import '../../services/group_service.dart';
-import '../../services/image_prep_service.dart';
 import 'group_member_picker_screen.dart';
 
 // ---------------------------------------------------------------------------
 // GroupProfileScreen — "Streak" direction (1b) from the group-profile design
 // handoff (design-refs/design_handoff_group_profile), adapted to render only
 // what's backed by real data. The full 1b spec's streak-hero card, "N
-// haven't dipped today" row, reactions, comments, and Ping button all
+// hasn't posted today" row, reactions, comments, and Ping button all
 // require schema this app doesn't have for group_posts (no cadence/streak
 // tracking, no group_posts reactions/comments tables, and pings.group_id
 // actually references `communities`, not `groups`) — rather than fabricate
@@ -74,41 +75,18 @@ class _GroupProfileScreenState extends State<GroupProfileScreen> {
 
   void _reload() => setState(() => _future = _load());
 
+  /// Opens the full group-post composer for this group. A group post needs
+  /// photos, a caption, a note, a location and a date
+  /// (20260926090000_group_post_requirements.sql), which a bare camera shot
+  /// can't provide — so this no longer uploads a photo on its own.
   Future<void> _addPhoto() async {
     HapticFeedback.lightImpact();
-    XFile? picked;
-    try {
-      picked = await ImagePicker().pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1600,
-        imageQuality: 90,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _uploadError = "Couldn't open the camera.");
-      return;
-    }
-    if (picked == null || !mounted) return;
-
-    setState(() {
-      _uploading = true;
-      _uploadError = null;
-    });
-
-    try {
-      final prepared = await ImagePrepService.instance.prepareForStudio(picked.path);
-      final fileToUpload = prepared ?? File(picked.path);
-      await GroupService.instance.addPost(groupId: widget.groupId, photoFile: fileToUpload);
-      if (!mounted) return;
-      setState(() => _uploading = false);
-      _reload();
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _uploading = false;
-        _uploadError = "Couldn't add that photo. Try again.";
-      });
-    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GroupPostScreen(groupId: widget.groupId),
+      ),
+    );
+    if (mounted) _reload();
   }
 
   Future<void> _deletePost(String postId) async {
@@ -201,7 +179,10 @@ class _GroupProfileScreenState extends State<GroupProfileScreen> {
           autofocus: true,
           maxLength: 40,
           style: GoogleFonts.inter(color: AppColors.textPrimary),
-          decoration: const InputDecoration(),
+          // Explicitly filled — this dialog field draws no container of
+          // its own, so it wants the framework chrome the theme no longer
+          // turns on by default (see AppTheme._inputDecorationTheme).
+          decoration: const InputDecoration(filled: true),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
@@ -225,9 +206,15 @@ class _GroupProfileScreenState extends State<GroupProfileScreen> {
     try {
       await GroupService.instance.updateGroupInfo(widget.groupId, iconFile: File(xFile.path));
       _reload();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      setState(() => _uploadError = "Couldn't update the group icon.");
+      // Show the REASON, not a generic line. updateGroupInfo now
+      // distinguishes an upload failure from an RLS refusal ("Only a group
+      // admin can change this group"), and collapsing both into one
+      // message is what made this look like an unexplained no-op.
+      setState(() => _uploadError = e is StateError
+          ? e.message
+          : "Couldn't update the group icon.");
     }
   }
 
@@ -241,13 +228,18 @@ class _GroupProfileScreenState extends State<GroupProfileScreen> {
     );
     if (picked == null || picked.isEmpty || !mounted) return;
     try {
-      for (final user in picked) {
-        await GroupService.instance.addMember(widget.groupId, user['id'] as String);
-      }
+      final n = await GroupService.instance.inviteMembers(
+        widget.groupId,
+        [for (final user in picked) user['id'] as String],
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(n == 1 ? 'Invite sent' : '$n invites sent'),
+      ));
       _reload();
     } catch (_) {
       if (!mounted) return;
-      setState(() => _uploadError = "Couldn't add those members.");
+      setState(() => _uploadError = "Couldn't send those invites.");
     }
   }
 
@@ -592,7 +584,8 @@ class _TodayStrip extends StatelessWidget {
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 2),
                       ),
-                      child: photoUrl == null ? null : CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover),
+                      child: photoUrl == null ? null : CachedNetworkImage(
+              memCacheWidth: 1080,imageUrl: photoUrl, fit: BoxFit.cover),
                     ),
                   );
                 } else {
@@ -713,7 +706,8 @@ class _CalendarSection extends StatelessWidget {
                     color: photoUrl != null ? null : Colors.white.withValues(alpha: isFuture || isToday ? 0.03 : 0.05),
                     border: isToday ? Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.5) : null,
                   ),
-                  child: photoUrl == null ? null : CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover),
+                  child: photoUrl == null ? null : CachedNetworkImage(
+              memCacheWidth: 1080,imageUrl: photoUrl, fit: BoxFit.cover),
                 ),
               );
             },
@@ -726,7 +720,7 @@ class _CalendarSection extends StatelessWidget {
 
 // ---------------------------------------------------------------------------
 // Sticky CTA — state-dependent per spec, minus the streak language (no
-// streak surfaced anywhere in this build): "Post a dip" when the current
+// streak surfaced anywhere in this build): "Post to the group" when the current
 // user hasn't posted today, secondary "View today's posts" treatment when
 // they have.
 // ---------------------------------------------------------------------------
@@ -786,7 +780,7 @@ class _StickyCta extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        hasPostedToday ? "View today's posts" : 'Post a dip',
+                        hasPostedToday ? "View today's posts" : 'Post to the group',
                         style: GoogleFonts.dmSans(fontSize: 15, fontWeight: FontWeight.w600, color: hasPostedToday ? Colors.white : Colors.black),
                       ),
                     ],
@@ -839,7 +833,7 @@ class _EmptyGroupState extends StatelessWidget {
             Text(name, style: GoogleFonts.spaceGrotesk(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
             const SizedBox(height: 10),
             Text(
-              'No dips yet. Someone has to go first.',
+              'No posts yet. Someone has to go first.',
               textAlign: TextAlign.center,
               style: GoogleFonts.dmSans(fontSize: 13.5, color: Colors.white.withValues(alpha: 0.5), height: 1.5),
             ),
@@ -851,7 +845,7 @@ class _EmptyGroupState extends StatelessWidget {
                 decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: Colors.white),
                 child: uploading
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                    : Text('Post a dip', style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
+                    : Text('Post to the group', style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
               ),
             ),
           ],
@@ -1016,7 +1010,8 @@ class _PostViewerOverlayState extends State<_PostViewerOverlay> {
                       child: photoUrl == null
                           ? const SizedBox.shrink()
                           : InteractiveViewer(
-                              child: CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.contain, width: double.infinity),
+                              child: CachedNetworkImage(
+              memCacheWidth: 1080,imageUrl: photoUrl, fit: BoxFit.contain, width: double.infinity),
                             ),
                     ),
                     Padding(

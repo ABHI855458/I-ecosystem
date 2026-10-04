@@ -54,16 +54,77 @@ class AppColors {
 class AppStrings {
   AppStrings._();
 
-  static const String appName = 'I';
+  /// The name shown TO USERS — home-screen label and the login wordmark.
+  ///
+  /// Deliberately not the project's identity: the bundle id stays
+  /// com.abhisheksdpatel.iapp, the repo stays "i", and the dashboard stays
+  /// "RVCE — Institutional Dashboard". This is the public-facing brand only.
+  static const String appName = 'Ping';
+
+  /// The PUBLICLY HOSTED legal documents (Netlify). These URLs — not the
+  /// in-app copy in legal_content.dart — are what the Play Console Data
+  /// Safety form points at, and what the signup flow must link to, because
+  /// a store listing needs a URL a reviewer can open without installing the
+  /// app. legal_content.dart stays as the offline-readable mirror; if either
+  /// changes, both change together.
+  /// Extensionless on purpose — the consolidated site (palster-site/) serves
+  /// these as clean URLs and 301s the old *.html paths onto them, so these
+  /// keep working across the rebrand. These same URLs go in the Play Console
+  /// Data Safety form; change them in one place only.
+  static const String privacyPolicyUrl =
+      'https://wonderful-dodol-de7931.netlify.app/privacy';
+  static const String eulaUrl =
+      'https://wonderful-dodol-de7931.netlify.app/eula';
+
+  /// Play requires a publicly reachable account-deletion page, reachable
+  /// WITHOUT installing the app — an in-app-only path does not satisfy the
+  /// Data Safety form on its own.
+  static const String deleteAccountUrl =
+      'https://wonderful-dodol-de7931.netlify.app/delete-account';
   static const String supabaseUrl =
       'https://uehqazxnodndutjvxemq.supabase.co';
   static const String supabaseAnonKey =
       'sb_publishable_Vj5_7tm1bwJEL2XjMWbGdw_I8PGv2eV';
 
-  /// The only email domain allowed to sign in — this is a campus-only app.
-  /// Checked client-side in AuthScreen before ever calling signInWithOtp;
-  /// not a substitute for a server-side check, just a fast/clear UX guard.
-  static const String allowedEmailDomain = '@rvce.edu.in';
+  /// Email domains this campus-only app USED TO require for signup.
+  /// Enforced server-side by enforce_college_email_domain() (a BEFORE
+  /// INSERT trigger on auth.users, supabase/migrations/
+  /// 20260907010000_branch_and_config.sql, extended to a second domain by
+  /// 20260905020000_allow_rvu_email_domain) — that trigger is the actual
+  /// gate and reads its on/off state from
+  /// app_config.require_college_email_domain, which is now OFF (user
+  /// request 2026-09-29, 20260929070000_allow_any_email_domain.sql): any
+  /// email can sign up. This constant is unreferenced now — kept only as a
+  /// record of what the flag used to require, in case it's ever turned
+  /// back on.
+  static const List<String> allowedEmailDomains = ['@rvce.edu.in', '@rvu.edu.in'];
+
+  /// Exact addresses exempt from [allowedEmailDomains] — the Play Store
+  /// review account, which cannot hold a college address but must be able to
+  /// sign in for review.
+  ///
+  /// Deliberately NOT an entry in [allowedEmailDomains]: that list is matched
+  /// with endsWith(), so an address there would also admit any longer address
+  /// ending in the same string (evil + playstore-review@useiapp.online).
+  /// Compared with == only.
+  static const List<String> exactEmailAllowlist = [
+    'playstore-review@useiapp.online',
+  ];
+
+  /// `users.username` bounds — single source of truth shared by
+  /// OnboardingScreen's validator/TextField.maxLength and the
+  /// users_username_format CHECK constraint in
+  /// supabase/migrations/20260905000000_username_and_anon_slots.sql. 15 is
+  /// sized to fit one line in the feed's tightest author byline (the solo
+  /// card's live-presence pill leaves ~15 chars of room) without ellipsis.
+  ///
+  /// Max cut to 10 for NEW usernames (explicit request, 2026-10-02: keep a
+  /// limit so the username fits the Ping page's DP row and the camera's
+  /// send grid without "…"). Enforced server-side for new/changed usernames
+  /// by 20261003000000_username_max_10.sql; existing longer ones are left
+  /// alone and shrink-to-fit in those rows instead.
+  static const int usernameMinLength = 3;
+  static const int usernameMaxLength = 10;
 }
 
 /// TEMPORARY debug switches. See AuthGate.build() and
@@ -77,5 +138,13 @@ class DebugFlags {
   /// something external (e.g. SMTP domain verification) — NOT a security
   /// control. Flip back to `false` before any real login testing or before
   /// shipping a build.
-  static const bool bypassAuthForUIWork = false;
+  ///
+  /// Overridable via `--dart-define=BYPASS_AUTH_FOR_UI_WORK=true` — same
+  /// isolated-verification pattern as main.dart's _screenshotMode, so a
+  /// dedicated debug-simulator run can flip this on without hand-editing
+  /// (and risking colliding with) this shared constant.
+  static const bool bypassAuthForUIWork = bool.fromEnvironment(
+    'BYPASS_AUTH_FOR_UI_WORK',
+    defaultValue: false,
+  );
 }

@@ -1,0 +1,42 @@
+-- Launch content: the community catalog and the prompt libraries.
+--
+-- Applied live as four migrations (community_catalog_tier0_tier1,
+-- seed_feed_prompt_library, seed_ping_prompt_library,
+-- ping_prompt_resolvers_return_kind); this file is the checked-in record.
+-- Full statements live in supabase_migrations.schema_migrations.
+--
+-- SELECTION RULE behind every prompt: answerable in under 30 seconds by
+-- pointing a camera at something already next to you. Anything needing
+-- planning, staging or standing up was not seeded — a prompt that rewards
+-- staging turns the feed into a stage.
+--
+-- WHAT IT CREATES
+--
+-- communities  +tier / +category / +is_open / +affinity_preset
+--   tier 0 = auto-joined structural (RVCE, 12 branches, 4 years, Hostel,
+--            Day Scholar) — these carry cold-start, nobody's feed is empty
+--   tier 1 = 26 open at launch, density-picked
+--   tier 2 = 54 seeded but CLOSED, so the 15+ request counter has
+--            something to count against and opening one is a flag flip
+--   A unique index on lower(name) makes upsert_community() re-runnable,
+--   and the three pre-existing communities keep their ids and their posts.
+--
+-- daily_prompts  296 active across 34 communities (29 universal).
+--   Windows are set ONLY where a prompt is genuinely time-bound ("your 6am
+--   alarm" -> wake; "midnight food setup" -> wind_down) and left NULL
+--   otherwise, which the picker reads as "any window". Over-tagging is
+--   worse than under-tagging: a prompt with no eligible window in a
+--   community's day never shows at all.
+--
+-- ping_sheet_prompts  +prompt_kind, and 316 prompts across 26 communities.
+--   The [T]/[P] split from the spec, preserved. This column did not exist,
+--   so every ping implicitly opened a camera and the deliberate ~50/50
+--   alternation was inert.
+--
+-- ping_prompts_for_scope / ping_prompts_for_post now RETURN prompt_kind
+--   (return signature changed, hence DROP before CREATE). Without this the
+--   kind stopped at the database and the client still assumed photo.
+--
+-- Both seeders are idempotent on (text, community) and skip a prompt whose
+-- community does not exist rather than silently parking it as universal,
+-- where it would reach the wrong audience forever.

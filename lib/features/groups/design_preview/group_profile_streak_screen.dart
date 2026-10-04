@@ -5,9 +5,9 @@ import 'mock_group_data.dart';
 import 'widgets/dashed_rrect_painter.dart';
 import 'widgets/section_eyebrow.dart';
 
-enum _DemoState { normal, streakBroken, allDippedToday }
+enum _DemoState { normal, streakBroken, allPostedToday }
 
-/// Direction 1b "Streak" — today's slots, streak number, calendar of dips.
+/// Direction 1b "Streak" — today's slots, streak number, calendar of posts.
 /// See design-refs/design_handoff_group_profile/README.md §"Direction 1b".
 /// This is a mock-data sibling of the production, real-data
 /// group_profile_screen.dart — built independently against this preview's
@@ -28,9 +28,9 @@ class _GroupProfileStreakScreenState extends State<GroupProfileStreakScreen> {
   bool _loading = false;
   bool _error = false;
 
-  bool get _viewerPostedToday => _demo == _DemoState.allDippedToday;
+  bool get _viewerPostedToday => _demo == _DemoState.allPostedToday;
 
-  bool _posted(int index) => _demo == _DemoState.allDippedToday ? true : _data.members[index].hasPostedToday;
+  bool _posted(int index) => _demo == _DemoState.allPostedToday ? true : _data.members[index].hasPostedToday;
 
   void _openOverflow() {
     showModalBottomSheet<void>(
@@ -47,7 +47,7 @@ class _GroupProfileStreakScreenState extends State<GroupProfileStreakScreen> {
               const SizedBox(height: 8),
               _demoTile('Normal', _DemoState.normal),
               _demoTile('Streak broken', _DemoState.streakBroken),
-              _demoTile('Everyone dipped today', _DemoState.allDippedToday),
+              _demoTile('Everyone posted today', _DemoState.allPostedToday),
               const Divider(color: Colors.white24, height: 24),
               ListTile(
                 leading: Icon(Icons.hourglass_empty_rounded, color: Colors.white.withValues(alpha: 0.7)),
@@ -200,7 +200,7 @@ class _GroupProfileStreakScreenState extends State<GroupProfileStreakScreen> {
                     child: _StreakHero(
                       streak: _demo == _DemoState.streakBroken ? 0 : _data.streak,
                       broken: _demo == _DemoState.streakBroken,
-                      allDipped: _demo == _DemoState.allDippedToday,
+                      allPosted: _demo == _DemoState.allPostedToday,
                       missingCount: _data.missingTodayCount,
                     ),
                   ),
@@ -220,7 +220,7 @@ class _GroupProfileStreakScreenState extends State<GroupProfileStreakScreen> {
                             itemBuilder: (context, i) {
                               final m = _data.members[i];
                               final posted = _posted(i);
-                              final firstNotPosted = !posted && _data.members.take(i).every((mm) => mm.hasPostedToday || _demo == _DemoState.allDippedToday);
+                              final firstNotPosted = !posted && _data.members.take(i).every((mm) => mm.hasPostedToday || _demo == _DemoState.allPostedToday);
                               return _TodaySlot(name: m.name, posted: posted, showPlus: firstNotPosted, id: m.id);
                             },
                           ),
@@ -240,7 +240,7 @@ class _GroupProfileStreakScreenState extends State<GroupProfileStreakScreen> {
                           children: [
                             const SectionEyebrow('August'),
                             Text(
-                              '${_data.totalDips} dips all-time',
+                              '${_data.totalPosts} posts all-time',
                               style: GoogleFonts.dmSans(fontSize: 12, color: Colors.white.withValues(alpha: 0.35)),
                             ),
                           ],
@@ -274,7 +274,7 @@ class _GroupProfileStreakScreenState extends State<GroupProfileStreakScreen> {
         ),
         _StickyCta(
           hasPostedToday: _viewerPostedToday,
-          onPost: () => _openDayDetail('Post a dip'),
+          onPost: () => _openDayDetail('Post to the group'),
         ),
       ],
     );
@@ -282,10 +282,10 @@ class _GroupProfileStreakScreenState extends State<GroupProfileStreakScreen> {
 }
 
 class _StreakHero extends StatelessWidget {
-  const _StreakHero({required this.streak, required this.broken, required this.allDipped, required this.missingCount});
+  const _StreakHero({required this.streak, required this.broken, required this.allPosted, required this.missingCount});
   final int streak;
   final bool broken;
-  final bool allDipped;
+  final bool allPosted;
   final int missingCount;
 
   @override
@@ -329,11 +329,11 @@ class _StreakHero extends StatelessWidget {
                 Container(
                   width: 7,
                   height: 7,
-                  decoration: BoxDecoration(color: allDipped ? const Color(0xFF38EF7D) : const Color(0xFFFF6F61), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: allPosted ? const Color(0xFF38EF7D) : const Color(0xFFFF6F61), shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  allDipped ? "Everyone's dipped today" : "$missingCount haven't dipped today",
+                  allPosted ? "Everyone's posted today" : "$missingCount haven't posted today",
                   style: GoogleFonts.dmSans(fontSize: 12.5, color: Colors.white.withValues(alpha: 0.7)),
                 ),
               ],
@@ -475,7 +475,7 @@ class _StickyCta extends StatelessWidget {
                 Icon(Icons.camera_alt_outlined, size: 18, color: hasPostedToday ? Colors.white : Colors.black),
                 const SizedBox(width: 8),
                 Text(
-                  hasPostedToday ? "View today's dips" : 'Keep the streak alive',
+                  hasPostedToday ? "View today's posts" : 'Keep the streak alive',
                   style: GoogleFonts.dmSans(fontSize: 15, fontWeight: FontWeight.w600, color: hasPostedToday ? Colors.white : Colors.black),
                 ),
               ],

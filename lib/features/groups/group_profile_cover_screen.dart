@@ -1,16 +1,16 @@
-import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+
+import '../profile_v2/profile_v2_create_flows.dart' show GroupPostScreen;
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/current_user_service.dart';
 import '../../services/group_service.dart';
-import '../../services/image_prep_service.dart';
 import '../../shared/time_ago.dart';
+import '../qr/my_qr_sheet.dart' show showGroupQrSheet;
 import 'design_preview/widgets/avatar.dart';
 import 'design_preview/widgets/frosted_icon_button.dart';
 import 'group_member_picker_screen.dart';
@@ -32,7 +32,7 @@ import 'group_roster_screen.dart';
 // rather than faked, same discipline as GroupProfileScreen's own header
 // comment: no bio field exists on `groups`, so the bio line is omitted; the
 // "on time %" stat has no cadence/deadline concept in the schema, so the
-// stats bar is 2 cells (dips, streak) not 3. The grid's "mini selfie chip"
+// stats bar is 2 cells (posts, streak) not 3. The grid's "mini selfie chip"
 // badge is also dropped — group_posts has no front-camera field to back it.
 // ---------------------------------------------------------------------------
 
@@ -45,11 +45,11 @@ class GroupProfileCoverScreen extends StatefulWidget {
   State<GroupProfileCoverScreen> createState() => _GroupProfileCoverScreenState();
 }
 
-enum _Tab { dips, recaps }
+enum _Tab { posts, recaps }
 
 class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
   late Future<_CoverData> _future;
-  _Tab _tab = _Tab.dips;
+  _Tab _tab = _Tab.posts;
   bool _uploading = false;
   String? _uploadError;
 
@@ -91,36 +91,18 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
       });
 
   /// Same camera-capture flow GroupProfileScreen's sticky CTA uses.
+  /// Opens the full group-post composer for this group. A group post needs
+  /// photos, a caption, a note, a location and a date
+  /// (20260926090000_group_post_requirements.sql), which a bare camera shot
+  /// can't provide — so this no longer uploads a photo on its own.
   Future<void> _addPhoto() async {
     HapticFeedback.lightImpact();
-    XFile? picked;
-    try {
-      picked = await ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 1600, imageQuality: 90);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _uploadError = "Couldn't open the camera.");
-      return;
-    }
-    if (picked == null || !mounted) return;
-
-    setState(() {
-      _uploading = true;
-      _uploadError = null;
-    });
-    try {
-      final prepared = await ImagePrepService.instance.prepareForStudio(picked.path);
-      final fileToUpload = prepared ?? File(picked.path);
-      await GroupService.instance.addPost(groupId: widget.groupId, photoFile: fileToUpload);
-      if (!mounted) return;
-      setState(() => _uploading = false);
-      _reload();
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _uploading = false;
-        _uploadError = "Couldn't add that photo. Try again.";
-      });
-    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GroupPostScreen(groupId: widget.groupId),
+      ),
+    );
+    if (mounted) _reload();
   }
 
   Future<void> _addMembers(_CoverData data) async {
@@ -133,13 +115,18 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
     );
     if (picked == null || picked.isEmpty || !mounted) return;
     try {
-      for (final user in picked) {
-        await GroupService.instance.addMember(widget.groupId, user['id'] as String);
-      }
+      final n = await GroupService.instance.inviteMembers(
+        widget.groupId,
+        [for (final user in picked) user['id'] as String],
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(n == 1 ? 'Invite sent' : '$n invites sent'),
+      ));
       _reload();
     } catch (_) {
       if (!mounted) return;
-      setState(() => _uploadError = "Couldn't add those members.");
+      setState(() => _uploadError = "Couldn't send those invites.");
     }
   }
 
@@ -172,12 +159,12 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
     }
   }
 
-  void _openDipDetail(Map<String, dynamic> post, _CoverData data) {
+  void _openPostDetail(Map<String, dynamic> post, _CoverData data) {
     final canDelete = data.myRole == 'admin' || post['user_id'] == data.myUserId;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (_) => _DipDetailScreen(
+        builder: (_) => _PostDetailScreen(
           post: post,
           canDelete: canDelete,
           onDelete: () => _deletePost(post['id'] as String, data),
@@ -296,7 +283,7 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
                             ),
                             child: Row(
                               children: [
-                                _StatCell(value: '${data.posts.length}', label: 'dips', showDivider: true),
+                                _StatCell(value: '${data.posts.length}', label: 'posts', showDivider: true),
                                 _StatCell(value: '$streak', label: 'day streak', showDivider: false),
                               ],
                             ),
@@ -314,12 +301,21 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
                                   decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
                                   child: _uploading
                                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                                      : Text('Post a dip', style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
+                                      : Text('Post to the group', style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
                                 ),
                               ),
                             ),
                             const SizedBox(width: 10),
                             _SquareIconButton(icon: Icons.person_add_alt_1_rounded, onTap: () => _addMembers(data)),
+                            const SizedBox(width: 10),
+                            _SquareIconButton(
+                              icon: Icons.qr_code_2_rounded,
+                              onTap: () => showGroupQrSheet(
+                                context,
+                                groupId: widget.groupId,
+                                groupName: data.group['name'] as String? ?? 'this group',
+                              ),
+                            ),
                             const SizedBox(width: 10),
                             _SquareIconButton(icon: Icons.settings_outlined, onTap: _openStreakDetail),
                           ],
@@ -332,7 +328,7 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
                         const SizedBox(height: 22),
                         _Tabs(
                           active: _tab,
-                          onChangeDips: () => setState(() => _tab = _Tab.dips),
+                          onChangePosts: () => setState(() => _tab = _Tab.posts),
                           onTapMembers: _openRoster,
                           onChangeRecaps: () => setState(() => _tab = _Tab.recaps),
                         ),
@@ -342,8 +338,8 @@ class _GroupProfileCoverScreenState extends State<GroupProfileCoverScreen> {
                 ),
                 Transform.translate(
                   offset: const Offset(0, -34),
-                  child: _tab == _Tab.dips
-                      ? _DipGrid(posts: data.posts, columns: columns, onTap: (p) => _openDipDetail(p, data))
+                  child: _tab == _Tab.posts
+                      ? _PostsGrid(posts: data.posts, columns: columns, onTap: (p) => _openPostDetail(p, data))
                       : const _PlaceholderTabBody(text: 'Recaps are coming soon.'),
                 ),
               ],
@@ -398,7 +394,8 @@ class _CoverCollage extends StatelessWidget {
             ? LinearGradient(colors: _fallbackGradients[index % _fallbackGradients.length], begin: Alignment.topLeft, end: Alignment.bottomRight)
             : null,
       ),
-      child: photoUrl == null ? null : CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover),
+      child: photoUrl == null ? null : CachedNetworkImage(
+              memCacheWidth: 1080,imageUrl: photoUrl, fit: BoxFit.cover),
     );
   }
 
@@ -503,9 +500,9 @@ class _SquareIconButton extends StatelessWidget {
 }
 
 class _Tabs extends StatelessWidget {
-  const _Tabs({required this.active, required this.onChangeDips, required this.onTapMembers, required this.onChangeRecaps});
+  const _Tabs({required this.active, required this.onChangePosts, required this.onTapMembers, required this.onChangeRecaps});
   final _Tab active;
-  final VoidCallback onChangeDips;
+  final VoidCallback onChangePosts;
   final VoidCallback onTapMembers;
   final VoidCallback onChangeRecaps;
 
@@ -515,7 +512,7 @@ class _Tabs extends StatelessWidget {
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)))),
       child: Row(
         children: [
-          _TabItem(label: 'Dips', selected: active == _Tab.dips, onTap: onChangeDips),
+          _TabItem(label: 'Posts', selected: active == _Tab.posts, onTap: onChangePosts),
           const SizedBox(width: 22),
           // Members isn't an in-place tab body — it's the real drill-down
           // into GroupRosterScreen, so it never reads as "selected" here.
@@ -553,8 +550,8 @@ class _TabItem extends StatelessWidget {
   }
 }
 
-class _DipGrid extends StatelessWidget {
-  const _DipGrid({required this.posts, required this.columns, required this.onTap});
+class _PostsGrid extends StatelessWidget {
+  const _PostsGrid({required this.posts, required this.columns, required this.onTap});
   final List<Map<String, dynamic>> posts;
   final int columns;
   final ValueChanged<Map<String, dynamic>> onTap;
@@ -576,7 +573,8 @@ class _DipGrid extends StatelessWidget {
             child: Container(
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: Colors.white.withValues(alpha: 0.05)),
-              child: photoUrl == null ? null : CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover),
+              child: photoUrl == null ? null : CachedNetworkImage(
+              memCacheWidth: 1080,imageUrl: photoUrl, fit: BoxFit.cover),
             ),
           );
         },
@@ -648,7 +646,7 @@ class _EmptyCoverState extends StatelessWidget {
                     const SizedBox(height: 16),
                     Text(name, style: GoogleFonts.spaceGrotesk(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
                     const SizedBox(height: 10),
-                    Text('No dips yet. Someone has to go first.', textAlign: TextAlign.center, style: GoogleFonts.dmSans(fontSize: 13.5, color: Colors.white.withValues(alpha: 0.5), height: 1.5)),
+                    Text('No posts yet. Someone has to go first.', textAlign: TextAlign.center, style: GoogleFonts.dmSans(fontSize: 13.5, color: Colors.white.withValues(alpha: 0.5), height: 1.5)),
                     const SizedBox(height: 20),
                     GestureDetector(
                       onTap: onPost,
@@ -657,7 +655,7 @@ class _EmptyCoverState extends StatelessWidget {
                         decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: Colors.white),
                         child: uploading
                             ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                            : Text('Post a dip', style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
+                            : Text('Post to the group', style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
                       ),
                     ),
                   ],
@@ -748,17 +746,17 @@ class _ErrorBody extends StatelessWidget {
 // file) — this is a single-item view for a single grid tap.
 // ---------------------------------------------------------------------------
 
-class _DipDetailScreen extends StatefulWidget {
-  const _DipDetailScreen({required this.post, required this.canDelete, required this.onDelete});
+class _PostDetailScreen extends StatefulWidget {
+  const _PostDetailScreen({required this.post, required this.canDelete, required this.onDelete});
   final Map<String, dynamic> post;
   final bool canDelete;
   final VoidCallback onDelete;
 
   @override
-  State<_DipDetailScreen> createState() => _DipDetailScreenState();
+  State<_PostDetailScreen> createState() => _PostDetailScreenState();
 }
 
-class _DipDetailScreenState extends State<_DipDetailScreen> {
+class _PostDetailScreenState extends State<_PostDetailScreen> {
   bool _deleting = false;
 
   @override
@@ -777,7 +775,8 @@ class _DipDetailScreenState extends State<_DipDetailScreen> {
             Column(
               children: [
                 Expanded(
-                  child: photoUrl == null ? const SizedBox.shrink() : InteractiveViewer(child: CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.contain, width: double.infinity)),
+                  child: photoUrl == null ? const SizedBox.shrink() : InteractiveViewer(child: CachedNetworkImage(
+              memCacheWidth: 1080,imageUrl: photoUrl, fit: BoxFit.contain, width: double.infinity)),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),

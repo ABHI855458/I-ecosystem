@@ -1,15 +1,16 @@
-import 'package:deepar_flutter_plus/deepar_flutter_plus.dart';
-// CameraDirection isn't re-exported by the package's own barrel file — see
-// composer_screen.dart's identical import for why this direct src import is
-// required (checked against the installed package source, not a guess).
-import 'package:deepar_flutter_plus/src/utils.dart' show CameraDirection;
+import 'dart:async';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import '../../shared/volume_shutter.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../services/deepar_service.dart';
-import '../composer/deepar_filter_strip.dart';
+import '../composer/camera_capture_ui.dart';
+import '../composer/capture_widgets.dart';
+import '../face_filter/face_input_image_converter.dart'
+    show kFaceMaskImageFormatGroup;
+import '../face_filter/face_mask_overlay.dart';
 
 // ---------------------------------------------------------------------------
 // Data model (shared with ping_screen.dart)
@@ -98,16 +99,15 @@ class _PingRevealScreenState extends State<PingRevealScreen>
 
   void _pingBack() {
     HapticFeedback.mediumImpact();
-    showModalBottomSheet<bool>(
+    showModalBottomSheet<XFile?>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => PingCameraScreen(
         recipientName: widget.ping.senderName,
-        prompt: widget.ping.prompt,
       ),
-    ).then((sent) {
-      if (sent == true && mounted) {
+    ).then((photo) {
+      if (photo != null && mounted) {
         setState(() => _pingBackSent = true);
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) setState(() => _pingBackSent = false);
@@ -302,70 +302,109 @@ class _PingRevealScreenState extends State<PingRevealScreen>
 }
 
 // ---------------------------------------------------------------------------
-// PingCameraScreen — 85% bottom-sheet dual camera for ping reply
+// PingCameraScreen — 85% bottom-sheet, one-tap dual capture: a single tap
+// on the shutter takes the back-camera photo, then automatically swaps to
+// the front camera and takes the selfie half, then sends both together —
+// no compose/caption step, no filters. Pick from gallery instead for a
+// single photo with no selfie (an album pick has no second frame to
+// capture, by definition).
 //
-// Returns bool via pop(true) = sent, pop(false) = closed without sending
+// This used to be a forced TWO-tap back-then-front dual capture (one tap
+// per camera, despite an earlier doc here claiming "one tap fires the
+// whole sequence" — it didn't) with a 900ms "Sent!" gradient overlay
+// before popping. That was removed down to a plain single shot; this
+// restores the dual capture as a single automatic sequence instead of
+// reintroducing the old two-tap confusion. The caller (ping_page.dart)
+// still gives its own send feedback once the reply lands (via
+// PingSentAnchor), so this screen still doesn't need its own "Sent!"
+// overlay.
+//
+// If the front shot fails after the back shot already succeeded, this
+// sends the back photo alone rather than losing the reply — every render
+// site treats a null selfie the same as an album pick (no inset shown).
+//
+// Returns PingCapture? via pop(capture) = sent, pop(null) = closed without
+// sending.
 // ---------------------------------------------------------------------------
 
+/// Result of a completed ping-reply capture. [selfie] is the front-camera
+/// half of a dual capture — null for a gallery pick, or when the back shot
+/// sent but the front shot itself failed (see the class doc above).
+class PingCapture {
+  const PingCapture({required this.photo, this.selfie});
+  final XFile photo;
+  final XFile? selfie;
+}
+
+/// The ping reply camera.
+///
+/// Chrome is the shared [CaptureCard] — the composer's camera, not a
+/// second implementation of it. [recipientName] is kept for callers and
+/// for future use; the shared card shows no per-recipient caption, the
+/// same as the composer.
 class PingCameraScreen extends StatefulWidget {
   const PingCameraScreen({
     super.key,
     required this.recipientName,
-    this.prompt = 'Show me your view 👀',
   });
 
   final String recipientName;
-  final String prompt;
 
   @override
   State<PingCameraScreen> createState() => _PingCameraScreenState();
 }
 
-class _PingCameraScreenState extends State<PingCameraScreen>
-    with SingleTickerProviderStateMixin {
+class _PingCameraScreenState extends State<PingCameraScreen> {
   bool _sending = false;
-  bool _sent = false;
   bool _initFailed = false;
-  bool _usingRear = true;
-  bool _cameraSwapping = false;
   bool _cameraReady = false;
-  // True as soon as DeepAR's initialize() succeeds — see composer_screen.
-  // dart's identical field for the full reasoning: on iOS, the native
-  // texture (what controller.isInitialized checks) is only set inside
-  // DeepArPreviewPlus's own UiKitView.onPlatformViewCreated callback, so
-  // gating the preview's mount behind _cameraReady (which itself waits on
-  // isInitialized) is a deadlock that can never resolve — reproduced live
-  // on-device. Mount the preview on this flag instead, immediately on init
-  // success; _cameraReady still gates the filter strip/shutter separately.
-  bool _previewMounted = false;
+  // True from the moment the back shot lands until the front (selfie) shot
+  // either lands or fails — blocks a second shutter tap mid-sequence, same
+  // role _sending plays post-send.
+  bool _capturingSelfie = false;
 
-  late final AnimationController _sentCtrl;
-  late final Animation<double> _sentScale;
+  /// Dual capture is now OPT-IN. Explicit request: "remove the dual camera
+  /// default in ping page, give option dual or single; if selected dual,
+  /// first back or front photo, then for the front camera photo you shall
+  /// wait for user to click".
+  ///
+  /// Single (the default) sends one photo from whichever lens is framed.
+  /// Dual takes the framed lens first, flips, and then WAITS for a second
+  /// shutter tap rather than firing it automatically.
+  bool _dualMode = false;
 
-  // Owned by DeepArFilterStrip now (see deepar_filter_strip.dart) — this
-  // screen just mirrors the live label for its top pill and holds a key to
-  // trigger the capture flash; it no longer tracks/applies lenses itself
-  // (that used to be _activeLens/_selectLens/_clearLens).
-  String _activeFilterLabel = 'NO FILTER';
+  /// The first half of a dual capture, held while the second is composed.
+  /// Non-null means the shutter is armed for the second shot.
+  XFile? _pendingFirst;
+
+  /// Which lens [_pendingFirst] came from, so the two halves land in the
+  /// right slots: the BACK shot is the background, the FRONT one the inset.
+  bool _pendingFirstWasFront = false;
+  CameraController? _controller;
+
+  /// Which lens the viewfinder is showing right now. The capture sequence
+  /// still ends on the front lens (it needs the selfie half), but the user
+  /// can now choose which one they FRAME with — there was no flip control
+  /// at all, so a reply always had to be composed through the back camera.
+  CameraLensDirection _lens = CameraLensDirection.back;
+
+  /// Face filter, front lens only — the mask is anchored on detected eyes,
+  /// so there is nothing for it to track on the rear camera.
+  bool _maskOn = false;
+  final _maskOverlayKey = GlobalKey<FaceMaskOverlayState>();
+
+  bool get _isFront => _lens == CameraLensDirection.front;
+
   final _flashKey = GlobalKey<CaptureFlashOverlayState>();
-
-  // Ping's lens set — both fun filters plus beautification (no masks here;
-  // masks are Anonymous-posting-only, see composer_screen.dart's _lensSet).
-  static const _lensSet = [
-    DeepArLens.pingFilterOne,
-    DeepArLens.pingFilterTwo,
-    DeepArLens.beautification,
-  ];
 
   @override
   void initState() {
     super.initState();
-    _sentCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 420),
-    );
-    _sentScale = CurvedAnimation(parent: _sentCtrl, curve: Curves.elasticOut);
-    _initDeepAr();
+    _initCamera();
+    // Volume buttons take the photo too.
+    unawaited(_volumeShutter.start(() {
+      if (mounted) _capture();
+    }));
     // Fallback: if camera hasn't opened after 7 s, show gallery option
     Future.delayed(const Duration(seconds: 7), () {
       if (!mounted) return;
@@ -375,82 +414,278 @@ class _PingCameraScreenState extends State<PingCameraScreen>
     });
   }
 
+  final _volumeShutter = VolumeShutter();
+
   @override
   void dispose() {
-    _sentCtrl.dispose();
-    // Fire-and-forget, matching composer_screen.dart's identical dispose —
-    // destroy() is idempotent (checked package source) and safe to call
-    // even if another screen's init races it.
-    DeepArService.instance.dispose();
+    unawaited(_volumeShutter.stop());
+    _controller?.dispose();
     super.dispose();
   }
 
-  Future<void> _initDeepAr() async {
-    final result = await DeepArService.instance.initializeWithDefaults();
-    if (!mounted) return;
-    if (!result.success) {
+  /// The ONE place a CameraController is built, for every lens and every
+  /// path (first open, dual's automatic flip, the manual flip button).
+  ///
+  /// REBUILT on composer_screen.dart's proven recipe. This screen used to
+  /// construct a controller inline in three separate places, and the
+  /// hardening the composer had accumulated never made it into any of
+  /// them — which is how a camera that "doesn't click pictures" survived
+  /// several rounds of fixes. Everything below is deliberate:
+  ///
+  ///  * `ResolutionPreset.high`, not `veryHigh` — what the composer ships.
+  ///    veryHigh negotiates a capture format some devices stall or fail
+  ///    outright on, and it buys nothing for a photo that ends up scaled
+  ///    into a reply card.
+  ///  * `imageFormatGroup` is what lets FaceMaskOverlay stream frames to
+  ///    ML Kit at all — without it the filter silently never detects a
+  ///    face. It does NOT affect takePicture(); JPEG capture is unaffected.
+  ///  * `lockCaptureOrientation(portraitUp)` pins the analysis buffer to
+  ///    portrait. Without it the plugin re-orients frames as the phone
+  ///    tilts while the mask converter assumes portrait, so the mask slid
+  ///    off the face on any tilt. Was missing here entirely.
+  ///
+  /// Throws on failure; every caller decides what that means for it.
+  Future<CameraController> _openController(CameraLensDirection lens) async {
+    final cameras = await availableCameras();
+    final desc = cameras.firstWhere(
+      (c) => c.lensDirection == lens,
+      orElse: () => cameras.first,
+    );
+    final ctrl = CameraController(
+      desc,
+      ResolutionPreset.high,
+      enableAudio: false,
+      imageFormatGroup: kFaceMaskImageFormatGroup,
+    );
+    await ctrl.initialize();
+    try {
+      await ctrl.lockCaptureOrientation(DeviceOrientation.portraitUp);
+    } catch (_) {
+      // Not fatal — some devices refuse; mask tracking just degrades to
+      // the old tilt behaviour rather than the camera failing to open.
+    }
+    return ctrl;
+  }
+
+  Future<void> _initCamera() async {
+    try {
+      final ctrl = await _openController(_lens);
+      if (!mounted) {
+        await ctrl.dispose();
+        return;
+      }
       setState(() {
-        _previewMounted = false;
+        _controller = ctrl;
+        _cameraReady = true;
+        _initFailed = false;
+      });
+    } catch (e, st) {
+      debugPrint('[PingCameraScreen._initCamera] failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
         _cameraReady = false;
         _initFailed = true;
       });
+    }
+  }
+
+  /// Swaps the live controller to the front lens — the `camera` package has
+  /// no in-place flip (same approach as composer_screen.dart's own
+  /// _swapToDirection, minus the manual-swap-only guard that doesn't apply
+  /// here: this is always the second half of an automatic sequence).
+  ///
+  /// BUG FIX (matches composer_screen.dart's identical fix): the old order
+  /// initialized the NEW front-camera controller (a second, distinct
+  /// AVCaptureSession on iOS) before disposing the back camera's OLD
+  /// controller, so for a window both sessions were live simultaneously —
+  /// which iOS's camera subsystem doesn't reliably support, and is exactly
+  /// why the front camera failed to start specifically in this automatic
+  /// back-then-front sequence on real hardware. Dispose first, then
+  /// initialize, so at most one session is ever live. `_buildCameraArea`
+  /// already renders a plain (non-crashing) fallback while `_controller` is
+  /// null, and every caller of `_controller!` here is already wrapped in a
+  /// try/catch (see `_capture`'s own fallback-to-back-photo-only path).
+  Future<void> _swapToFront() => _swapTo(CameraLensDirection.front);
+
+  Future<void> _swapToBack() => _swapTo(CameraLensDirection.back);
+
+  /// Lens-agnostic because dual capture can start from EITHER lens now
+  /// (see [_dualMode]) — the second half is always "the other one".
+  Future<void> _swapTo(CameraLensDirection lens) async {
+    // The mask's frame stream holds the OLD controller. Stop it before the
+    // controller goes away, or the stream outlives its session and the
+    // next takePicture() on the new one comes back blank.
+    if (_maskOn) {
+      await _maskOverlayKey.currentState?.pauseStreamingForCapture();
+    }
+    final old = _controller;
+    if (mounted) setState(() => _controller = null);
+    await old?.dispose();
+
+    final ctrl = await _openController(lens);
+    if (!mounted) {
+      await ctrl.dispose();
       return;
     }
-    // Mount the preview NOW, before waiting for isInitialized — see
-    // _previewMounted's own doc for why waiting first can never resolve on
-    // iOS.
-    setState(() => _previewMounted = true);
-    // Must wait for the native view to actually exist before touching the
-    // controller further — see DeepArService.waitUntilViewReady's own doc
-    // for the real on-device crash this prevents.
-    final ready = await DeepArService.instance.waitUntilViewReady();
-    if (!mounted) return;
-    if (!ready) {
-      setState(() {
-        _previewMounted = false;
-        _cameraReady = false;
-        _initFailed = true;
-      });
-      return;
-    }
-    // DeepAR always starts on the FRONT camera after init/destroy (checked
-    // package source: _resetState() hardcodes CameraDirection.front) — flip
-    // once to match this screen's existing rear-first default.
-    await DeepArService.instance.controller.flipCamera();
-    if (!mounted) return;
     setState(() {
-      _cameraReady = true;
-      _initFailed = false;
-      _usingRear = true;
+      _controller = ctrl;
+      _lens = lens;
     });
   }
 
-  Future<void> _swapCamera() async {
-    if (_cameraSwapping || _sending || !_cameraReady) return;
-    setState(() => _cameraSwapping = true);
-    try {
-      final dir = await DeepArService.instance.controller.flipCamera();
-      if (!mounted) return;
+  /// Manual lens flip.
+  ///
+  /// Same dispose-then-initialize order _swapToFront documents: two live
+  /// AVCaptureSessions at once is what broke the automatic swap on real
+  /// hardware, and a manual flip has exactly the same hazard.
+  Future<void> _flipCamera() async {
+    if (_sending || _capturingSelfie || !_cameraReady) return;
+    final next = _isFront
+        ? CameraLensDirection.back
+        : CameraLensDirection.front;
+    HapticFeedback.selectionClick();
+
+    // Stop the mask's frame stream before its controller is disposed —
+    // same reason as _swapTo's.
+    if (_maskOn) {
+      await _maskOverlayKey.currentState?.pauseStreamingForCapture();
+    }
+    final old = _controller;
+    if (mounted) {
       setState(() {
-        _usingRear = dir == CameraDirection.rear;
-        _cameraSwapping = false;
+        _controller = null;
+        _cameraReady = false;
+      });
+    }
+    await old?.dispose();
+    try {
+      final ctrl = await _openController(next);
+      if (!mounted) {
+        await ctrl.dispose();
+        return;
+      }
+      setState(() {
+        _controller = ctrl;
+        _lens = next;
+        _cameraReady = true;
+        // The mask has nothing to track on the rear lens.
+        if (next == CameraLensDirection.back) _maskOn = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _cameraSwapping = false);
+      if (mounted) setState(() => _initFailed = true);
     }
   }
 
+  /// Shutter. Behaviour depends on [_dualMode]:
+  ///
+  ///  * SINGLE (default) — one photo from whichever lens is framed, sent
+  ///    immediately. No flip, no second shot, no inset.
+  ///  * DUAL — first tap holds that half and flips to the other lens;
+  ///    the SECOND tap takes the pair and sends both.
+  ///
+  /// This doc previously described a single automatic back-then-front
+  /// sequence, which is what the code did BEFORE dual became opt-in — it
+  /// had been left behind and contradicted both [_dualMode]'s own doc and
+  /// the logic below.
   Future<void> _capture() async {
-    if (_sending) return;
+    if (_sending || _capturingSelfie || !_cameraReady || _controller == null) {
+      return;
+    }
     _flashKey.currentState?.flash();
     HapticFeedback.mediumImpact();
+
+    final XFile shot;
     try {
-      if (_cameraReady) {
-        await DeepArService.instance.controller.takeScreenshot();
+      // THE ACTUAL FAULT behind "the camera doesn't click pictures" and
+      // "it captures full white".
+      //
+      // FaceMaskOverlay runs a live ML Kit analysis stream on this very
+      // controller. takePicture() fired against a running stream returns a
+      // frame the sensor exposed for the STREAM's configuration — slow,
+      // and on a bright front-facing subject blown out to pure white.
+      // composer_screen.dart and the RealMoji capture both pause the
+      // stream first and have for a while; this screen never did, which is
+      // why the shutter kept "not working" no matter what else was fixed.
+      //
+      // pauseStreamingForCapture also carries the 220ms settle delay that
+      // lets AVFoundation finish re-metering for stills — see its own doc
+      // on why stopping the stream alone only narrowed the race.
+      if (_maskOn && _isFront) {
+        await _maskOverlayKey.currentState?.pauseStreamingForCapture();
       }
-    } catch (_) {}
+      shot = await _controller!.takePicture();
+    } catch (e, st) {
+      // A failed capture used to `catch (_) { return; }` — no error, no
+      // log, no visible change, so the shutter simply appeared dead.
+      // Still non-fatal (the camera stays live for another tap), but now
+      // logged and surfaced.
+      debugPrint('[PingCameraScreen._capture] takePicture failed: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't take that photo — try again.")),
+        );
+      }
+      return;
+    }
     if (!mounted) return;
-    _doSend();
+
+    final baked = await _bakeMaskIfOn(shot);
+    if (!mounted) return;
+
+    // Single: one photo, no inset, done.
+    if (!_dualMode) {
+      _doSend(baked, null);
+      return;
+    }
+
+    // Dual, second tap: pair it with the held first half and send.
+    final first = _pendingFirst;
+    if (first != null) {
+      final firstWasFront = _pendingFirstWasFront;
+      setState(() => _pendingFirst = null);
+      _doSend(
+        firstWasFront ? baked : first,
+        firstWasFront ? first : baked,
+      );
+      return;
+    }
+
+    // Dual, first tap: hold this half, flip, and wait for the second tap.
+    setState(() {
+      _pendingFirst = baked;
+      _pendingFirstWasFront = _isFront;
+      _capturingSelfie = true;
+    });
+    try {
+      await (_isFront ? _swapToBack() : _swapToFront());
+    } catch (_) {
+      // Couldn't flip — send what we already have rather than stranding
+      // the user on a shutter that can't complete the pair.
+      if (!mounted) return;
+      final held = _pendingFirst;
+      setState(() {
+        _pendingFirst = null;
+        _capturingSelfie = false;
+      });
+      if (held != null) _doSend(held, null);
+      return;
+    }
+    if (!mounted) return;
+    HapticFeedback.selectionClick();
+    setState(() => _capturingSelfie = false);
+  }
+
+  /// Burns the face filter into a front-lens shot, so what gets SENT
+  /// matches what was on screen. A failed bake returns the original, so it
+  /// can never lose the photo.
+  Future<XFile> _bakeMaskIfOn(XFile shot) async {
+    if (!_maskOn || !_isFront) return shot;
+    try {
+      final state = _maskOverlayKey.currentState;
+      return state == null ? shot : await state.bakeIntoPhoto(shot);
+    } catch (_) {
+      return shot;
+    }
   }
 
   Future<void> _pickGallery() async {
@@ -458,449 +693,88 @@ class _PingCameraScreenState extends State<PingCameraScreen>
     try {
       final image = await ImagePicker().pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1080,
+        maxWidth: 1920,
         imageQuality: 85,
       );
-      if (image != null && mounted) _doSend();
+      // No selfie for an album pick — there's no second frame to capture.
+      if (image != null && mounted) _doSend(image, null);
     } catch (_) {}
   }
 
-  void _doSend() {
-    setState(() {
-      _sending = true;
-      _sent = true;
-    });
+  /// Pops with the capture immediately — no "Sent!" overlay first. The
+  /// caller (ping_page.dart's _openCamera) already gives its own feedback
+  /// once the reply lands (PingSentAnchor), so this screen doesn't need a
+  /// redundant send animation of its own.
+  void _doSend(XFile photo, XFile? selfie) {
+    if (_sending) return;
+    _sending = true;
     HapticFeedback.heavyImpact();
-    _sentCtrl.forward();
-    Future<void>.delayed(const Duration(milliseconds: 900), () {
-      if (mounted) Navigator.of(context).pop(true);
-    });
+    Navigator.of(context).pop(PingCapture(photo: photo, selfie: selfie));
   }
 
+
+  /// The camera chrome is now the SHARED [CaptureCard] — the same widget
+  /// the composer's camera uses, not a look-alike.
+  ///
+  /// This screen used to carry ~480 lines of its own chrome: a custom
+  /// header, its own scrims, its own SINGLE/DUAL toggle (_ModeToggle), its
+  /// own mask pill, its own flip/gallery buttons (_GlassCamBtn) and its own
+  /// shutter row. All of it was a second implementation of the composer's
+  /// camera that then drifted from it. Deleted outright per the explicit
+  /// instruction to use the task-bar camera's design here.
+  ///
+  /// What stays ping-specific is only the wiring: this sheet returns a
+  /// [PingCapture] through Navigator.pop instead of advancing to a send
+  /// phase, and its dual mode waits for a real second shutter tap rather
+  /// than firing the front shot automatically.
   @override
   Widget build(BuildContext context) {
-    final screenH = MediaQuery.of(context).size.height;
-    final screenW = MediaQuery.of(context).size.width;
-    final bottomPad = MediaQuery.of(context).padding.bottom;
-    final pipW = screenW * 0.26;
-    final pipH = pipW * 1.38;
+    final ctrl = _controller;
+    final ready = _cameraReady && ctrl != null && ctrl.value.isInitialized;
+    final midDual = _pendingFirst != null;
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: Container(
-        height: screenH * 0.85,
-        decoration: BoxDecoration(
-          gradient: _sent
-              ? const LinearGradient(
-                  colors: [Color(0xFF405DE6), Color(0xFF833AB4), Color(0xFFE1306C)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
+        height: MediaQuery.of(context).size.height * 0.85,
+        color: const Color(0xFF080810),
+        child: CaptureCard(
+          controller: _controller,
+          cameraReady: ready,
+          cameraError: _initFailed
+              ? "Camera didn't finish starting — try again."
               : null,
-          color: _sent ? null : const Color(0xFF080810),
+          usingRear: !_isFront,
+          swapping: _capturingSelfie,
+          onCapture: _capture,
+          onGallery: _pickGallery,
+          onSwap: _flipCamera,
+          onClose: () => Navigator.of(context).pop(),
+          dualCameraEnabled: _dualMode,
+          // Locked mid-sequence so the mode can't change between the two
+          // halves of a pair.
+          onToggleDualCamera: () {
+            if (midDual || _capturingSelfie || _sending) return;
+            setState(() => _dualMode = !_dualMode);
+          },
+          // Drives CaptureCard's mid-dual chrome: hides the mode switch and
+          // the flip button once a pair is underway.
+          dualStep: midDual ? DualStep.front : DualStep.back,
+          flashKey: _flashKey,
+          maskFilterOn: _maskOn,
+          onToggleMaskFilter: () => setState(() => _maskOn = !_maskOn),
+          maskOverlayKey: _maskOverlayKey,
+          // The sheet's own container already rounds the top corners.
+          borderRadius: 0,
+          // Dual here takes the FRAMED lens first and waits for a second
+          // tap, so which lens you start on is a real choice.
+          allowFlipInDual: true,
+          hint: midDual
+              ? (_capturingSelfie
+                    ? 'flipping…'
+                    : 'now the ${_isFront ? 'front' : 'back'} one — tap again')
+              : null,
         ),
-        child: _sent ? _buildSentView() : _buildCameraView(bottomPad, pipW, pipH),
-      ),
-    );
-  }
-
-  Widget _buildSentView() {
-    return Center(
-      child: ScaleTransition(
-        scale: _sentScale,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.send_rounded, color: Colors.white, size: 52),
-            const SizedBox(height: 14),
-            Text(
-              'Sent!',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 28,
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              widget.recipientName,
-              style: GoogleFonts.jetBrainsMono(
-                fontSize: 13,
-                color: Colors.white.withValues(alpha: 0.70),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCameraView(double bottomPad, double pipW, double pipH) {
-    return Column(
-      children: [
-        _buildHeader(),
-        _buildPromptDisplay(),
-        Expanded(child: _buildCameraArea(pipW, pipH)),
-        _buildControls(bottomPad),
-      ],
-    );
-  }
-
-  Widget _buildPromptDisplay() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-      color: const Color(0xFF060610),
-      child: Text(
-        widget.prompt,
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
-          height: 1.3,
-        ),
-        textAlign: TextAlign.center,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.18), width: 1),
-        ),
-      ),
-      child: Column(
-        children: [
-          // Handle
-          Padding(
-            padding: const EdgeInsets.only(top: 10, bottom: 6),
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.20),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pop(false),
-                  child: Container(
-                    width: 32, height: 32,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.10),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-                    ),
-                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 16),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Text(
-                  'pinging back ${widget.recipientName}',
-                  style: GoogleFonts.jetBrainsMono(
-                    fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCameraArea(double pipW, double pipH) {
-    final ready = _previewMounted;
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Main camera preview — DeepArPreviewPlus self-sizes via
-        // AspectRatio(1/ctrl.aspectRatio); wrapping in an explicit finite
-        // SizedBox lets FittedBox(cover) crop-fill the viewfinder, matching
-        // the old CameraPreview's full-bleed behavior (identical wrapper to
-        // composer_screen.dart's _CameraViewfinder, mirrored here).
-        if (ready)
-          Builder(builder: (context) {
-            final ctrl = DeepArService.instance.controller;
-            final ratio = ctrl.aspectRatio;
-            return SizedBox.expand(
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: 1000 / ratio,
-                  height: 1000,
-                  child: DeepArPreviewPlus(ctrl),
-                ),
-              ),
-            );
-          })
-        else if (_initFailed)
-          _buildCameraFailedView()
-        else
-          Container(
-            color: const Color(0xFF090912),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(
-                    width: 28, height: 28,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white38),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'camera loading...',
-                    style: GoogleFonts.jetBrainsMono(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.20),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-        // Capture flash — brief white opacity pulse, triggered by _capture()
-        // via _flashKey.
-        Positioned.fill(child: CaptureFlashOverlay(key: _flashKey)),
-
-        // Active filter name pill — top-left, clear of the PiP thumbnail on
-        // the right.
-        if (ready)
-          Positioned(
-            top: 14,
-            left: 16,
-            right: pipW + 24,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: ActiveFilterPill(label: _activeFilterLabel),
-            ),
-          ),
-
-        // PiP — tap to swap between rear / front camera
-        Positioned(
-          top: 14, right: 14,
-          child: GestureDetector(
-            onTap: _swapCamera,
-            child: Container(
-              width: pipW, height: pipH,
-              decoration: BoxDecoration(
-                color: const Color(0xFF12121E),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.22), width: 1),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.40), blurRadius: 12, offset: const Offset(0, 4))],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(13),
-                child: _cameraSwapping
-                    ? const Center(
-                        child: SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white38)),
-                        ),
-                      )
-                    : Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _usingRear ? Icons.camera_front_outlined : Icons.camera_rear_outlined,
-                            size: 22,
-                            color: Colors.white.withValues(alpha: 0.30),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _usingRear ? 'selfie' : 'rear',
-                            style: GoogleFonts.jetBrainsMono(
-                              fontSize: 8,
-                              color: Colors.white.withValues(alpha: 0.25),
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-          ),
-        ),
-
-        // Bottom scrim
-        Positioned(
-          bottom: 0, left: 0, right: 0, height: 60,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-                colors: [
-                  const Color(0xFF090912).withValues(alpha: 0.80),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCameraFailedView() {
-    return Container(
-      color: const Color(0xFF090912),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.no_photography,
-                color: Colors.white.withValues(alpha: 0.25), size: 44),
-            const SizedBox(height: 14),
-            Text(
-              'Camera unavailable',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.white.withValues(alpha: 0.60),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Grant camera permission in Settings,\nor use your gallery instead.',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: Colors.white.withValues(alpha: 0.35),
-                height: 1.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            GestureDetector(
-              onTap: _pickGallery,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.photo_library_outlined,
-                        color: Colors.white.withValues(alpha: 0.80), size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Pick from gallery',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.80),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Filter strip + shutter ring — replaces the old separate DeepArLensPicker
-  // (was its own Padding slot in _buildCameraView, above this) and the
-  // inline gradient-ring shutter (was the center child of this Row). The
-  // ring is the strip's own fixed center, landing where the old shutter
-  // used to (between gallery/swap, which stay visible even when the camera
-  // isn't ready — same reasoning as composer_screen.dart's identical
-  // merge). Horizontal padding moved from the outer Container onto the two
-  // side buttons directly, since the strip itself needs the full width for
-  // its own center-lock math.
-  Widget _buildControls(double bottomPad) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(0, 18, 0, bottomPad + 26),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-        ),
-      ),
-      child: SizedBox(
-        height: 118, // matches DeepArFilterStrip's own height
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (_cameraReady)
-              if (kDeepArFiltersEnabled)
-                DeepArFilterStrip(
-                  lenses: _lensSet,
-                  onCapture: _capture,
-                  onActiveLabelChanged: (l) => setState(() => _activeFilterLabel = l),
-                )
-              else
-                PlainShutterButton(onCapture: _capture),
-            Positioned(
-              left: 28,
-              child: _GlassCamBtn(
-                icon: Icons.photo_library_outlined,
-                iconSize: 18,
-                onTap: _pickGallery,
-              ),
-            ),
-            Positioned(
-              right: 28,
-              child: _GlassCamBtn(
-                icon: Icons.flip_camera_ios_outlined,
-                iconSize: 20,
-                onTap: _swapCamera,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Glass camera control button
-// ---------------------------------------------------------------------------
-
-class _GlassCamBtn extends StatelessWidget {
-  const _GlassCamBtn({
-    required this.icon,
-    required this.iconSize,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final double iconSize;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: 0.10),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
-        ),
-        child: Icon(icon, color: Colors.white, size: iconSize),
       ),
     );
   }
