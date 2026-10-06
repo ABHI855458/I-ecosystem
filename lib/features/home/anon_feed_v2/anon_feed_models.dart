@@ -83,6 +83,8 @@ class AnonFeedPost {
     this.imageUrl,
     this.personaPhotoUrl,
     this.secondaryPhotoUrl,
+    this.videoUrl,
+    this.videoMs,
     this.insetOnRight = true,
   });
 
@@ -95,6 +97,11 @@ class AnonFeedPost {
   /// Real `posts.image_url`; null for text-only posts and for the demo
   /// entries (which render the card's flat placeholder fill).
   final String? imageUrl;
+
+  /// A VIDEO anon post (2026-10-06): the card plays this instead of the
+  /// still, which stays as [imageUrl] (the poster).
+  final String? videoUrl;
+  final int? videoMs;
 
 
   /// The poster's chosen anon persona photo (`users.anon_photo_url`,
@@ -213,6 +220,8 @@ class AnonFeedPost {
       imageUrl: row['image_url'] as String?,
       personaPhotoUrl: row['anon_photo_url'] as String?,
       secondaryPhotoUrl: row['photo_url_secondary'] as String?,
+      videoUrl: row['video_url'] as String?,
+      videoMs: (row['video_duration_ms'] as num?)?.toInt(),
       insetOnRight: row['inset_on_right'] as bool? ?? true,
       // `communities` isn't joined into posts_feed, so the community label
       // falls back to empty rather than a fabricated one — the card's meta

@@ -511,6 +511,12 @@ class _PingPromptSheetState extends State<PingPromptSheet> {
   /// costs nothing) and uploaded as part of the send.
   XFile? _photo;
 
+  /// A hold-to-record clip (2026-10-06). [_photo] is then its POSTER still,
+  /// which is what the sheet previews; this is what actually gets sent. A
+  /// video ping rides in the ping's photo_url and is recognised by its
+  /// .mp4/.mov/.m4v extension — no schema change.
+  XFile? _video;
+
   String get _resolvedText => _editCtrl.text.trim();
 
   Future<void> _pickPhoto() async {
@@ -523,7 +529,10 @@ class _PingPromptSheetState extends State<PingPromptSheet> {
       ),
     );
     if (capture == null || !mounted) return;
-    setState(() => _photo = capture.photo);
+    setState(() {
+      _photo = capture.photo;
+      _video = capture.video;
+    });
   }
 
   Future<void> _send() async {
@@ -561,6 +570,7 @@ class _PingPromptSheetState extends State<PingPromptSheet> {
     final mark = ScoreGainService.mark();
     final text = _resolvedText;
     final photo = _photo;
+    final video = _video;
     // Captured while this context is still mounted — the reward outlives
     // the sheet, and a popped context can no longer resolve an Overlay.
     final overlay = Overlay.of(context, rootOverlay: true);
@@ -584,7 +594,12 @@ class _PingPromptSheetState extends State<PingPromptSheet> {
       unawaited(() async {
         try {
           String? photoUrl;
-          if (photo != null) {
+          if (video != null) {
+            photoUrl = await StorageService.uploadPingVideo(
+              file: File(video.path),
+              pingId: 'outbound/${DateTime.now().millisecondsSinceEpoch}',
+            );
+          } else if (photo != null) {
             photoUrl = await StorageService.uploadPingPhoto(
               file: File(photo.path),
               pingId: 'outbound/${DateTime.now().millisecondsSinceEpoch}',
@@ -618,7 +633,12 @@ class _PingPromptSheetState extends State<PingPromptSheet> {
         // closed, so the wait costs the sender nothing, and a ping that is
         // never actually sent never uploads anything.
         String? photoUrl;
-        if (photo != null) {
+        if (video != null) {
+          photoUrl = await StorageService.uploadPingVideo(
+            file: File(video.path),
+            pingId: 'outbound/${DateTime.now().millisecondsSinceEpoch}',
+          );
+        } else if (photo != null) {
           photoUrl = await StorageService.uploadPingPhoto(
             file: File(photo.path),
             // No ping row exists yet — this is only the storage folder, and
@@ -1195,7 +1215,10 @@ class _PingPromptSheetState extends State<PingPromptSheet> {
           GestureDetector(
             onTap: _photo == null
                 ? _pickPhoto
-                : () => setState(() => _photo = null),
+                : () => setState(() {
+                    _photo = null;
+                    _video = null;
+                  }),
             behavior: HitTestBehavior.opaque,
             child: Container(
               width: 38,

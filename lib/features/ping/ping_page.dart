@@ -992,7 +992,7 @@ class _PingPageState extends State<PingPage>
   /// progress bar and the remaining time read from one source and stay in sync
   /// across pause/resume.
   AnimationController? _photoTimer;
-  static const _kPhotoSeconds = 3;
+  static const _kPhotoSeconds = 2;
 
   /// True while the finger is down on the photo — pauses the countdown and
   /// swaps the hint text.
@@ -3539,13 +3539,10 @@ class _PingPageState extends State<PingPage>
                 right: s(18),
                 bottom: active ? s(10) : s(17),
               ),
-              child: ImageFiltered(
-                // blur clears continuously with hold progress
-                imageFilter: ui.ImageFilter.blur(
-                  sigmaX: (9 * (1 - pr)) / 2,
-                  sigmaY: (9 * (1 - pr)) / 2,
-                ),
-                child: Row(
+              // Not blurred — explicit request, 2026-10-06: "don't blur the
+              // to reply section, let it be direct". The photo itself is
+              // still the hold-to-reveal; only the row is shown plainly.
+              child: Row(
                   children: [
                     avatarCircle(
                       s,
@@ -3588,7 +3585,6 @@ class _PingPageState extends State<PingPage>
                     ),
                   ],
                 ),
-              ),
             ),
             if (active)
               Padding(
@@ -4179,11 +4175,6 @@ class _PingPageState extends State<PingPage>
                 right: s(18),
                 bottom: active ? s(10) : s(17),
               ),
-              child: ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(
-                  sigmaX: (9 * (1 - pr)) / 2,
-                  sigmaY: (9 * (1 - pr)) / 2,
-                ),
                 child: Row(
                   children: [
                     avatarCircle(
@@ -4241,7 +4232,6 @@ class _PingPageState extends State<PingPage>
                     ),
                   ],
                 ),
-              ),
             ),
             if (active)
               Padding(
@@ -6939,7 +6929,14 @@ class _PingPageState extends State<PingPage>
                     onLongPressEnd: (_) => _photoHoldEnd(),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(s(20)),
-                      child: p.photoUrl != null
+                      child: isVideoUrl(p.photoUrl)
+                          // A ping that carries a clip plays it (2026-10-06).
+                          ? AppVideo(
+                              url: p.photoUrl,
+                              autoPlay: true,
+                              fit: BoxFit.cover,
+                            )
+                          : p.photoUrl != null
                           ? CachedNetworkImage(
                               memCacheWidth: 1080,
                               imageUrl: p.photoUrl!,

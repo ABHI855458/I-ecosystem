@@ -875,6 +875,19 @@ class StorageService {
     }
   }
 
+  /// A video POST (anon / friends / moment) — same bucket and folder shape
+  /// as [uploadPostImage] (`anonymous|everyone/<userId>/…`) so the bucket's
+  /// existing path rules apply unchanged.
+  static Future<String?> uploadPostVideo({
+    required File file,
+    required bool isAnon,
+    required String userId,
+  }) => _uploadVideo(
+    file: file,
+    bucket: _postsBucket,
+    prefix: '${isAnon ? 'anonymous' : 'everyone'}/$userId',
+  );
+
   /// A video answer to a ping (hold-to-record, capped in the recorder).
   static Future<String?> uploadPingVideo({
     required File file,

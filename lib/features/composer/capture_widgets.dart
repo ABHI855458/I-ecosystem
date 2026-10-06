@@ -7,6 +7,11 @@ import 'package:flutter/services.dart';
 /// ping_replies_video_duration_ck), so this stays comfortably under it.
 const kHoldVideoLimit = Duration(seconds: 15);
 
+/// The cap for a video that becomes a POST (anon, friends, group, Duo) —
+/// longer than a ping answer, decided with the user 2026-10-06 ("15s pings,
+/// 60s posts"). The server CHECKs sit a little above this.
+const kPostVideoLimit = Duration(seconds: 60);
+
 /// Plain circular shutter button — camera/ping capture screens.
 ///
 /// Tap takes a photo. HOLD records video, up to [kHoldVideoLimit], with the
@@ -19,9 +24,19 @@ class PlainShutterButton extends StatefulWidget {
     required this.onCapture,
     this.onStartVideo,
     this.onStopVideo,
+    this.videoLimit = kHoldVideoLimit,
+    this.onStartFailed,
   });
 
   final VoidCallback onCapture;
+
+  /// How long a hold may run before it stops itself.
+  final Duration videoLimit;
+
+  /// Called when [onStartVideo] reports it couldn't start, so the host can
+  /// say so — a silent failure is indistinguishable from "holding does
+  /// nothing", which is exactly what was reported (2026-10-06).
+  final VoidCallback? onStartFailed;
 
   /// Called when the hold begins. Returning false (e.g. the camera is busy)
   /// cancels the recording UI.
@@ -38,7 +53,7 @@ class _PlainShutterButtonState extends State<PlainShutterButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ring = AnimationController(
     vsync: this,
-    duration: kHoldVideoLimit,
+    duration: widget.videoLimit,
   )..addStatusListener((st) {
       // Hit the cap: stop exactly as a release would.
       if (st == AnimationStatus.completed && _recording) _stop();
@@ -46,6 +61,11 @@ class _PlainShutterButtonState extends State<PlainShutterButton>
 
   bool _recording = false;
   bool _starting = false;
+
+  /// The finger came up while [_start] was still awaiting the camera. The
+  /// recording that then starts has nobody left to stop it, so it is stopped
+  /// the moment it begins.
+  bool _releasedWhileStarting = false;
 
   @override
   void dispose() {
@@ -56,15 +76,29 @@ class _PlainShutterButtonState extends State<PlainShutterButton>
   Future<void> _start() async {
     if (widget.onStartVideo == null || _recording || _starting) return;
     _starting = true;
+    _releasedWhileStarting = false;
     final ok = await widget.onStartVideo!.call();
     _starting = false;
-    if (!mounted || !ok) return;
+    if (!ok) {
+      if (mounted) widget.onStartFailed?.call();
+      return;
+    }
+    if (!mounted) {
+      // The camera is already recording but this button is gone: stop it.
+      widget.onStopVideo?.call();
+      return;
+    }
     HapticFeedback.mediumImpact();
     setState(() => _recording = true);
     _ring.forward(from: 0);
+    if (_releasedWhileStarting) _stop();
   }
 
   void _stop() {
+    if (_starting) {
+      _releasedWhileStarting = true;
+      return;
+    }
     if (!_recording) return;
     _ring.stop();
     setState(() => _recording = false);

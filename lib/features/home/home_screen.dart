@@ -195,15 +195,32 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// Measures the EXPANDED header. Was a one-shot 240ms after launch that
+  /// bailed if the chrome had collapsed by then and never retried, so a
+  /// header caught mid-animation (or a scroll within the first quarter
+  /// second) froze a too-small inset for the whole session and the first
+  /// post slid up under the clock/5G/battery (reported 2026-10-06 on a Duo
+  /// post). Now it runs after every frame where the header is expanded and
+  /// keeps the largest height seen, so it can only converge on the real one.
   void _captureExpandedHeightOnce() {
-    if (_headerExpandedHeight != null) return;
-    Future.delayed(const Duration(milliseconds: 240), () {
-      if (!mounted || _chromeCollapsed || _headerExpandedHeight != null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _chromeCollapsed) return;
       final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
-      if (box != null && box.hasSize) {
-        setState(() => _headerExpandedHeight = box.size.height);
+      if (box == null || !box.hasSize) return;
+      final h = box.size.height;
+      if (h > (_headerExpandedHeight ?? 0) + 0.5) {
+        setState(() => _headerExpandedHeight = h);
       }
     });
+  }
+
+  /// The least the Friends feed may start below the top of the screen: the
+  /// status bar plus the slim header's minimum. A floor, so a bad or missing
+  /// measurement can never put a post under the clock.
+  double _friendsTopInset(double topPadding) {
+    final floor = topPadding + 96;
+    final measured = _headerExpandedHeight;
+    return measured == null || measured < floor ? floor : measured;
   }
 
   @override
@@ -400,6 +417,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).padding.top;
+    // Re-measure the expanded header after this frame (cheap: it only
+    // setStates when the real height grows past what's stored).
+    if (_tabIndex == 1) _captureExpandedHeightOnce();
 
     return Scaffold(
       // Always black now — the old "Anonymous = white" backdrop is stale:
@@ -556,7 +576,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     // collapses OVER the content instead, and since it
                     // re-expands only at the very top — exactly where this
                     // full inset is visible — nothing is ever covered.
-                    topInset: _headerExpandedHeight ?? (topPadding + 200),
+                    topInset: _friendsTopInset(topPadding),
                     // The "Friends" toggle switches to the real friends
                     // feed (accepted friends OR shared community-audience,
                     // deduped) rather than the everyone/explore feed this
@@ -604,8 +624,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      AppColors.background.withValues(alpha: 0.55),
-                      AppColors.background.withValues(alpha: 0.25),
+                      AppColors.background.withValues(alpha: 0.95),
+                      AppColors.background.withValues(alpha: 0.6),
                       AppColors.background.withValues(alpha: 0),
                     ],
                     stops: const [0, 0.5, 1],

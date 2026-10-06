@@ -1,8 +1,13 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import 'dart:io';
+
+import 'package:image_picker/image_picker.dart';
+
 import '../../core/glass.dart' show showGlassToast;
 import '../../core/supabase_config.dart' show supabase;
+import '../../services/anon_persona_service.dart';
 import '../../services/current_user_service.dart';
 import '../../screens/feed/single_post_detail_screen.dart';
 import '../../screens/feed/widgets/post_card_shared.dart' show showPostCommentsSheet;
@@ -31,6 +36,25 @@ class _MyAnonPostsScreenState extends State<MyAnonPostsScreen> {
 
   /// The name my anon posts go out under. Null until loaded.
   String? _anonName;
+
+  /// Picks a new anon display picture, saves it, and shows it on every anon
+  /// post of mine (the card reads users.anon_photo_url through posts_feed).
+  Future<void> _changeAnonPhoto() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 800,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+    try {
+      await AnonPersonaService.instance.uploadAndSave(File(picked.path));
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) {
+        showGlassToast(context, "Couldn't save that picture.", isError: true);
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -210,7 +234,23 @@ class _MyAnonPostsScreenState extends State<MyAnonPostsScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.masks_rounded, size: 18, color: Colors.white),
+                            GestureDetector(
+                              onTap: _changeAnonPhoto,
+                              child: ListenableBuilder(
+                                listenable: AnonPersonaService.instance,
+                                builder: (context, _) {
+                                  final url = AnonPersonaService.instance.photoUrl;
+                                  return CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: const Color(0xFF16161A),
+                                    backgroundImage: url == null ? null : NetworkImage(url),
+                                    child: url == null
+                                        ? const Icon(Icons.add_a_photo_outlined, size: 16, color: Colors.white70)
+                                        : null,
+                                  );
+                                },
+                              ),
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(

@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../widgets/app_video.dart';
 import 'package:flutter/rendering.dart'
     show BoxHitTestEntry, BoxHitTestResult, RenderStack;
 import 'package:flutter/services.dart';
@@ -288,6 +289,10 @@ class _AnonFeedScreenV2State extends State<AnonFeedScreenV2> {
   /// blank a feed that had simply failed to load its FIRST page.
   bool _loadFailed = false;
 
+  /// Set once the one-shot retry for an empty first page has been spent — see
+  /// _loadMore. Reset by pull-to-refresh.
+  bool _emptyRetryDone = false;
+
   /// What the PageView actually renders.
   ///   * real posts, once any page has loaded — KEPT even after a later
   ///     page fails, so a mid-pagination failure never wipes what's
@@ -379,6 +384,7 @@ class _AnonFeedScreenV2State extends State<AnonFeedScreenV2> {
       _offset = 0;
       _reachedEnd = false;
       _loadFailed = false;
+      _emptyRetryDone = false;
       _recordedInitialView = false;
       _open = null;
     });
@@ -468,6 +474,7 @@ class _AnonFeedScreenV2State extends State<AnonFeedScreenV2> {
       if (rows.isEmpty && _remote.isEmpty) {
         final older = await FeedService.instance.fetchAnonFallback(
           limit: _pageSize,
+          throwOnError: true,
         );
         if (!mounted) return;
         if (older.isNotEmpty) {
@@ -506,14 +513,27 @@ class _AnonFeedScreenV2State extends State<AnonFeedScreenV2> {
           // id, so both copies share one reaction/comment state rather
           // than drifting apart.
           if (_remote.isNotEmpty) {
-            final lap = List<AnonFeedPost>.from(_remote)..shuffle();
-            _remote.addAll(lap);
-            // Back to the top of the real rows, so the NEXT genuine fetch
-            // picks up anything posted since rather than staying parked
-            // past the end forever.
-            _offset = 0;
-          } else {
+            // No replay lap (explicit request, 2026-10-06: "remove the open
+            // loops"). Once the real rows are seen the feed says so, rather
+            // than reshuffling the same few posts. A pull-to-refresh starts
+            // over from the top.
             _reachedEnd = true;
+          } else {
+            // Nothing at all. Before saying "you're all caught up", ask
+            // once more after a beat: on a cold start the first query can
+            // come back EMPTY (not failed) while the session is still
+            // attaching, and treating that as the end latched the empty
+            // screen for the whole session — it only cleared on a manual
+            // pull-to-refresh. A retry that's still empty is the real end.
+            if (!_emptyRetryDone) {
+              _emptyRetryDone = true;
+              _reachedEnd = false;
+              Future<void>.delayed(const Duration(milliseconds: 1500), () {
+                if (mounted && _remote.isEmpty) unawaited(_loadMore());
+              });
+            } else {
+              _reachedEnd = true;
+            }
           }
         } else {
           // Shuffled per page, not left in fetch (chronological) order —
@@ -2797,6 +2817,13 @@ class _AnonPostCard extends StatelessWidget {
                         height: _designH,
                         child: post.imageUrl == null || post.imageUrl!.isEmpty
                             ? ColoredBox(color: _placeholderFill)
+                            : (post.videoUrl ?? '').isNotEmpty
+                            // A video anon post plays in the card (2026-10-06).
+                            ? AppVideo(
+                                url: post.videoUrl,
+                                durationMs: post.videoMs,
+                                fit: BoxFit.cover,
+                              )
                             : (post.secondaryPhotoUrl ?? '').isNotEmpty
                             // Same interactive dual photo the friends feed
                             // uses — tap the inset to swap which layer is

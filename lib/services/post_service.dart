@@ -32,6 +32,8 @@ class LocalPost {
     this.promptId,
     this.branch,
     this.photoPath,
+    this.videoPath,
+    this.videoMs,
     this.photoUrls,
     this.photoUrl,
     this.aspectRatio = 4.0 / 5.0,
@@ -91,6 +93,11 @@ class LocalPost {
 
   /// Absolute path to the local captured/picked image file.
   final String? photoPath;
+
+  /// A VIDEO post (2026-10-06): the local clip, uploaded on save and written
+  /// to posts.video_url. [photoPath] is null for these.
+  final String? videoPath;
+  final int? videoMs;
 
   /// Extra local photo paths BEYOND [photoPath], for a multi-photo post —
   /// [photoPath] stays the cover/first photo. Null or empty means a plain
@@ -422,6 +429,15 @@ class PostService {
     // losing the whole thing: the cover already succeeded by the time this
     // runs, and secondaryPhotoUrl staying null is exactly what a
     // single-photo post looks like anyway.
+    String? videoUrl;
+    if (post.videoPath != null) {
+      videoUrl = await StorageService.uploadPostVideo(
+        file: File(post.videoPath!),
+        isAnon: post.isAnonymous,
+        userId: post.userId,
+      );
+      if (videoUrl == null) throw StateError('Video upload failed');
+    }
     if (post.photoPath != null && post.secondaryPhotoPath != null) {
       try {
         secondaryUrl = await StorageService.uploadPostImage(
@@ -484,6 +500,9 @@ class PostService {
         // find the 'caption' column of 'posts' in the schema cache."
         'content': post.caption,
         if (imageUrl != null) 'image_url': imageUrl,
+        if (videoUrl != null) 'video_url': videoUrl,
+        if (videoUrl != null && post.videoMs != null)
+          'video_duration_ms': post.videoMs,
         // Only written for genuine multi-photo posts — a single-photo post
         // leaves this null and readers fall back to image_url.
         if (allUrls.length > 1) 'photo_urls': allUrls,

@@ -17,6 +17,15 @@ import 'package:video_player/video_player.dart';
 // load falls back to a still frame rather than an error box.
 // ---------------------------------------------------------------------------
 
+/// True when [url] points at a video file. A video PING (a new ping carrying
+/// a clip) rides in the ping's photo_url, so the extension is how every
+/// viewer tells it from a still (2026-10-06).
+bool isVideoUrl(String? url) {
+  if (url == null) return false;
+  final path = url.split('?').first.toLowerCase();
+  return path.endsWith('.mp4') || path.endsWith('.mov') || path.endsWith('.m4v');
+}
+
 /// "0:08" from milliseconds — used by cards that only have the stored
 /// duration and no loaded controller.
 String formatClipDuration(int? ms) {

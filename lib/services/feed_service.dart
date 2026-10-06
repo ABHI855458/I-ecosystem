@@ -934,6 +934,8 @@ class FeedService {
           ? parsePostgresTimestamp(m['created_at'] as String)
           : null,
       secondaryPhotoUrl: m['photo_url_secondary'] as String?,
+      videoUrl: m['video_url'] as String?,
+      videoMs: (m['video_duration_ms'] as num?)?.toInt(),
       insetOnRight: m['inset_on_right'] as bool? ?? true,
       // Only profile_posts_for_viewer projects this; every other read
       // leaves it null, which is the existing behaviour for personal posts.
@@ -1475,7 +1477,10 @@ class FeedService {
   /// prompt-required rule, but without the freshness window or the
   /// reacted/pinged exclusion, so older Dips fill the feed instead of an
   /// empty state. Still RLS-gated like every other read.
-  Future<List<Map<String, dynamic>>> fetchAnonFallback({int limit = 20}) async {
+  Future<List<Map<String, dynamic>>> fetchAnonFallback({
+    int limit = 20,
+    bool throwOnError = false,
+  }) async {
     try {
       final rows = await _sb
           .from('posts_feed')
@@ -1490,6 +1495,7 @@ class FeedService {
           .timeout(const Duration(seconds: 10));
       return List<Map<String, dynamic>>.from(rows as List);
     } catch (_) {
+      if (throwOnError) rethrow;
       return [];
     }
   }

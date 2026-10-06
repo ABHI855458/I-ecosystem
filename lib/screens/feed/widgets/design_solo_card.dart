@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../widgets/app_video.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../features/composer/dual_photo_compositor.dart'
@@ -75,6 +76,8 @@ class DesignSoloCard extends StatefulWidget {
     this.showReactionsViewer = false,
     this.showActionRail = true,
     this.secondaryPhotoUrl,
+    this.videoUrl,
+    this.videoMs,
     this.insetOnRight = true,
     this.photoPath,
     this.aspectRatio,
@@ -120,6 +123,11 @@ class DesignSoloCard extends StatefulWidget {
   /// — null for every ordinary post, which keeps the plain
   /// PostPhotoCarousel. See DualPhotoView's own doc.
   final String? secondaryPhotoUrl;
+
+  /// A VIDEO post (2026-10-06): the card plays this in place of the photo
+  /// carousel.
+  final String? videoUrl;
+  final int? videoMs;
   final bool insetOnRight;
 
   /// Item #1 — the public "who reacted" pill/dropdown is gone from every
@@ -731,6 +739,16 @@ class _DesignSoloCardState extends State<DesignSoloCard>
                         File(widget.photoPath!),
                         fit: BoxFit.cover,
                       ),
+                    ),
+                  )
+                else if ((widget.videoUrl ?? '').isNotEmpty)
+                  AspectRatio(
+                    aspectRatio: aspect,
+                    child: AppVideo(
+                      url: widget.videoUrl,
+                      durationMs: widget.videoMs,
+                      fit: BoxFit.cover,
+                      borderRadius: BorderRadius.circular(kFriendsPostRadius),
                     ),
                   )
                 else if ((widget.secondaryPhotoUrl ?? '').isNotEmpty && _photos.isNotEmpty)

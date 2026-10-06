@@ -44,6 +44,8 @@ class CaptureCard extends StatelessWidget {
     required this.onCapture,
     this.onStartVideo,
     this.onStopVideo,
+    this.videoLimit = kHoldVideoLimit,
+    this.onVideoStartFailed,
     required this.onGallery,
     required this.onSwap,
     required this.onClose,
@@ -75,6 +77,8 @@ class CaptureCard extends StatelessWidget {
   /// shutter tap-only, which is every camera except the ping reply one.
   final Future<bool> Function()? onStartVideo;
   final VoidCallback? onStopVideo;
+  final Duration videoLimit;
+  final VoidCallback? onVideoStartFailed;
   /// Non-null only for the GROUP camera (explicit request, 2026-10-03:
   /// "include the duo qr scanner and group qr scanner in the group's camera
   /// only"). Opens the one scanner that detects BOTH kinds of code and does
@@ -359,6 +363,8 @@ class CaptureCard extends StatelessWidget {
                     onCapture: onCapture,
                     onStartVideo: onStartVideo,
                     onStopVideo: onStopVideo,
+                    videoLimit: videoLimit,
+                    onStartFailed: onVideoStartFailed,
                   ),
                 ),
                 Positioned(

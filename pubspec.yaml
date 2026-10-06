@@ -21,6 +21,8 @@ dependencies:
   # Video playback for Duo/group post videos and ping video replies
   # (added 2026-10-06 — nothing in the app played video before).
   video_player: ^2.9.2
+  # Poster still for a recorded clip (posts require one — posts_video_needs_poster).
+  video_thumbnail: ^0.5.3
   camera: ^0.11.0
   gal: ^2.3.1
   flutter_staggered_grid_view: ^0.7.0

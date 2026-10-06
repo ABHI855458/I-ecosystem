@@ -44,6 +44,8 @@ import '../../shared/score_tier.dart';
 import '../../core/supabase_config.dart';
 import 'camera_capture_ui.dart';
 import 'capture_widgets.dart';
+import 'video_capture.dart';
+import '../../widgets/app_video.dart';
 import 'dual_photo_compositor.dart';
 
 // ---------------------------------------------------------------------------
@@ -151,6 +153,8 @@ class _ComposerSubmission {
     required this.caption,
     required this.aspectRatio,
     required this.photo,
+    this.videoPath,
+    this.videoMs,
     this.secondaryPhoto,
     this.extraPhotos = const [],
     this.prompt,
@@ -182,6 +186,10 @@ class _ComposerSubmission {
   final String caption;
   final double aspectRatio;
   final XFile? photo;
+
+  /// A recorded clip (2026-10-06). [photo] is then its poster still.
+  final String? videoPath;
+  final int? videoMs;
 
   /// The dual capture's inset, kept as its OWN layer instead of baked into
   /// [photo] — set only for a friends post, which renders through
@@ -304,6 +312,15 @@ class _ComposerScreenState extends State<ComposerScreen> {
   late ComposerPhase _phase;
   late bool _isAnonymous;
   XFile? _capturedPhoto;
+
+  /// Hold-to-record (explicit request, 2026-10-06): when set, [_capturedPhoto]
+  /// is the clip's POSTER still and these are the clip itself. A recorded
+  /// clip is the whole capture — no extras, no dual.
+  XFile? _capturedVideo;
+  int? _capturedVideoMs;
+  bool _recordingVideo = false;
+  bool _videoStarting = false;
+  DateTime? _recordStartedAt;
 
   /// Extra photos BEYOND `_capturedPhoto` (the cover) — mirrors
   /// LocalPost.photoPath/photoUrls' own split. Populated only via
@@ -431,7 +448,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
       final ctrl = CameraController(
         rear,
         ResolutionPreset.high,
-        enableAudio: false,
+        // Audio ON so a held-shutter video has sound (2026-10-06).
+        enableAudio: true,
         // FACE MASK FILTER: harmless to takePicture() (JPEG capture is
         // unaffected by imageFormatGroup, which only governs
         // startImageStream frames) — lets FaceMaskOverlay analyze this same
@@ -508,7 +526,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
     final ctrl = CameraController(
       desc,
       ResolutionPreset.high,
-      enableAudio: false,
+      // Audio ON — same as _initCamera (video has sound, 2026-10-06).
+      enableAudio: true,
       // FACE MASK FILTER: see matching comment in _initCamera.
       imageFormatGroup: kFaceMaskImageFormatGroup,
     );
@@ -701,6 +720,85 @@ class _ComposerScreenState extends State<ComposerScreen> {
     });
   }
 
+  /// How long a hold may run in THIS camera: a clip headed to people is a
+  /// ping answer (15s); every other destination here is a post (60s) —
+  /// "15s pings, 60s posts", decided with the user 2026-10-06.
+  Duration get _videoLimit {
+    // Same condition as _SendInterfaceState._peopleMode.
+    final people =
+        widget.answeringPrompt == null &&
+        widget.lockToDipGroupId == null &&
+        widget.lockToMomentPostId == null &&
+        !widget.lockToAnonPost;
+    return people ? kHoldVideoLimit : kPostVideoLimit;
+  }
+
+  /// Hold-to-record. Returns false when the camera can't take it, which tells
+  /// the shutter not to draw the recording ring (and fires the failure toast).
+  Future<bool> _startVideo() async {
+    final c = _controller;
+    if (!_cameraReady || c == null || _recordingVideo || _videoStarting) {
+      return false;
+    }
+    // Dual capture is two stills; a clip doesn't fit it.
+    if (_dualCameraEnabled) return false;
+    _videoStarting = true;
+    try {
+      // The face-mask overlay's image stream can't coexist with recording —
+      // pausing it isn't enough, it restarts on rebuild — so it is
+      // unmounted for the duration (see maskFilterOn below).
+      if (_maskFilterOn && !_usingRear) {
+        await _maskOverlayKey.currentState?.pauseStreamingForCapture();
+      }
+      if (mounted) setState(() => _recordingVideo = true);
+      await WidgetsBinding.instance.endOfFrame;
+      await c.startVideoRecording();
+      _recordStartedAt = DateTime.now();
+      return true;
+    } catch (e, st) {
+      debugPrint('[Composer._startVideo] failed: $e\n$st');
+      if (mounted) setState(() => _recordingVideo = false);
+      return false;
+    } finally {
+      _videoStarting = false;
+    }
+  }
+
+  Future<void> _stopVideo() async {
+    final c = _controller;
+    if (!_recordingVideo || c == null) return;
+    if (mounted) setState(() => _recordingVideo = false);
+    final started = _recordStartedAt;
+    _recordStartedAt = null;
+    XFile clip;
+    try {
+      clip = await c.stopVideoRecording();
+    } catch (e, st) {
+      debugPrint('[Composer._stopVideo] failed: $e\n$st');
+      return;
+    }
+    if (!mounted) return;
+    final ms = started == null
+        ? null
+        : DateTime.now().difference(started).inMilliseconds;
+    final done = await finishClip(clip, ms);
+    if (!mounted) return;
+    if (done == null) {
+      showGlassToast(context, 'Hold a little longer to record a video.');
+      return;
+    }
+    HapticFeedback.heavyImpact();
+    setState(() {
+      _capturedPhoto = done.poster; // the poster — always a real image
+      _capturedVideo = done.video;
+      _capturedVideoMs = done.ms;
+      _capturedBackPhoto = null;
+      _capturedFrontPhoto = null;
+      _extraPhotos.clear();
+      _phase = ComposerPhase.send;
+    });
+  }
+
   Future<void> _pickGallery() async {
     // Reused from the send screen's own "add photo" tile once a cover
     // exists — append rather than replace it, capped at _maxPhotos total
@@ -740,6 +838,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
     setState(() {
       _phase = ComposerPhase.camera;
       _capturedPhoto = null;
+      _capturedVideo = null;
+      _capturedVideoMs = null;
       _capturedBackPhoto = null;
       _capturedFrontPhoto = null;
       _extraPhotos.clear();
@@ -883,6 +983,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
             : 'friends',
         caption: spec.caption,
         photoPath: spec.photo?.path,
+        videoPath: spec.videoPath,
+        videoMs: spec.videoMs,
         photoUrls: spec.extraPhotos.isEmpty
             ? null
             : [for (final extra in spec.extraPhotos) extra.path],
@@ -1088,6 +1190,14 @@ class _ComposerScreenState extends State<ComposerScreen> {
                     // plain camera with no Dip / Moment / anon / prompt
                     // lock. One scanner detects both a Duo code and a
                     // group code and does the right thing for each.
+                    onStartVideo: _startVideo,
+                    onStopVideo: () => unawaited(_stopVideo()),
+                    videoLimit: _videoLimit,
+                    onVideoStartFailed: () => showGlassToast(
+                      context,
+                      "Couldn't start recording — try again.",
+                      isError: true,
+                    ),
                     onScanQr:
                         widget.lockToDipGroupId == null &&
                             widget.lockToMomentPostId == null &&
@@ -1115,7 +1225,9 @@ class _ComposerScreenState extends State<ComposerScreen> {
                     onUseBackPhotoOnly: _useBackPhotoOnly,
                     flashKey: _flashKey,
                     // FACE MASK FILTER:
-                    maskFilterOn: _maskFilterOn,
+                    // Off while recording — the analysis stream can't
+                    // coexist with a video (see _startVideo).
+                    maskFilterOn: _maskFilterOn && !_recordingVideo,
                     onToggleMaskFilter: () =>
                         setState(() => _maskFilterOn = !_maskFilterOn),
                     maskOverlayKey: _maskOverlayKey,
@@ -1129,6 +1241,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
                     lockToMomentPostId: widget.lockToMomentPostId,
                     lockToAnonPost: widget.lockToAnonPost,
                     photo: _capturedPhoto,
+                    video: _capturedVideo,
+                    videoMs: _capturedVideoMs,
                     backPhoto: _capturedBackPhoto,
                     frontPhoto: _capturedFrontPhoto,
                     extraPhotos: _extraPhotos,
@@ -1138,7 +1252,9 @@ class _ComposerScreenState extends State<ComposerScreen> {
                     // whole extras strip (see _buildPhotoView's own
                     // onAddPhoto == null branch), so there is nothing extra
                     // to strip out downstream.
-                    onAddPhoto: widget.lockToMomentPostId != null
+                    onAddPhoto:
+                        (widget.lockToMomentPostId != null ||
+                            _capturedVideo != null)
                         ? null
                         : _pickGallery,
                     onRemovePhoto: _removeExtraPhoto,
@@ -1181,6 +1297,8 @@ class _SendInterface extends StatefulWidget {
   const _SendInterface({
     super.key,
     required this.photo,
+    this.video,
+    this.videoMs,
     required this.isAnonymous,
     required this.onAnonChanged,
     required this.onBack,
@@ -1230,6 +1348,11 @@ class _SendInterface extends StatefulWidget {
   final String? lockToDipGroupId;
 
   final XFile? photo;
+
+  /// A recorded clip (2026-10-06) — [photo] is its poster. Null for every
+  /// ordinary photo capture.
+  final XFile? video;
+  final int? videoMs;
   // Dual-camera capture — when both are non-null, the media preview shows
   // the interactive front inset (_CandidMediaPreview) instead of the single
   // flattened photo.
@@ -1501,10 +1624,21 @@ class _SendInterfaceState extends State<_SendInterface> {
     final photoFuture = _flatPhoto();
     Navigator.of(context).pop();
     // Both run off the same captured photo; neither waits on the other.
-    final anonFuture = toAnon ? _postAnonPhoto(photoFuture) : null;
+    final anonFuture = toAnon
+        ? _postAnonPhoto(
+            photoFuture,
+            video: widget.video,
+            videoMs: widget.videoMs,
+          )
+        : null;
     final (sent, error) = picked.isEmpty
         ? (0, null)
-        : await _deliverPhoto(photoFuture, picked);
+        : await _deliverPhoto(
+            photoFuture,
+            picked,
+            video: widget.video,
+            videoMs: widget.videoMs,
+          );
     final anonOk = anonFuture == null ? null : await anonFuture;
     if (!rootCtx.mounted) return;
     if (picked.isEmpty) {
@@ -1711,22 +1845,30 @@ class _SendInterfaceState extends State<_SendInterface> {
           // dual post stuck in the old corner and proportions. The anon
           // card's own frame ratio — there is no size picker on that
           // destination.
-          finalPhoto = await cropToAspect(big, outputAspect: _postRatio);
+          // Uncropped: the photo keeps its own shape (see postAspect below).
+          finalPhoto = big;
           secondaryPhoto = small;
         } else {
           finalPhoto = await compositeDualPhotos(
             widget.backPhoto!,
             widget.frontPhoto!,
             frontIsBig: _frontIsBig,
+            outputAspect: await photoAspectOf(widget.backPhoto!),
           );
         }
       }
+      // The real shape of what's uploaded — stored as the post's aspect so
+      // every card frames it without cutting. It used to be the fixed 4:5
+      // for every photo, which cropped landscape and tall shots alike.
+      final postAspect = await photoAspectOf(finalPhoto ?? widget.photo!);
       await widget.onSend(
         _ComposerSubmission(
           dest: _dest,
           caption: _captionCtrl.text.trim(),
-          aspectRatio: _postRatio,
+          aspectRatio: postAspect,
           photo: finalPhoto,
+          videoPath: widget.video?.path,
+          videoMs: widget.videoMs,
           secondaryPhoto: secondaryPhoto,
           // Dual capture composites to one photo at send time (above) and
           // never populates extras — isDual is orthogonal to this list,
@@ -2359,8 +2501,8 @@ class _SendInterfaceState extends State<_SendInterface> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(22, 28, 22, 0),
                       child: Text(
-                        'No pings waiting for a reply.\n'
-                        'Photos go to people and groups who pinged you.',
+                        'Nobody to send to yet.\n'
+                        'Add friends to your circle and they\'ll show up here.',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.plusJakartaSans(
                           color: Colors.white.withValues(alpha: 0.5),
@@ -2553,11 +2695,11 @@ class _SendInterfaceState extends State<_SendInterface> {
     );
     return [
       if (people.isNotEmpty) ...[
-        _sendLabel('people who pinged you'),
+        _sendLabel('people'),
         grid(people),
       ],
       if (groups.isNotEmpty) ...[
-        _sendLabel('groups that pinged you'),
+        _sendLabel('groups'),
         grid(groups),
       ],
     ];
@@ -2599,7 +2741,14 @@ class _SendInterfaceState extends State<_SendInterface> {
                       ? null
                       : NetworkImage(t.avatarUrl!),
                   child: t.avatarUrl == null
-                      ? (t.groupId != null || t.isGroup)
+                      ? t.isAnon
+                            // Masked: an anonymous pinger — nothing about who.
+                            ? Icon(
+                                Icons.masks_rounded,
+                                size: 24,
+                                color: Colors.white.withValues(alpha: 0.8),
+                              )
+                            : (t.groupId != null || t.isGroup)
                             ? Icon(
                                 Icons.groups_rounded,
                                 size: 26,
@@ -2616,6 +2765,55 @@ class _SendInterfaceState extends State<_SendInterface> {
                       : null,
                 ),
               ),
+              // 👋 — pinged you and still open. Top-right of the DP so it
+              // never fights the picked tick or the streak.
+              if (t.pingedMe)
+                Positioned(
+                  right: -4,
+                  top: -4,
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF1B1B22),
+                      border: Border.all(
+                        color: _kAccent.withValues(alpha: 0.85),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: const Text('👋', style: TextStyle(fontSize: 11.5)),
+                  ),
+                ),
+              // 🔥 N — my streak with them, on their DP.
+              if (t.streak > 0)
+                Positioned(
+                  left: -6,
+                  bottom: -2,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1.5,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(100),
+                      color: const Color(0xFF1B1B22),
+                      border: Border.all(
+                        color: const Color(0xFFFF8A3D).withValues(alpha: 0.8),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      '🔥${t.streak}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
               if (picked)
                 Positioned(
                   right: -1,
@@ -2656,13 +2854,15 @@ class _SendInterfaceState extends State<_SendInterface> {
               ),
             ),
           ),
-          if (t.pingId != null || t.groupId != null)
+          if (t.pingedMe || t.groupId != null)
             Text(
-              t.pingId != null ? 'pinged you' : 'group',
+              t.pingedMe
+                  ? (t.isAnon ? 'pinged you · anon' : 'pinged you')
+                  : 'group',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
-                color: t.pingId != null
+                color: t.pingedMe
                     ? _kAccent.withValues(alpha: 0.85)
                     : Colors.white.withValues(alpha: 0.4),
               ),
@@ -3163,12 +3363,21 @@ class _SendInterfaceState extends State<_SendInterface> {
       );
     }
 
-    Widget img = Image.file(
-      File(widget.photo!.path),
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-    );
+    Widget img = widget.video != null
+        // A recorded clip plays in the preview — autoplay muted, tap for
+        // sound (2026-10-06).
+        ? AppVideo(
+            file: File(widget.video!.path),
+            durationMs: widget.videoMs,
+            autoPlay: true,
+            fit: BoxFit.cover,
+          )
+        : Image.file(
+            File(widget.photo!.path),
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+          );
 
     // Anon composer preview no longer grayscales the photo — matches the
     // real anon feed cards, which render in full color (item #6).
@@ -3235,6 +3444,9 @@ class _PhotoTarget {
     this.userId,
     this.groupId,
     this.isGroup = false,
+    this.isAnon = false,
+    this.pingedMe = false,
+    this.streak = 0,
   });
 
   final String key;
@@ -3244,6 +3456,18 @@ class _PhotoTarget {
   final String? userId;
   final String? groupId;
 
+  /// They pinged me and it's still open — the tile wears a 👋 and sorts
+  /// first. (Redesign 2026-10-06: the list now holds everyone you can send
+  /// to, not only people who pinged.)
+  final bool pingedMe;
+
+  /// The ping was sent anonymously: shown as a masked "Someone". Answering
+  /// goes through [pingId], so who it is stays hidden.
+  final bool isAnon;
+
+  /// My ping streak with this person (my_ping_streaks). 0 = none.
+  final int streak;
+
   /// A GROUP's open ping (answered via [pingId] like a person's) — display
   /// only: the "groups" grid, the group icon, the "group pinged you" label.
   final bool isGroup;
@@ -3252,41 +3476,131 @@ class _PhotoTarget {
 Future<List<_PhotoTarget>>? _photoTargetsPreload;
 List<_PhotoTarget>? _lastPhotoTargets;
 
-/// ONLY the people and groups whose ping to me is still unanswered — the
-/// same set as the Ping page's TO REPLY list (explicit request, 2026-10-03:
-/// "you can send it to the pinged person or pinged group ... if already
-/// pinged them back you can't send it again ... same as the ping page").
-/// The photo goes out as my reply to that ping, so once I've answered
-/// (photo, text or a one-tap ping back — all ping_replies) they drop off.
-/// No friends-circle / old-pinger / every-group fallbacks any more.
+/// Everyone a photo can go to — redesign 2026-10-06 ("don't show the pinged
+/// users under a different category; keep the hand symbol on their DP;
+/// include the other members who haven't pinged; show each person's streak").
+///
+///  * People who pinged me and are still open come FIRST, wearing a 👋. The
+///    photo answers that ping (PingService.reply). Anonymous pingers are in
+///    here as a masked "Someone" — answering goes by ping id, so nothing
+///    about who they are is revealed.
+///  * Everyone else in my Friends circle follows, and the photo reaches them
+///    as a NEW photo ping.
+///  * Groups: ones that pinged me first (one answer each — the wall enforces
+///    it server-side), then my other groups (a new group ping).
+///
+/// People I already have an open ping out to are left off, exactly as on the
+/// Ping page (send_ping would refuse them: PING_ALREADY_OPEN).
 Future<List<_PhotoTarget>> _fetchPhotoTargets() async {
-  final inbox = await PingService.instance.fetchToReply() ?? const [];
-  final out = <_PhotoTarget>[];
+  Future<Object?> safe(Future<Object?> f) async {
+    try {
+      return await f;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  final r = await Future.wait<Object?>([
+    safe(PingService.instance.fetchToReply()),
+    safe(CircleService.instance.fetchFriendsCircleUsers()),
+    safe(PingService.instance.fetchSent()),
+    safe(PingService.instance.fetchStreaks()),
+    safe(GroupService.instance.fetchMyGroups()),
+  ]);
+  final inbox = (r[0] as List<InboundPingRow>?) ?? const <InboundPingRow>[];
+  final friends =
+      (r[1] as List<Map<String, dynamic>>?) ?? const <Map<String, dynamic>>[];
+  final sent = (r[2] as List<OutboundPingRow>?) ?? const <OutboundPingRow>[];
+  final streaks = (r[3] as Map<String, int>?) ?? const <String, int>{};
+  final myGroups =
+      (r[4] as List<Map<String, dynamic>>?) ?? const <Map<String, dynamic>>[];
+
+  final openSentTo = <String>{
+    for (final o in sent)
+      if (!o.isGroup && !o.replied) o.receiverId,
+  };
+  final openSentGroups = <String>{
+    for (final o in sent)
+      if (o.isGroup && o.groupId != null && !o.replied) o.groupId!,
+  };
+
+  final people = <_PhotoTarget>[];
+  final groups = <_PhotoTarget>[];
   final seen = <String>{};
+
+  // 1. Pingers — newest open ping first (fetchToReply is newest-first).
   for (final p in inbox) {
     if (p.expired) continue;
-    // A PERSON who pinged me stays here until their ping expires, however
-    // many photos I've already sent back (explicit request, 2026-10-06:
-    // "till the ping ends they can send multiple photos for the ones who
-    // have pinged him"). A GROUP ping is still one answer each — the wall
-    // enforces it server-side (enforce_group_ping_reply_once).
+    // A PERSON who pinged me stays until their ping expires, however many
+    // photos I've sent back (2026-10-06). A GROUP ping is one answer each.
     if (p.isGroup && p.myReplies.isNotEmpty) continue;
-    // One tile per person / per group, newest open ping wins (fetchToReply
-    // is newest-first).
     final who = p.isGroup
         ? 'group:${p.groupId ?? p.threadId}'
         : 'user:${p.senderId ?? p.id}';
     if (!seen.add(who)) continue;
-    out.add(
+    final t = _PhotoTarget(
+      key: 'ping:${p.id}',
+      name: p.isGroup
+          ? (p.groupName ?? p.senderName)
+          : (p.isAnon ? 'Someone' : p.senderName),
+      avatarUrl: p.isAnon ? null : p.senderAvatarUrl,
+      pingId: p.id,
+      isGroup: p.isGroup,
+      isAnon: p.isAnon && !p.isGroup,
+      pingedMe: true,
+      streak: (p.isGroup || p.isAnon || p.senderId == null)
+          ? 0
+          : (streaks[p.senderId] ?? 0),
+    );
+    (p.isGroup ? groups : people).add(t);
+  }
+
+  // 2. Friends who haven't pinged me — a new photo ping, streak on the DP.
+  final others = <_PhotoTarget>[];
+  for (final f in friends) {
+    final id = f['id'] as String?;
+    if (id == null || seen.contains('user:$id') || openSentTo.contains(id)) {
+      continue;
+    }
+    seen.add('user:$id');
+    others.add(
       _PhotoTarget(
-        key: 'ping:${p.id}',
-        name: p.isGroup ? (p.groupName ?? p.senderName) : p.senderName,
-        avatarUrl: p.isAnon ? null : p.senderAvatarUrl,
-        pingId: p.id,
-        isGroup: p.isGroup,
+        key: 'user:$id',
+        name: (f['name'] as String?) ?? 'someone',
+        avatarUrl: f['profile_photo_url'] as String?,
+        userId: id,
+        streak: streaks[id] ?? 0,
       ),
     );
   }
+  // Streaks first (the people you're keeping alive), then A-Z.
+  others.sort((a, b) {
+    final s = b.streak.compareTo(a.streak);
+    return s != 0 ? s : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  });
+  people.addAll(others);
+
+  // 3. My other groups — a new group ping.
+  for (final g in myGroups) {
+    final id = g['id'] as String?;
+    if (id == null ||
+        seen.contains('group:$id') ||
+        openSentGroups.contains(id)) {
+      continue;
+    }
+    seen.add('group:$id');
+    groups.add(
+      _PhotoTarget(
+        key: 'group:$id',
+        name: (g['name'] as String?) ?? 'Group',
+        avatarUrl: g['icon_url'] as String?,
+        groupId: id,
+        isGroup: true,
+      ),
+    );
+  }
+
+  final out = [...people, ...groups];
   _lastPhotoTargets = out;
   return out;
 }
@@ -3295,7 +3609,11 @@ Future<List<_PhotoTarget>> _fetchPhotoTargets() async {
 /// caption, no prompt, no audience step. It goes to the General community
 /// (every user is a member, so it reaches the whole anon feed), falling
 /// back to the first joined community if General is ever missing.
-Future<bool> _postAnonPhoto(Future<XFile?> photoFuture) async {
+Future<bool> _postAnonPhoto(
+  Future<XFile?> photoFuture, {
+  XFile? video,
+  int? videoMs,
+}) async {
   try {
     final photo = await photoFuture;
     if (photo == null) return false;
@@ -3314,7 +3632,10 @@ Future<bool> _postAnonPhoto(Future<XFile?> photoFuture) async {
         username: 'you',
         visibility: 'anonymous',
         caption: '',
+        // For a clip, photo is its poster still (posts require one).
         photoPath: photo.path,
+        videoPath: video?.path,
+        videoMs: videoMs,
         communityId: communityId,
         showInFeed: true,
       ),
@@ -3327,11 +3648,28 @@ Future<bool> _postAnonPhoto(Future<XFile?> photoFuture) async {
   }
 }
 
+/// The width / height of an image file, read from its header. Falls back to
+/// 4:5 if it can't be decoded, which is what posts used to be stored as.
+Future<double> photoAspectOf(XFile file) async {
+  try {
+    final bytes = await File(file.path).readAsBytes();
+    final codec = await ui.instantiateImageCodec(bytes);
+    final img = (await codec.getNextFrame()).image;
+    final aspect = img.width / img.height;
+    img.dispose();
+    return aspect;
+  } catch (_) {
+    return 4 / 5;
+  }
+}
+
 /// Returns how many recipients got it, plus a note for partial failures.
 Future<(int, String?)> _deliverPhoto(
   Future<XFile?> photoFuture,
-  List<_PhotoTarget> picked,
-) async {
+  List<_PhotoTarget> picked, {
+  XFile? video,
+  int? videoMs,
+}) async {
   var sent = 0;
   String? note;
   try {
@@ -3359,10 +3697,22 @@ Future<(int, String?)> _deliverPhoto(
         if (t.groupId != null) t.groupId!,
     ];
 
-    final url = await StorageService.uploadPingPhoto(
-      file: File(photo.path),
-      pingId: 'outbound/${DateTime.now().millisecondsSinceEpoch}',
-    );
+    // A recorded clip uploads ONCE and serves everyone. For a reply it goes
+    // in video_url (kind stays 'photo'); for a NEW ping (a person or group
+    // who hadn't pinged me) it rides in the ping's photo_url, recognised by
+    // its extension — no schema change (2026-10-06).
+    final String? url;
+    if (video != null) {
+      url = await StorageService.uploadPingVideo(
+        file: File(video.path),
+        pingId: 'outbound/${DateTime.now().millisecondsSinceEpoch}',
+      );
+    } else {
+      url = await StorageService.uploadPingPhoto(
+        file: File(photo.path),
+        pingId: 'outbound/${DateTime.now().millisecondsSinceEpoch}',
+      );
+    }
     if (url == null) return (0, null);
 
     Future<bool> guard(Future<void> Function() f) async {
@@ -3374,13 +3724,25 @@ Future<(int, String?)> _deliverPhoto(
         return false;
       } catch (e) {
         debugPrint('[Composer] photo send failed: $e');
+        // A group's wall takes one answer each (enforced server-side).
+        if (e.toString().contains('already replied')) {
+          note = 'a group already has your answer';
+        }
         return false;
       }
     }
 
     final results = await Future.wait([
       for (final id in replies)
-        guard(() => PingService.instance.reply(pingId: id, photoUrl: url)),
+        guard(
+          () => video != null
+              ? PingService.instance.reply(
+                  pingId: id,
+                  videoUrl: url,
+                  videoMs: videoMs,
+                )
+              : PingService.instance.reply(pingId: id, photoUrl: url),
+        ),
       for (final g in groups)
         guard(
           () => PingService.instance.sendGroupPing(

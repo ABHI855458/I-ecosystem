@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../composer/camera_capture_ui.dart';
+import '../composer/video_capture.dart';
 import '../composer/capture_widgets.dart';
 import '../face_filter/face_input_image_converter.dart'
     show kFaceMaskImageFormatGroup;
@@ -471,7 +472,9 @@ class _PingCameraScreenState extends State<PingCameraScreen> {
     final ctrl = CameraController(
       desc,
       ResolutionPreset.high,
-      enableAudio: false,
+      // Audio ON: a video answer with no sound is just a silent clip
+      // (hold-to-record, 2026-10-06). Stills are unaffected.
+      enableAudio: true,
       imageFormatGroup: kFaceMaskImageFormatGroup,
     );
     await ctrl.initialize();
@@ -729,27 +732,37 @@ class _PingCameraScreenState extends State<PingCameraScreen> {
     if (_sending || _capturingSelfie || !_cameraReady || c == null) {
       return false;
     }
-    if (_recordingVideo) return false;
+    if (_recordingVideo || _videoStarting) return false;
+    _videoStarting = true;
     try {
-      // A live ML Kit stream and video recording can't share the camera —
-      // same conflict takePicture() hits (see _capture's own note).
+      // A live ML Kit analysis stream and video recording can't share the
+      // camera, and pausing the stream isn't enough — the overlay restarts
+      // it on its next rebuild and recording then throws. So the overlay is
+      // UNMOUNTED for the duration (see maskFilterOn below) and a frame is
+      // awaited before recording begins.
       if (_maskOn && _isFront) {
         await _maskOverlayKey.currentState?.pauseStreamingForCapture();
       }
+      if (mounted) setState(() => _recordingVideo = true);
+      await WidgetsBinding.instance.endOfFrame;
       await c.startVideoRecording();
-      _recordingVideo = true;
       _recordStartedAt = DateTime.now();
       return true;
     } catch (e, st) {
       debugPrint('[PingCameraScreen._startVideo] failed: $e\n$st');
+      if (mounted) setState(() => _recordingVideo = false);
       return false;
+    } finally {
+      _videoStarting = false;
     }
   }
+
+  bool _videoStarting = false;
 
   Future<void> _stopVideo() async {
     final c = _controller;
     if (!_recordingVideo || c == null) return;
-    _recordingVideo = false;
+    if (mounted) setState(() => _recordingVideo = false);
     final started = _recordStartedAt;
     _recordStartedAt = null;
     XFile clip;
@@ -763,14 +776,21 @@ class _PingCameraScreenState extends State<PingCameraScreen> {
     final ms = started == null
         ? null
         : DateTime.now().difference(started).inMilliseconds;
-    // Too short to be a deliberate clip — treat it as a mis-hold, not a
-    // send, so a slightly-long tap doesn't fire off a quarter-second video.
-    if (ms != null && ms < 700) return;
+    // A mis-hold, or no poster frame to be had — not a send. `photo` is the
+    // POSTER, so nothing downstream ever tries to decode an mp4 as an image.
+    final done = await finishClip(clip, ms);
+    if (!mounted) return;
+    if (done == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Hold a little longer to record a video.')),
+      );
+      return;
+    }
     if (_sending) return;
     _sending = true;
     HapticFeedback.heavyImpact();
     Navigator.of(context).pop(
-      PingCapture(photo: clip, video: clip, videoMs: ms),
+      PingCapture(photo: done.poster, video: done.video, videoMs: done.ms),
     );
   }
 
@@ -817,6 +837,11 @@ class _PingCameraScreenState extends State<PingCameraScreen> {
           swapping: _capturingSelfie,
           onCapture: _capture,
           onStartVideo: _startVideo,
+          onVideoStartFailed: () => ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Couldn't start recording — try again."),
+            ),
+          ),
           onStopVideo: () => unawaited(_stopVideo()),
           onGallery: _pickGallery,
           onSwap: _flipCamera,
@@ -832,7 +857,8 @@ class _PingCameraScreenState extends State<PingCameraScreen> {
           // the flip button once a pair is underway.
           dualStep: midDual ? DualStep.front : DualStep.back,
           flashKey: _flashKey,
-          maskFilterOn: _maskOn,
+          // Off while recording: the analysis stream can't coexist with it.
+          maskFilterOn: _maskOn && !_recordingVideo,
           onToggleMaskFilter: () => setState(() => _maskOn = !_maskOn),
           maskOverlayKey: _maskOverlayKey,
           // The sheet's own container already rounds the top corners.

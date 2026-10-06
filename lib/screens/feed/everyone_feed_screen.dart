@@ -1044,6 +1044,8 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
                             });
                           },
                           secondaryPhotoUrl: item.secondaryPhotoUrl,
+                          videoUrl: item.videoUrl,
+                          videoMs: item.videoMs,
                           insetOnRight: item.insetOnRight,
                           photoPath: item.photoPath,
                           aspectRatio: item.aspectRatio,
