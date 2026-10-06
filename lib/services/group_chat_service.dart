@@ -145,3 +145,57 @@ class GroupChatService {
         .listen((_) => onChange(), onError: (_) {});
   }
 }
+
+/// One emoji's tally on a chat message (group_message_reactions).
+class MessageReaction {
+  const MessageReaction({
+    required this.emoji,
+    required this.count,
+    required this.mine,
+    required this.who,
+  });
+
+  final String emoji;
+  final int count;
+  final bool mine;
+
+  /// Names of everyone who left this emoji, for the long-press detail.
+  final String who;
+}
+
+extension GroupChatReactions on GroupChatService {
+  /// WhatsApp-style chat reactions (explicit request, 2026-10-04). Plain
+  /// emoji, not RealMoji: a chat reaction is tapped mid-conversation and
+  /// must never open a selfie camera. Same emoji again clears it.
+  Future<void> react(String messageId, String emoji) async {
+    await supabase.rpc(
+      'react_group_message',
+      params: {'p_message': messageId, 'p_emoji': emoji},
+    );
+  }
+
+  Future<Map<String, List<MessageReaction>>> reactionsFor(
+    List<String> messageIds,
+  ) async {
+    if (messageIds.isEmpty) return const {};
+    try {
+      final rows = await supabase
+          .rpc('group_message_reactions_for', params: {'p_ids': messageIds})
+          .timeout(const Duration(seconds: 8)) as List;
+      final out = <String, List<MessageReaction>>{};
+      for (final r in rows.cast<Map<String, dynamic>>()) {
+        (out[r['message_id'] as String] ??= []).add(
+          MessageReaction(
+            emoji: (r['emoji'] as String?) ?? '',
+            count: (r['n'] as num?)?.toInt() ?? 0,
+            mine: r['mine'] == true,
+            who: (r['who'] as String?) ?? '',
+          ),
+        );
+      }
+      return out;
+    } catch (_) {
+      return const {};
+    }
+  }
+}

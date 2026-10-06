@@ -1379,6 +1379,13 @@ class _SendInterfaceState extends State<_SendInterface> {
   List<_PhotoTarget>? _targets;
   final Set<String> _pickedTargets = <String>{};
 
+  /// The "Anon" bubble on the send screen: also post this photo to the
+  /// anon feed (explicit request, 2026-10-06: "after photo clicking include
+  /// a bubble which makes it post to anon feed ... no selecting audience,
+  /// general is default, no peeking prompt nothing"). No caption, no
+  /// prompt, no community picker — see [_postAnonPhoto].
+  bool _pickedAnon = false;
+
   String _musicQuery = '';
   _SheetKind? _openSheetKind;
 
@@ -1478,12 +1485,13 @@ class _SendInterfaceState extends State<_SendInterface> {
   /// the folder). Pingers get it as their ping's reply, friends as one new
   /// photo ping, groups as a group ping.
   Future<void> _sendToPeople() async {
-    if (_sending || _pickedTargets.isEmpty) return;
+    if (_sending || (_pickedTargets.isEmpty && !_pickedAnon)) return;
+    final toAnon = _pickedAnon;
     // The reply reward fires on the tap itself — every target here is a
     // ping I'm answering. It used to fire only after the photo had
     // uploaded and every reply had been written, which read as a lag
-    // (explicit report, 2026-10-03).
-    unawaited(pingReward());
+    // (explicit report, 2026-10-03). Anon-only sends answer no ping.
+    if (_pickedTargets.isNotEmpty) unawaited(pingReward());
     setState(() => _sending = true);
     final picked = [
       for (final t in _targets ?? const <_PhotoTarget>[])
@@ -1492,9 +1500,32 @@ class _SendInterfaceState extends State<_SendInterface> {
     final rootCtx = Navigator.of(context, rootNavigator: true).context;
     final photoFuture = _flatPhoto();
     Navigator.of(context).pop();
-    final (sent, error) = await _deliverPhoto(photoFuture, picked);
+    // Both run off the same captured photo; neither waits on the other.
+    final anonFuture = toAnon ? _postAnonPhoto(photoFuture) : null;
+    final (sent, error) = picked.isEmpty
+        ? (0, null)
+        : await _deliverPhoto(photoFuture, picked);
+    final anonOk = anonFuture == null ? null : await anonFuture;
     if (!rootCtx.mounted) return;
+    if (picked.isEmpty) {
+      // Anon only.
+      showPingToast(
+        rootCtx,
+        anonOk == true ? 'Posted to Anon ✓' : "Couldn't post that — try again.",
+        isError: anonOk != true,
+      );
+      return;
+    }
+    final anonNote = anonOk == null
+        ? ''
+        : anonOk
+        ? ' · posted to Anon'
+        : " · Anon post didn't go through";
     if (sent == 0) {
+      if (anonOk == true) {
+        showPingToast(rootCtx, "Posted to Anon ✓ · photo didn't send");
+        return;
+      }
       showPingToast(
         rootCtx,
         error ?? "Couldn't send that photo — try again.",
@@ -1503,9 +1534,10 @@ class _SendInterfaceState extends State<_SendInterface> {
     } else {
       showPingToast(
         rootCtx,
-        error == null && sent == picked.length
-            ? 'Sent to $sent ✓'
-            : 'Sent to $sent of ${picked.length}${error == null ? '' : ' · $error'}',
+        (error == null && sent == picked.length
+                ? 'Sent to $sent ✓'
+                : 'Sent to $sent of ${picked.length}${error == null ? '' : ' · $error'}') +
+            anonNote,
       );
     }
   }
@@ -2277,6 +2309,7 @@ class _SendInterfaceState extends State<_SendInterface> {
   Widget _buildPeopleSend() {
     final targets = _targets;
     final n = _pickedTargets.length;
+    final canSend = n > 0 || _pickedAnon;
     return ClipRRect(
       borderRadius: const BorderRadius.all(Radius.circular(48)),
       child: Container(
@@ -2296,15 +2329,35 @@ class _SendInterfaceState extends State<_SendInterface> {
               ),
             ),
             Expanded(
-              child: targets == null
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.4,
-                        color: Colors.white54,
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  // Always first, always there — the one target that
+                  // doesn't depend on anyone having pinged you.
+                  _sendLabel('post'),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(
+                        width: (MediaQuery.sizeOf(context).width - 24 - 28 - 18) / 4,
+                        child: _anonBubble(),
+                      ),
+                    ),
+                  ),
+                  if (targets == null)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 36),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: Colors.white54,
+                        ),
                       ),
                     )
-                  : targets.isEmpty
-                  ? Center(
+                  else if (targets.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 28, 22, 0),
                       child: Text(
                         'No pings waiting for a reply.\n'
                         'Photos go to people and groups who pinged you.',
@@ -2314,20 +2367,23 @@ class _SendInterfaceState extends State<_SendInterface> {
                         ),
                       ),
                     )
-                  : _splitTargets(targets),
+                  else
+                    ..._targetSections(targets),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
               child: GestureDetector(
-                onTap: _sending || n == 0 ? null : _sendToPeople,
+                onTap: _sending || !canSend ? null : _sendToPeople,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
                   height: 54,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(27),
-                    color: n == 0 ? Colors.white.withValues(alpha: 0.10) : null,
-                    gradient: n == 0
+                    color: !canSend ? Colors.white.withValues(alpha: 0.10) : null,
+                    gradient: !canSend
                         ? null
                         : const LinearGradient(
                             colors: [Color(0xFF4A5BDE), Color(0xFFD1406E)],
@@ -2348,17 +2404,23 @@ class _SendInterfaceState extends State<_SendInterface> {
                             Icon(
                               Icons.send_rounded,
                               size: 20,
-                              color: n == 0
+                              color: !canSend
                                   ? Colors.white.withValues(alpha: 0.45)
                                   : Colors.white,
                             ),
                             const SizedBox(width: 10),
                             Text(
-                              n == 0 ? 'Pick who to ping' : 'Ping $n',
+                              !canSend
+                                  ? 'Pick where it goes'
+                                  : n == 0
+                                  ? 'Post to Anon'
+                                  : _pickedAnon
+                                  ? 'Ping $n + Anon'
+                                  : 'Ping $n',
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
-                                color: n == 0
+                                color: !canSend
                                     ? Colors.white.withValues(alpha: 0.45)
                                     : Colors.white,
                               ),
@@ -2374,9 +2436,100 @@ class _SendInterfaceState extends State<_SendInterface> {
     );
   }
 
+  Widget _sendLabel(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(22, 10, 22, 8),
+    child: Text(
+      text,
+      style: GoogleFonts.jetBrainsMono(
+        fontSize: 10.5,
+        color: Colors.white.withValues(alpha: 0.5),
+        letterSpacing: 0.8,
+      ),
+    ),
+  );
+
+  /// The Anon bubble — same shape and tick as a person tile, so it reads
+  /// as one more place the photo can go.
+  Widget _anonBubble() {
+    final picked = _pickedAnon;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _sending
+          ? null
+          : () {
+              HapticFeedback.selectionClick();
+              setState(() => _pickedAnon = !_pickedAnon);
+            },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: picked
+                        ? _kAccent
+                        : Colors.white.withValues(alpha: 0.14),
+                    width: 2.5,
+                  ),
+                ),
+                child: CircleAvatar(
+                  radius: 27,
+                  backgroundColor: const Color(0xFF16161A),
+                  child: Icon(
+                    Icons.masks_rounded,
+                    size: 26,
+                    color: Colors.white.withValues(alpha: picked ? 1 : 0.8),
+                  ),
+                ),
+              ),
+              if (picked)
+                Positioned(
+                  right: -1,
+                  bottom: -1,
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _kAccent,
+                      border: Border.all(
+                        color: const Color(0xFF0D0D0F),
+                        width: 2,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      size: 13,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Anon',
+            maxLines: 1,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: picked ? FontWeight.w700 : FontWeight.w500,
+              color: Colors.white.withValues(alpha: picked ? 1 : 0.6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// "people who pinged you" and "groups" as two labelled grids — same
   /// split as the Ping page's Send-to sheet.
-  Widget _splitTargets(List<_PhotoTarget> targets) {
+  List<Widget> _targetSections(List<_PhotoTarget> targets) {
     final people = [
       for (final t in targets)
         if (!t.isGroup && t.groupId == null) t,
@@ -2385,17 +2538,6 @@ class _SendInterfaceState extends State<_SendInterface> {
       for (final t in targets)
         if (t.isGroup || t.groupId != null) t,
     ];
-    Widget label(String text) => Padding(
-      padding: const EdgeInsets.fromLTRB(22, 10, 22, 8),
-      child: Text(
-        text,
-        style: GoogleFonts.jetBrainsMono(
-          fontSize: 10.5,
-          color: Colors.white.withValues(alpha: 0.5),
-          letterSpacing: 0.8,
-        ),
-      ),
-    );
     Widget grid(List<_PhotoTarget> xs) => GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -2409,19 +2551,16 @@ class _SendInterfaceState extends State<_SendInterface> {
       itemCount: xs.length,
       itemBuilder: (context, i) => _peopleTile(xs[i]),
     );
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        if (people.isNotEmpty) ...[
-          label('people who pinged you'),
-          grid(people),
-        ],
-        if (groups.isNotEmpty) ...[
-          label('groups that pinged you'),
-          grid(groups),
-        ],
+    return [
+      if (people.isNotEmpty) ...[
+        _sendLabel('people who pinged you'),
+        grid(people),
       ],
-    );
+      if (groups.isNotEmpty) ...[
+        _sendLabel('groups that pinged you'),
+        grid(groups),
+      ],
+    ];
   }
 
   Widget _peopleTile(_PhotoTarget t) {
@@ -3125,7 +3264,13 @@ Future<List<_PhotoTarget>> _fetchPhotoTargets() async {
   final out = <_PhotoTarget>[];
   final seen = <String>{};
   for (final p in inbox) {
-    if (p.myReplies.isNotEmpty || p.expired) continue;
+    if (p.expired) continue;
+    // A PERSON who pinged me stays here until their ping expires, however
+    // many photos I've already sent back (explicit request, 2026-10-06:
+    // "till the ping ends they can send multiple photos for the ones who
+    // have pinged him"). A GROUP ping is still one answer each — the wall
+    // enforces it server-side (enforce_group_ping_reply_once).
+    if (p.isGroup && p.myReplies.isNotEmpty) continue;
     // One tile per person / per group, newest open ping wins (fetchToReply
     // is newest-first).
     final who = p.isGroup
@@ -3146,6 +3291,42 @@ Future<List<_PhotoTarget>> _fetchPhotoTargets() async {
   return out;
 }
 
+/// Posts [photoFuture]'s photo to the anon feed with nothing attached: no
+/// caption, no prompt, no audience step. It goes to the General community
+/// (every user is a member, so it reaches the whole anon feed), falling
+/// back to the first joined community if General is ever missing.
+Future<bool> _postAnonPhoto(Future<XFile?> photoFuture) async {
+  try {
+    final photo = await photoFuture;
+    if (photo == null) return false;
+    final userId = await CurrentUserService.instance.resolveId();
+    final joined = await CommunityService.instance.fetchMyCommunities();
+    String? communityId;
+    for (final c in joined) {
+      if (c.name.trim().toLowerCase() == 'general') communityId = c.id;
+    }
+    communityId ??= joined.isEmpty ? null : joined.first.id;
+    await PostService.instance.addPost(
+      LocalPost(
+        id: const Uuid().v4(),
+        userId: userId,
+        // Only ever shown on the optimistic card; the anon feed masks it.
+        username: 'you',
+        visibility: 'anonymous',
+        caption: '',
+        photoPath: photo.path,
+        communityId: communityId,
+        showInFeed: true,
+      ),
+    );
+    unawaited(ViewerScoreService.instance.refresh());
+    return true;
+  } catch (e) {
+    debugPrint('[Composer] anon photo post failed: $e');
+    return false;
+  }
+}
+
 /// Returns how many recipients got it, plus a note for partial failures.
 Future<(int, String?)> _deliverPhoto(
   Future<XFile?> photoFuture,
@@ -3156,15 +3337,17 @@ Future<(int, String?)> _deliverPhoto(
   try {
     final photo = await photoFuture;
     if (photo == null) return (0, null);
-    // One reply per ping: re-check, it may have been answered elsewhere.
+    // Re-check: a ping may have expired, or a group's (one answer each)
+    // been answered elsewhere, while the camera was open. A person's ping
+    // takes any number of replies until it expires.
     final inbox = await PingService.instance.fetchToReply();
-    final stillOpen = {
+    final live = {
       for (final p in inbox ?? const <InboundPingRow>[])
-        if (p.myReplies.isEmpty) p.id,
+        if (!p.expired && !(p.isGroup && p.myReplies.isNotEmpty)) p.id,
     };
     final replies = [
       for (final t in picked)
-        if (t.pingId != null && (inbox == null || stillOpen.contains(t.pingId)))
+        if (t.pingId != null && (inbox == null || live.contains(t.pingId)))
           t.pingId!,
     ];
     final people = [

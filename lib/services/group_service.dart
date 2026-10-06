@@ -828,6 +828,11 @@ class GroupService {
     // Specific circles of the poster's (Close Friends, Family, ...) — the
     // group composer had no circle option at all before.
     List<String> audienceCircleIds = const [],
+    // A VIDEO group post (2026-10-06): the clip is uploaded alongside, and
+    // photoFiles may be empty for one. Every existing reader still sees the
+    // photo columns it always did.
+    File? videoFile,
+    int? videoMs,
     // Members-only: never shown outside the group (not on a public group's
     // profile, not shareable). Audience args are ignored when set.
     bool isPrivate = false,
@@ -874,13 +879,27 @@ class GroupService {
       }
     }
 
+    String? videoUrl;
+    if (videoFile != null) {
+      videoUrl = await StorageService.uploadGroupVideo(
+        file: videoFile,
+        groupId: groupId,
+        userId: userId,
+      );
+      if (videoUrl == null) {
+        throw StateError('Video upload failed');
+      }
+    }
+
     final row = await supabase
         .from('group_posts')
         .insert({
           'group_id': groupId,
           'user_id': userId,
-          'photo_url': urls.first,
-          'photo_urls': urls,
+          if (videoUrl != null) 'video_url': videoUrl,
+          if (videoUrl != null && videoMs != null) 'video_duration_ms': videoMs,
+          if (urls.isNotEmpty) 'photo_url': urls.first,
+          if (urls.isNotEmpty) 'photo_urls': urls,
           if (secondaryUrl != null) 'photo_url_secondary': secondaryUrl,
           if (secondaryUrl != null) 'inset_on_right': insetOnRight,
           if (caption != null && caption.isNotEmpty) 'caption': caption,

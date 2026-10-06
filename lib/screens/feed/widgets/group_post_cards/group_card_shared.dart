@@ -13,7 +13,6 @@ import '../../../../services/presence_service.dart';
 import '../../../../services/reaction_preset_service.dart';
 import '../../../../services/realmoji_service.dart';
 import '../post_card_shared.dart';
-import '../../../../features/profile_v2/profile_v2_icons.dart';
 import '../../../../features/profile_v2/profile_v2_tokens.dart' show PV2;
 
 // ---------------------------------------------------------------------------
@@ -116,6 +115,8 @@ class GroupCardData {
     required this.posts,
     required this.mainPhotoUrl,
     this.mainPhotoUrls,
+    this.mainVideoUrl,
+    this.mainVideoMs,
     this.mainCaption,
     this.mainCreatedAt,
     this.streaks = const {},
@@ -168,6 +169,11 @@ class GroupCardData {
   /// (`group_posts.photo_urls`). Null/empty means single-photo — read
   /// [mainPhotoUrl]. Prefer [photoUrls], which resolves the fallback.
   final List<String>? mainPhotoUrls;
+
+  /// A video group post (2026-10-06) — the card plays this instead of the
+  /// photo carousel.
+  final String? mainVideoUrl;
+  final int? mainVideoMs;
 
   final String? mainCaption;
   final DateTime? mainCreatedAt;
@@ -335,27 +341,18 @@ class _MemberStreakAvatar extends StatelessWidget {
                   // relationship streak in the app is blue (see
                   // PV2.streakBlue). Was orange-red, which read as the
                   // personal anon streak's colour.
-                  color: streak > 0 ? PV2.streakBlue : const Color(0xFF2E2E33),
+                  // Always neutral now, and no flame badge: this row is on
+                  // a FEED card, where the whole audience saw each member's
+                  // ping streak. Explicit request, 2026-10-06: "remove the
+                  // ping streak visible to everyone in friends feed".
+                  // [streak] is still passed in, unused, so re-showing it
+                  // somewhere private is a one-line change.
+                  color: const Color(0xFF2E2E33),
                   width: 1.5,
                 ),
               ),
             ),
             GroupCardMemberCircle(member: member, size: _avatarSize),
-            // The same blue flame badge the Duo post avatar carries
-            // (PV2Icons.blueFlameStreak), always shown — "0" when this
-            // member has no group-ping streak — so every member DP reads
-            // the same and nothing pops in once the streaks load. Explicit
-            // request: "on the group posts member dp as well the group
-            // ping streaks flame shall also be shown".
-            Positioned(
-              right: -7,
-              bottom: 0,
-              child: PV2Icons.blueFlameStreak(
-                streak,
-                flameSize: 22,
-                showZero: true,
-              ),
-            ),
           ],
         ),
       ),

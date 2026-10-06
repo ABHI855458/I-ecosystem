@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../widgets/app_video.dart';
 
 import '../../../features/profile_v2/group_profile_v2_screen.dart';
 import '../../../features/profile_v2/profile_v2_icons.dart';
@@ -166,6 +167,8 @@ class _DesignGroupCardState extends State<DesignGroupCard> {
       posts: posts,
       mainPhotoUrl: photoUrl,
       mainPhotoUrls: widget.item.photos,
+      mainVideoUrl: widget.item.videoUrl,
+      mainVideoMs: widget.item.videoMs,
       mainCaption: widget.item.caption,
       mainCreatedAt: widget.item.createdAt,
       streaks: streaks,
@@ -1065,14 +1068,28 @@ class _GroupCardBodyState extends State<_GroupCardBody>
           // (PostSizePresetPicker), never a viewer preference. posts.first
           // is always the post that made this card appear (see _load's
           // rotate-to-front), so its aspectRatio is the one to use.
-          PostPhotoCarousel(
-            photoUrls: widget.data.photoUrls,
-            borderRadius: 0,
-            aspectRatio: parseStoredAspectRatio(
-              widget.data.posts.first.aspectRatio,
+          // A VIDEO group post plays here in place of the carousel
+          // (2026-10-06). A locked post still never reveals it.
+          if ((widget.data.mainVideoUrl ?? '').isNotEmpty && !_locked)
+            AspectRatio(
+              aspectRatio: parseStoredAspectRatio(
+                widget.data.posts.first.aspectRatio,
+              ),
+              child: AppVideo(
+                url: widget.data.mainVideoUrl,
+                durationMs: widget.data.mainVideoMs,
+                fit: BoxFit.cover,
+              ),
+            )
+          else
+            PostPhotoCarousel(
+              photoUrls: widget.data.photoUrls,
+              borderRadius: 0,
+              aspectRatio: parseStoredAspectRatio(
+                widget.data.posts.first.aspectRatio,
+              ),
+              blurFromIndex: _locked ? 1 : null,
             ),
-            blurFromIndex: _locked ? 1 : null,
-          ),
           // Reactions are only VIEWABLE on the group's own profile —
           // explicit request: "group posts reactions in group profile".
           // The chip still previews them here, but a tap points at the

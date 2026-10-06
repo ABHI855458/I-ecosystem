@@ -39,6 +39,8 @@ class FeedItem {
     this.musicUrl,
     this.layoutId,
     this.photos,
+    this.videoUrl,
+    this.videoMs,
     this.createdAt,
     this.avatarUrl,
     this.commentCount = 0,
@@ -126,6 +128,12 @@ class FeedItem {
   /// on this directly.
   final List<String>? photos;
 
+  /// A VIDEO post (2026-10-06): group posts and Duo posts can carry a clip
+  /// instead of (or alongside) a still. Null for every photo post, which is
+  /// what keeps the existing card rendering untouched.
+  final String? videoUrl;
+  final int? videoMs;
+
   final DateTime? createdAt;
 
   /// The poster's real profile photo, for EveryonePostCard's header row.
@@ -172,6 +180,8 @@ class FeedItem {
     musicUrl: musicUrl,
     layoutId: layoutId,
     photos: photos,
+    videoUrl: videoUrl,
+    videoMs: videoMs,
     createdAt: createdAt,
     avatarUrl: avatarUrl ?? this.avatarUrl,
     commentCount: commentCount,
@@ -1311,6 +1321,8 @@ class FeedService {
               caption: r['caption'] as String?,
               photoUrl: r['photo_url'] as String?,
               photos: (r['photo_urls'] as List?)?.cast<String>(),
+              videoUrl: r['video_url'] as String?,
+              videoMs: (r['video_duration_ms'] as num?)?.toInt(),
               createdAt: r['created_at'] != null
                   ? DateTime.tryParse(r['created_at'] as String)
                   : null,

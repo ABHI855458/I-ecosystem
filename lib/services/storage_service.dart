@@ -636,15 +636,24 @@ class StorageService {
     int index = 0,
   }) async {
     try {
+      // Keep the SOURCE format: a GIF re-uploaded as .jpg stops animating,
+      // and chat GIFs were an explicit request (2026-10-04).
+      final ext = file.path.split('.').last.toLowerCase();
+      final (suffix, mime) = switch (ext) {
+        'gif' => ('gif', 'image/gif'),
+        'png' => ('png', 'image/png'),
+        'webp' => ('webp', 'image/webp'),
+        _ => ('jpg', 'image/jpeg'),
+      };
       final path =
-          '$groupId/chat/$userId/${DateTime.now().millisecondsSinceEpoch}_$index.jpg';
+          '$groupId/chat/$userId/${DateTime.now().millisecondsSinceEpoch}_$index.$suffix';
       final bytes = await file.readAsBytes();
       await supabase.storage
           .from(_groupPhotosBucket)
           .uploadBinary(
             path,
             bytes,
-            fileOptions: const FileOptions(contentType: 'image/jpeg'),
+            fileOptions: FileOptions(contentType: mime),
           );
       return supabase.storage.from(_groupPhotosBucket).getPublicUrl(path);
     } catch (_) {
@@ -831,6 +840,68 @@ class StorageService {
       return null;
     }
   }
+
+  /// Uploads a VIDEO into one of the existing media buckets (added
+  /// 2026-10-06 with video support for Duo/group posts and ping replies).
+  /// Videos share their photo sibling's bucket and RLS — no new bucket, no
+  /// new policy surface — under a `video/` segment so they're easy to spot.
+  ///
+  /// [bucket] is one of the module's own bucket constants, passed by the
+  /// typed helpers below rather than by callers.
+  static Future<String?> _uploadVideo({
+    required File file,
+    required String bucket,
+    required String prefix,
+  }) async {
+    try {
+      final bytes = await file.readAsBytes();
+      final ext = file.path.split('.').last.toLowerCase();
+      final (suffix, mime) = switch (ext) {
+        'mov' => ('mov', 'video/quicktime'),
+        'm4v' => ('m4v', 'video/x-m4v'),
+        _ => ('mp4', 'video/mp4'),
+      };
+      final path = '$prefix/video/${const Uuid().v4()}.$suffix';
+      await supabase.storage
+          .from(bucket)
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(contentType: mime, upsert: false),
+          );
+      return supabase.storage.from(bucket).getPublicUrl(path);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// A video answer to a ping (hold-to-record, capped in the recorder).
+  static Future<String?> uploadPingVideo({
+    required File file,
+    required String pingId,
+  }) => _uploadVideo(file: file, bucket: _pingPhotosBucket, prefix: pingId);
+
+  /// A video on a group post.
+  static Future<String?> uploadGroupVideo({
+    required File file,
+    required String groupId,
+    required String userId,
+  }) => _uploadVideo(
+    file: file,
+    bucket: _groupPhotosBucket,
+    prefix: '$groupId/$userId',
+  );
+
+  /// A video in a Duo album.
+  static Future<String?> uploadDuoVideo({
+    required File file,
+    required String albumId,
+    required String userId,
+  }) => _uploadVideo(
+    file: file,
+    bucket: _usAlbumPhotosBucket,
+    prefix: '$albumId/$userId',
+  );
 
   /// Uploads the front-camera half of a dual ping-reply capture — the
   /// selfie shown in the small top-left inset on the reply photo. Same

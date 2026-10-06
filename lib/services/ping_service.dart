@@ -198,6 +198,8 @@ class ReceivedReplyRow {
     required this.photoUrl,
     required this.createdAt,
     required this.viewed,
+    this.videoUrl,
+    this.videoMs,
     required this.viewedAt,
     this.isAnon = false,
     this.groupName,
@@ -227,6 +229,11 @@ class ReceivedReplyRow {
   final String kind; // 'photo' | 'text'
   final String? body;
   final String? photoUrl;
+
+  /// A hold-to-record video answer (2026-10-06). When set, the reply plays
+  /// instead of showing a still — [photoUrl] may be null for these.
+  final String? videoUrl;
+  final int? videoMs;
 
   /// The front-camera half of a dual capture (see PingCameraScreen,
   /// ping_reveal_screen.dart) — null for an album-picked photo or a
@@ -792,7 +799,8 @@ class PingService {
       final rows = await supabase
           .from('ping_replies')
           .select(
-            'id, ping_id, replier_id, kind, body, photo_url, selfie_url, created_at, viewed, viewed_at, '
+            'id, ping_id, replier_id, kind, body, photo_url, video_url, '
+            'video_duration_ms, selfie_url, created_at, viewed, viewed_at, '
             // ping_reply_reactions has a NARROW select policy (reactor_id =
             // current_user_id() only — see the migration's own doc on why a
             // permissive one would de-anonymize an anonymous sender). For a
@@ -864,6 +872,8 @@ class PingService {
           kind: r['kind'] as String,
           body: r['body'] as String?,
           photoUrl: r['photo_url'] as String?,
+          videoUrl: r['video_url'] as String?,
+          videoMs: (r['video_duration_ms'] as num?)?.toInt(),
           selfieUrl: r['selfie_url'] as String?,
           createdAt: parsePostgresTimestamp(r['created_at'] as String),
           viewed: r['viewed'] as bool? ?? false,
@@ -891,12 +901,19 @@ class PingService {
     String? photoUrl,
     String? selfieUrl,
     String? body,
+    String? videoUrl,
+    int? videoMs,
   }) async {
     final replierId = await CurrentUserService.instance.resolveId();
     await supabase.from('ping_replies').insert({
       'ping_id': pingId,
       'replier_id': replierId,
-      'kind': photoUrl != null ? 'photo' : 'text',
+      // A video answer is still kind 'photo' to every existing reader (the
+      // inbox, the wall, the viewers) — video_url is what makes it play.
+      // Added 2026-10-06 with hold-to-record.
+      'kind': (photoUrl != null || videoUrl != null) ? 'photo' : 'text',
+      if (videoUrl != null) 'video_url': videoUrl,
+      if (videoMs != null) 'video_duration_ms': videoMs,
       if (photoUrl != null) 'photo_url': photoUrl,
       // Only ever set alongside photoUrl — a camera reply's front-lens
       // shot (see PingCameraScreen's dual capture). Null for an album pick
@@ -914,11 +931,15 @@ class PingService {
     String? photoUrl,
     String? selfieUrl,
     String? body,
+    String? videoUrl,
+    int? videoMs,
   }) => reply(
     pingId: pingId,
     photoUrl: photoUrl,
     selfieUrl: selfieUrl,
     body: body,
+    videoUrl: videoUrl,
+    videoMs: videoMs,
   );
 
   /// Marks a ping as seen by its receiver — called the instant the

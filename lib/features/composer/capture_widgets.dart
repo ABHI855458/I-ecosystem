@@ -1,30 +1,143 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+/// How long a held-shutter video may run before it stops itself — the
+/// Snap-style cap (explicit request, 2026-10-06: "holding to record a video,
+/// set a limit just like Snap"). The server refuses anything over 20s (see
+/// ping_replies_video_duration_ck), so this stays comfortably under it.
+const kHoldVideoLimit = Duration(seconds: 15);
+
 /// Plain circular shutter button — camera/ping capture screens.
-class PlainShutterButton extends StatelessWidget {
-  const PlainShutterButton({super.key, required this.onCapture});
+///
+/// Tap takes a photo. HOLD records video, up to [kHoldVideoLimit], with the
+/// ring filling as the clip runs and stopping itself at the cap — release
+/// earlier to keep what you have. Screens that pass no [onStartVideo] keep
+/// tap-only behaviour exactly as before.
+class PlainShutterButton extends StatefulWidget {
+  const PlainShutterButton({
+    super.key,
+    required this.onCapture,
+    this.onStartVideo,
+    this.onStopVideo,
+  });
+
   final VoidCallback onCapture;
+
+  /// Called when the hold begins. Returning false (e.g. the camera is busy)
+  /// cancels the recording UI.
+  final Future<bool> Function()? onStartVideo;
+
+  /// Called on release or at the cap.
+  final VoidCallback? onStopVideo;
+
+  @override
+  State<PlainShutterButton> createState() => _PlainShutterButtonState();
+}
+
+class _PlainShutterButtonState extends State<PlainShutterButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ring = AnimationController(
+    vsync: this,
+    duration: kHoldVideoLimit,
+  )..addStatusListener((st) {
+      // Hit the cap: stop exactly as a release would.
+      if (st == AnimationStatus.completed && _recording) _stop();
+    });
+
+  bool _recording = false;
+  bool _starting = false;
+
+  @override
+  void dispose() {
+    _ring.dispose();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
+    if (widget.onStartVideo == null || _recording || _starting) return;
+    _starting = true;
+    final ok = await widget.onStartVideo!.call();
+    _starting = false;
+    if (!mounted || !ok) return;
+    HapticFeedback.mediumImpact();
+    setState(() => _recording = true);
+    _ring.forward(from: 0);
+  }
+
+  void _stop() {
+    if (!_recording) return;
+    _ring.stop();
+    setState(() => _recording = false);
+    HapticFeedback.lightImpact();
+    widget.onStopVideo?.call();
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
+        if (_recording) return;
         HapticFeedback.mediumImpact();
-        onCapture();
+        widget.onCapture();
       },
-      child: Container(
-        width: 72,
-        height: 72,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 4),
-        ),
+      onLongPressStart: widget.onStartVideo == null ? null : (_) => _start(),
+      onLongPressEnd: widget.onStartVideo == null ? null : (_) => _stop(),
+      onLongPressCancel: widget.onStartVideo == null ? null : _stop,
+      child: SizedBox(
+        width: 84,
+        height: 84,
         child: Center(
-          child: Container(
-            width: 58,
-            height: 58,
-            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+          child: AnimatedBuilder(
+            animation: _ring,
+            builder: (context, _) => SizedBox(
+              width: 84,
+              height: 84,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // How much of the 15s is gone.
+                  if (_recording)
+                    SizedBox(
+                      width: 80,
+                      height: 80,
+                      child: CircularProgressIndicator(
+                        value: _ring.value,
+                        strokeWidth: 4,
+                        backgroundColor: Colors.white24,
+                        valueColor: const AlwaysStoppedAnimation(
+                          Color(0xFFFA2D64),
+                        ),
+                      ),
+                    ),
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: _recording ? Colors.transparent : Colors.white,
+                        width: 4,
+                      ),
+                    ),
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        width: _recording ? 30 : 58,
+                        height: _recording ? 30 : 58,
+                        decoration: BoxDecoration(
+                          color: _recording
+                              ? const Color(0xFFFA2D64)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(
+                            _recording ? 8 : 29,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -22,18 +22,26 @@ class DuoPhotoRow {
     required this.photoUrl,
     required this.isMutual,
     required this.createdAt,
+    this.videoUrl,
+    this.videoMs,
   });
 
   final String id;
   final String uploadedBy;
+
+  /// Empty for a VIDEO row (2026-10-06) — [videoUrl] is what plays then.
   final String photoUrl;
+  final String? videoUrl;
+  final int? videoMs;
   final bool isMutual;
   final DateTime createdAt;
 
   factory DuoPhotoRow.fromRow(Map<String, dynamic> row) => DuoPhotoRow(
         id: row['id'] as String,
         uploadedBy: row['uploaded_by'] as String,
-        photoUrl: row['photo_url'] as String,
+        photoUrl: (row['photo_url'] as String?) ?? '',
+        videoUrl: row['video_url'] as String?,
+        videoMs: (row['video_duration_ms'] as num?)?.toInt(),
         isMutual: row['visibility'] == 'mutual',
         createdAt: DateTime.parse(row['created_at'] as String),
       );
@@ -508,9 +516,19 @@ class DuoService {
     required bool mutual,
     required List<String> communityIds,
     required List<String> circleIds,
+    bool isVideo = false,
+    int? videoMs,
   }) async {
     final myId = await CurrentUserService.instance.resolveId();
-    final url = await StorageService.uploadDuoPhoto(file: photo, albumId: albumId);
+    // A Duo VIDEO (2026-10-06) goes to the same bucket and row; photo_url
+    // stays null and video_url is what every render site plays.
+    final url = isVideo
+        ? await StorageService.uploadDuoVideo(
+            file: photo,
+            albumId: albumId,
+            userId: myId,
+          )
+        : await StorageService.uploadDuoPhoto(file: photo, albumId: albumId);
     if (url == null) return;
 
     // A mutual photo carries MY side of the audience and waits for my
@@ -520,7 +538,8 @@ class DuoService {
     await _client.from('us_album_photos').insert({
       'album_id': albumId,
       'uploaded_by': myId,
-      'photo_url': url,
+      if (isVideo) 'video_url': url else 'photo_url': url,
+      if (isVideo && videoMs != null) 'video_duration_ms': videoMs,
       'visibility': mutual ? 'mutual' : 'private',
       'caption': caption.isEmpty ? null : caption,
       'uploader_circle_ids': circleIds,

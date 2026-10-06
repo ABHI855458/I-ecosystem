@@ -2,12 +2,15 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/glass.dart' show showGlassToast;
+import '../../core/supabase_config.dart' show supabase;
+import '../../services/current_user_service.dart';
 import '../../screens/feed/single_post_detail_screen.dart';
 import '../../screens/feed/widgets/post_card_shared.dart' show showPostCommentsSheet;
 import '../../services/feed_service.dart';
 import '../../services/post_service.dart';
 import '../../services/reaction_service.dart';
 import '../../shared/time_ago.dart';
+import 'anon_identity_edit_sheet.dart';
 import 'profile_v2_data.dart' show kFaceSwatches;
 import 'profile_v2_tokens.dart';
 
@@ -26,10 +29,40 @@ class _MyAnonPostsScreenState extends State<MyAnonPostsScreen> {
   Map<String, int> _counts = const {};
   Map<String, List<LikeReactor>> _reactors = const {};
 
+  /// The name my anon posts go out under. Null until loaded.
+  String? _anonName;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadAnonName();
+  }
+
+  Future<void> _loadAnonName() async {
+    try {
+      final id = await CurrentUserService.instance.resolveId();
+      final row = await supabase
+          .from('users')
+          .select('anon_name, anon_name_2, active_anon_slot')
+          .eq('id', id)
+          .maybeSingle();
+      final second = (row?['active_anon_slot'] as int?) == 2;
+      final alt = row == null ? null : row['anon_name_2'] as String?;
+      final main = row == null ? null : row['anon_name'] as String?;
+      final name = (second && (alt ?? '').trim().isNotEmpty) ? alt : main;
+      if (mounted) setState(() => _anonName = name?.trim());
+    } catch (_) {
+      // The list still works without the name row.
+    }
+  }
+
+  Future<void> _editAnonName() async {
+    final saved = await showAnonIdentityEditSheet(
+      context,
+      anonName1: _anonName ?? '',
+    );
+    if (saved == true) await _loadAnonName();
   }
 
   Future<void> _load() async {
@@ -163,6 +196,38 @@ class _MyAnonPostsScreenState extends State<MyAnonPostsScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  if ((_anonName ?? '').isNotEmpty) ...[
+                    GestureDetector(
+                      onTap: _editAnonName,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.masks_rounded, size: 18, color: Colors.white),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Your anon name', style: PV2.body(size: 11, color: PV2.inkByline)),
+                                  const SizedBox(height: 2),
+                                  Text(_anonName!, style: PV2.body(size: 15, weight: FontWeight.w700)),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.edit_rounded, size: 16, color: Colors.white.withValues(alpha: 0.6)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   if (posts.isEmpty)
                     Padding(

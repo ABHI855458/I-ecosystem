@@ -13,7 +13,7 @@ import '../../../services/reaction_service.dart';
 import '../../moderation/post_actions_menu.dart';
 import '../../../features/ping/ping_prompt_sheet.dart'
     show showPingPromptSheet, PingContext;
-import '../../../main_shell.dart' show kTabBarBottomOffset;
+import '../../../main_shell.dart' show kTabBarHeight, tabBarBottomFor;
 import 'package:shimmer/shimmer.dart';
 
 import '../../../screens/feed/widgets/face_reaction_capture.dart';
@@ -65,6 +65,14 @@ const double _kAnonCardZoom = 1.5;
 // desync the layout math (slackForCard, grownScale, the debug metrics
 // line) from what the card actually renders at.
 const double _kAnonCardOuterH = _kAnonCardDesignH * _kAnonCardZoom;
+
+/// Height a page keeps clear at its bottom for the floating tab bar: the
+/// bar's own bottom offset (MainShell's tabBarBottomFor), its height, and a
+/// 12pt gap above it. Was `56 + safe-area + 12` on top of a separate
+/// safe-area + 24 strip for the bottom peek prompt; with the prompt gone
+/// and the bar lowered, the difference goes to the post card.
+double _tabBarReserve(BuildContext context) =>
+    tabBarBottomFor(MediaQuery.paddingOf(context).bottom) + kTabBarHeight + 12;
 
 // ---------------------------------------------------------------------------
 // AnonFeedScreenV2 — full implementation of the Anon feed spec (§3–§13).
@@ -937,6 +945,8 @@ class _AnonFeedScreenV2State extends State<AnonFeedScreenV2> {
     });
   }
 
+  // Only the removed bottom peek prompt called this; kept with it.
+  // ignore: unused_element
   void _advance() {
     if (_idx < _posts.length - 1) {
       _pageCtrl.animateToPage(
@@ -1021,7 +1031,6 @@ class _AnonFeedScreenV2State extends State<AnonFeedScreenV2> {
       );
     }
     final safeIdx = _idx.clamp(0, posts.length - 1);
-    final next = safeIdx + 1 < posts.length ? posts[safeIdx + 1] : null;
 
     // Checklist item 9 ("apply s(context) to EVERY numeric value") applies
     // to type scale too — AnonFeedType's 36 styles are literal design-px
@@ -1137,9 +1146,11 @@ class _AnonFeedScreenV2State extends State<AnonFeedScreenV2> {
                           // the "single fixed-height page, already tight" issue
                           // the earlier "+16" attempt ran into (see git blame /
                           // plan doc): more content-safe room, not less.
-                          bottom:
-                              MediaQuery.paddingOf(context).bottom +
-                              kTabBarBottomOffset,
+                          // 0 now: this used to reserve the bottom peek
+                          // prompt's strip. That prompt is removed, and the
+                          // tab bar's own room is reserved inside each page
+                          // (_tabBarReserve), so the page runs to the edge.
+                          bottom: 0,
                         ),
                         child: NotificationListener<ScrollNotification>(
                           // §13.3 rule 3 — scrolling the FEED closes open
@@ -1280,20 +1291,10 @@ class _AnonFeedScreenV2State extends State<AnonFeedScreenV2> {
                 // content is still on screen), not from this reservation being
                 // undersized — so the fix belongs there, not in a pixel value
                 // guessed a fourth time here.
-                if (next != null)
-                  Positioned(
-                    left: 20 * scale,
-                    right: 20 * scale,
-                    bottom: 0,
-                    height:
-                        MediaQuery.paddingOf(context).bottom +
-                        kTabBarBottomOffset,
-                    child: _AnonBottomBlock(
-                      scale: scale,
-                      next: next,
-                      onAdvance: _advance,
-                    ),
-                  ),
+                // The bottom peek prompt (_AnonBottomBlock, the next post's
+                // prompt peeking up under the tab bar) is no longer drawn —
+                // explicit request, 2026-10-06. The widget is kept below,
+                // unreferenced, in case it returns.
                 if (_commentsOpen)
                   _AnonCommentsSheet(
                     scale: scale,
@@ -1981,7 +1982,7 @@ class _AnonSnapSection extends StatelessWidget {
             //    binds, and it keeps a 14pt side margin.
             final slackForCard =
                 box.maxHeight -
-                (56 + MediaQuery.of(context).padding.bottom + 12) -
+                _tabBarReserve(context) -
                 (14 + 34 + 20 + _kAnonCardOuterH + 12 + 40) * scale;
             final grownScale = slackForCard > 30
                 ? scale + (slackForCard * 0.85) / _kAnonCardOuterH
@@ -2090,7 +2091,7 @@ class _AnonSnapSection extends StatelessWidget {
                   minHeight:
                       (box.maxHeight -
                               14 * scale -
-                              (56 + MediaQuery.of(context).padding.bottom + 12))
+                              _tabBarReserve(context))
                           .clamp(0.0, double.infinity),
                 ),
                 child: Column(
@@ -3880,6 +3881,8 @@ class _AnonMenuActionsRow extends StatelessWidget {
 // §9 BOTTOM BLOCK (fade scrim + peek panel — NOT the tab bar, per confirmation)
 // ---------------------------------------------------------------------------
 
+// No longer drawn (see the note where AnonFeedScreenV2 used to place it).
+// ignore: unused_element
 class _AnonBottomBlock extends StatelessWidget {
   const _AnonBottomBlock({
     required this.scale,

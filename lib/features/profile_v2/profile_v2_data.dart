@@ -63,7 +63,14 @@ class AlbumPhoto {
     this.id,
     this.imageUrl,
     this.uploaderId,
+    this.videoUrl,
+    this.videoMs,
   });
+
+  /// A Duo VIDEO (2026-10-06): when set, the tile plays this instead of
+  /// showing [imageUrl].
+  final String? videoUrl;
+  final int? videoMs;
 
   final Color color;
   final Color byColor;

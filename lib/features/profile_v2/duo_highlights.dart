@@ -15,6 +15,7 @@ import '../../services/storage_service.dart';
 import '../../services/us_album_service.dart';
 import '../../shared/time_ago.dart';
 import 'album_photo_viewer.dart';
+import 'my_anon_posts_screen.dart';
 import '../composer/composer_screen.dart' show openCameraRoute;
 import 'profile_v2_create_flows.dart';
 import 'profile_v2_data.dart';
@@ -554,13 +555,19 @@ class _DuoAlbumScreenState extends State<DuoAlbumScreen> {
       ]);
       final rows = results[0] as List<DuoPhotoRow>;
       final urls = await Future.wait(
-        rows.map((r) => StorageService.signedDuoPhotoUrl(r.photoUrl)),
+        rows.map(
+          (r) => r.photoUrl.isEmpty
+              ? Future<String?>.value(null)
+              : StorageService.signedDuoPhotoUrl(r.photoUrl),
+        ),
       );
       final photos = [
         for (var i = rows.length - 1; i >= 0; i--)
           AlbumPhoto(
             id: rows[i].id,
             imageUrl: urls[i],
+            videoUrl: rows[i].videoUrl,
+            videoMs: rows[i].videoMs,
             uploaderId: rows[i].uploadedBy,
             color: PV2.recessed,
             byColor: rows[i].uploadedBy == widget.myUserId
@@ -1406,7 +1413,7 @@ class _CreateChooserScreenState extends State<CreateChooserScreen> {
             child: _bigChoice(
               icon: Icons.masks_rounded,
               title: 'Anon',
-              subtitle: 'Post anonymously — camera opens',
+              subtitle: 'Your anon posts and anon name',
               colors: const [Color(0xFF26282E), Color(0xFF111215)],
               // Straight into the anon CAMERA (explicit request,
               // 2026-10-03: "when opened anon in plus mark the camera
@@ -1418,11 +1425,17 @@ class _CreateChooserScreenState extends State<CreateChooserScreen> {
               // The navigator is captured BEFORE the pop: popping
               // deactivates this card's own context, so looking it up
               // afterwards finds nothing to push onto.
+              // Back to the LIST (explicit request, 2026-10-06: "in plus
+              // under anon it shall show the anon posts, and removing it,
+              // and anon name there"). Posting anonymously now happens
+              // from the camera's own Anon bubble instead.
               onTap: () {
                 final nav = Navigator.of(context);
                 nav.pop();
                 nav.push(
-                  openCameraRoute(isAnonymous: true, lockToAnonPost: true),
+                  MaterialPageRoute<void>(
+                    builder: (_) => const MyAnonPostsScreen(),
+                  ),
                 );
               },
             ),

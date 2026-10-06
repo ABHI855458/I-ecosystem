@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/app_video.dart';
 
 import '../moderation/post_actions_menu.dart';
 import 'album_photo_viewer.dart';
@@ -811,7 +812,9 @@ class AlbumMosaic extends StatelessWidget {
     // badge in the corner (see AlbumMosaic's own doc). Only real photos
     // (imageUrl set) have anything to view full-screen; mock/design-
     // gallery tiles (a flat color swatch, no real image) stay inert.
-    final realPhotos = photos.where((p) => p.imageUrl != null).toList();
+    final realPhotos = photos
+        .where((p) => p.imageUrl != null || p.videoUrl != null)
+        .toList();
     final realIndex = realPhotos.indexOf(photo);
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
@@ -819,7 +822,16 @@ class AlbumMosaic extends StatelessWidget {
         decoration: BoxDecoration(color: photo.color, boxShadow: PV2.photo),
         child: Stack(
           children: [
-            if (photo.imageUrl != null)
+            // A Duo VIDEO plays in its tile (2026-10-06).
+            if (photo.videoUrl != null)
+              Positioned.fill(
+                child: AppVideo(
+                  url: photo.videoUrl,
+                  durationMs: photo.videoMs,
+                  fit: BoxFit.cover,
+                ),
+              )
+            else if (photo.imageUrl != null)
               Positioned.fill(
                 child: CachedNetworkImage(
                   memCacheWidth: 1080,

@@ -48,6 +48,7 @@ import 'package:supabase_flutter/supabase_flutter.dart'
 
 import '../../core/glass.dart' show showGlassToast, showPingToast;
 import '../../core/ping_haptics.dart';
+import '../../widgets/app_video.dart';
 import '../../core/supabase_config.dart';
 import '../../core/ui/immersive_chrome.dart';
 import '../../services/current_user_service.dart';
@@ -329,6 +330,11 @@ class InboundReply {
   /// gradient+hatch placeholder in both cases.
   final String? photoUrl;
 
+  /// A hold-to-record video answer (2026-10-06): when set, the viewer plays
+  /// the clip where the photo would be.
+  final String? videoUrl;
+  final int? videoMs;
+
   /// The front-camera half of a dual capture (see PingCameraScreen,
   /// ping_reveal_screen.dart) — null for an album-picked photo or a
   /// text-only reply. Every selfie-inset render site treats null as "don't
@@ -357,6 +363,8 @@ class InboundReply {
     this.isAnon = false,
     this.groupName,
     this.photoUrl,
+    this.videoUrl,
+    this.videoMs,
     this.selfieUrl,
     this.reactionCount = 0,
     this.myReaction = false,
@@ -1276,6 +1284,13 @@ class _PingPageState extends State<PingPage>
         pingIds: pingIds.toList(),
       ),
     );
+    unawaited(_loadMyReplyReactions());
+  }
+
+  Future<void> _loadMyReplyReactions() async {
+    final rows = await PingRealmojiService.instance.fetchMyReplyReactions();
+    if (!mounted) return;
+    setState(() => _myReplyReactions = rows);
   }
 
   Future<void> _loadRealPingDataCore() async {
@@ -1580,6 +1595,8 @@ class _PingPageState extends State<PingPage>
               isAnon: r.isAnon,
               groupName: r.groupName,
               photoUrl: r.photoUrl,
+              videoUrl: r.videoUrl,
+              videoMs: r.videoMs,
               selfieUrl: r.selfieUrl,
               reactionCount: r.reactionCount,
               myReaction: r.myReaction,
@@ -1924,6 +1941,24 @@ class _PingPageState extends State<PingPage>
     final mark = ScoreGainService.mark();
 
     Future<void> send() async {
+      // Hold-to-record video answer (2026-10-06): upload the clip and send
+      // it as the reply — no selfie inset, there is no second lens shot.
+      final video = capture.video;
+      if (video != null) {
+        final videoUrl = await StorageService.uploadPingVideo(
+          file: File(video.path),
+          pingId: p.id,
+        );
+        if (videoUrl == null) {
+          throw StateError('Video upload failed');
+        }
+        await PingService.instance.reply(
+          pingId: p.id,
+          videoUrl: videoUrl,
+          videoMs: capture.videoMs,
+        );
+        return;
+      }
       final photoUrl = await StorageService.uploadPingPhoto(
         file: File(capture.photo.path),
         pingId: p.id,
@@ -2799,6 +2834,7 @@ class _PingPageState extends State<PingPage>
                     _openLoopsSection(s),
                     _toReplySection(s),
                     _repliesSection(s),
+                    _myReplyReactionsSection(s),
                     // One card per multi-person send — every recipient's
                     // reply fills its own slot in the same box.
                     for (final t in _multiThreadIds) _multiCard(s, t),
@@ -3859,6 +3895,121 @@ class _PingPageState extends State<PingPage>
   // as long as the ping itself is live. Revealing one used to remove it
   // from this list permanently, which meant a second, third, fourth reply
   // from the same person had nothing to show for it beyond the first.
+  /// REACTIONS TO YOUR REPLIES — who reacted to a photo or message I sent
+  /// back. Its own section because a ping only lives 6 hours: once it
+  /// expires, the reply leaves every other list and its reactions had
+  /// nowhere left to be seen (reported 2026-10-04). Rows here are driven by
+  /// the REACTION's age (7 days), not the ping's.
+  Widget _myReplyReactionsSection(Scale s) {
+    final rows = _myReplyReactions;
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: s(22), right: s(22), bottom: s(8)),
+          child: Row(
+            children: [
+              Text(
+                'REACTIONS TO YOU',
+                style: ts(s, weight: 500, size: 11, em: .18, color: txt(.4)),
+              ),
+              const Spacer(),
+              Text(
+                '${rows.length}',
+                style: ts(s, weight: 500, size: 11, color: txt(.3)),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: EdgeInsets.only(left: s(22), right: s(22), bottom: s(30)),
+          child: Column(
+            children: [
+              for (int i = 0; i < rows.length; i++) ...[
+                _myReplyReactionRow(s, rows[i]),
+                if (i < rows.length - 1) SizedBox(height: s(10)),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _myReplyReactionRow(Scale s, MyReplyReactions r) {
+    final who = r.reactions.length == 1
+        ? r.reactions.first.name
+        : '${r.reactions.length} people';
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => showPingRealmojiReactors(context, r.reactions),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: s(14), vertical: s(11)),
+        decoration: BoxDecoration(
+          borderRadius: r4(s, 20, 10, 22, 12),
+          color: kSurface2,
+          border: Border.all(color: w(.05), width: 1),
+        ),
+        child: Row(
+          children: [
+            // What they reacted to: the photo I sent, or a words bubble.
+            ClipRRect(
+              borderRadius: BorderRadius.circular(s(9)),
+              child: SizedBox(
+                width: s(38),
+                height: s(38),
+                child: r.isPhoto && (r.photoUrl ?? '').isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: r.photoUrl!,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 120,
+                        errorWidget: (_, _, _) => ColoredBox(color: w(.07)),
+                      )
+                    : ColoredBox(
+                        color: w(.07),
+                        child: Icon(
+                          r.isPhoto
+                              ? Icons.photo_rounded
+                              : Icons.chat_bubble_rounded,
+                          size: s(16),
+                          color: txt(.5),
+                        ),
+                      ),
+              ),
+            ),
+            SizedBox(width: s(12)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$who reacted',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts(s, weight: 600, size: 13.5, color: kText),
+                  ),
+                  SizedBox(height: s(2)),
+                  Text(
+                    r.isGroup
+                        ? 'on your answer in ${r.otherName}'
+                        : 'on what you sent ${r.otherName}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts(s, weight: 400, size: 10.5, color: txt(.36)),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: s(10)),
+            PingRealmojiStack(reactions: r.reactions, size: s(24)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _repliesSection(Scale s) {
     // A reply is shown ONCE. Opening it removes it from this list for
     // good — explicit request: "after seeing the replies it shall go away,
@@ -4738,7 +4889,17 @@ class _PingPageState extends State<PingPage>
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              if (capturedLocalPath[key] != null)
+                              if (capturedVideoUrl[key] != null)
+                                // A hold-to-record answer — play the clip
+                                // in the drop zone, don't try to decode it
+                                // as a still (2026-10-06).
+                                AppVideo(
+                                  url: capturedVideoUrl[key],
+                                  durationMs: capturedVideoMs[key],
+                                  showDuration: false,
+                                  fit: BoxFit.cover,
+                                )
+                              else if (capturedLocalPath[key] != null)
                                 Image.file(
                                   File(capturedLocalPath[key]!),
                                   fit: BoxFit.cover,
@@ -4904,6 +5065,8 @@ class _PingPageState extends State<PingPage>
                                           capturedPhotoUrl.remove(key);
                                           capturedSelfieUrl.remove(key);
                                           capturedLocalPath.remove(key);
+                                          capturedVideoUrl.remove(key);
+                                          capturedVideoMs.remove(key);
                                           _photoUploads.remove(key);
                                           replyDraft = '';
                                         });
@@ -4914,6 +5077,9 @@ class _PingPageState extends State<PingPage>
                                               .replyToWall(
                                                 pingId: myPingId,
                                                 photoUrl: photoUrl,
+                                                videoUrl:
+                                                    capturedVideoUrl[key],
+                                                videoMs: capturedVideoMs[key],
                                                 selfieUrl: selfieUrl,
                                                 body: draft.isEmpty
                                                     ? null
@@ -5053,6 +5219,20 @@ class _PingPageState extends State<PingPage>
     });
 
     final myPingId = t.myPingId;
+    if (myPingId != null && capture.isVideo) {
+      // Hold-to-record answer on a wall (2026-10-06): a clip, no selfie.
+      final videoUrl = await StorageService.uploadPingVideo(
+        file: File(capture.video!.path),
+        pingId: myPingId,
+      );
+      if (mounted && videoUrl != null) {
+        setState(() {
+          capturedVideoUrl[key] = videoUrl;
+          if (capture.videoMs != null) capturedVideoMs[key] = capture.videoMs!;
+        });
+      }
+      return;
+    }
     if (myPingId != null) {
       final upload = StorageService.uploadPingPhoto(
         file: File(capture.photo.path),
@@ -6227,7 +6407,16 @@ class _PingPageState extends State<PingPage>
                           // deliver anything. The gradient stays as the
                           // loading/error state, and as the whole treatment
                           // for a text-only reply (which has no photo).
-                          if (r.photoUrl != null)
+                          // A hold-to-record video answer plays here; a
+                          // photo reply is unchanged (2026-10-06).
+                          if (r.videoUrl != null)
+                            AppVideo(
+                              url: r.videoUrl,
+                              durationMs: r.videoMs,
+                              autoPlay: true,
+                              fit: BoxFit.cover,
+                            )
+                          else if (r.photoUrl != null)
                             CachedNetworkImage(
                               memCacheWidth: 1080,
                               imageUrl: r.photoUrl!,
@@ -6539,6 +6728,18 @@ class _PingPageState extends State<PingPage>
   /// RealMoji reactions on Ping targets, loaded with the page (see
   /// _loadPingRealmojis). Keyed by reply id or ping id.
   final Map<String, List<PingRealmoji>> _pingRealmojis = {};
+
+  /// A hold-to-record clip captured for a group wall answer, keyed like
+  /// [captured] (`wall:<threadId>`) — uploaded on capture, attached on send.
+  final Map<String, String> capturedVideoUrl = {};
+  final Map<String, int> capturedVideoMs = {};
+
+  /// Reactions people left on the replies I SENT (my_ping_reply_reactions).
+  /// Kept separate from [_pingRealmojis] because these outlive the ping: a
+  /// ping expires 6h after it's sent, which used to take the only view of
+  /// its reactions with it (reported 2026-10-04: "people aren't able to view
+  /// the reactions for their ping replies").
+  List<MyReplyReactions> _myReplyReactions = const [];
 
   /// The ONE reaction button (explicit request, 2026-10-03: "the heart
   /// shall be inside the RealMoji thing, not a separate widget"). It opens

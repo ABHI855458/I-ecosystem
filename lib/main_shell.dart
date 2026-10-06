@@ -58,6 +58,14 @@ const double kTabBarExtraLift = 10.0;
 // past the physical screen edge.
 const double _tabBarLowerOffset = 10.0;
 
+/// Where the floating tab bar's bottom edge sits, on EVERY tab. The Anon
+/// feed used to float it 44pt higher to clear its bottom peek prompt;
+/// that prompt is gone (explicit request, 2026-10-06: "remove the bottom
+/// peeking prompts and move the task bar down"), so there is one position
+/// now. AnonFeedScreenV2 reads this to reserve room for the bar.
+double tabBarBottomFor(double bottomPad) =>
+    (bottomPad - _tabBarLowerOffset).clamp(0.0, double.infinity);
+
 class MainShell extends StatefulWidget {
   const MainShell({super.key, this.debugInitialHomeTab, this.debugInitialIndex});
 
@@ -673,7 +681,6 @@ class _MainShellState extends State<MainShell>
     // other page — Everyone/Friends, Ping, Community, Profile — sits flush
     // against the safe area instead, Instagram-style, with no extra
     // floating offset/lift.
-    final showAnonTabBarPosition = _currentIndex == 0 && _isHomeAnonActive;
     // Anon tab always uses the plain (non-compact) offset — its peek strip
     // (AnonFeedScreenV2's own bottom Positioned) is anchored assuming this
     // exact fixed offset, not the compact one. _compact flips true whenever
@@ -683,9 +690,7 @@ class _MainShellState extends State<MainShell>
     // shrank the tab bar's offset by 8pt out from under the peek strip's
     // static reservation, closing the gap between them (reported as "no
     // space between task bar and peek prompt" after scrolling).
-    final tabBarBottom = showAnonTabBarPosition
-        ? bottomPad + kTabBarBottomOffset + kTabBarExtraLift
-        : (bottomPad - _tabBarLowerOffset).clamp(0.0, double.infinity);
+    final tabBarBottom = tabBarBottomFor(bottomPad);
 
     return Scaffold(
       backgroundColor: AppColors.background,

@@ -21,6 +21,8 @@ import '../../services/post_size_prefs_service.dart';
 import '../../services/us_album_service.dart';
 import 'profile_v2_data.dart';
 import 'profile_v2_icons.dart';
+import 'package:video_player/video_player.dart';
+import '../../widgets/app_video.dart';
 import 'profile_v2_sections.dart';
 import 'profile_v2_tokens.dart';
 import 'profile_v2_widgets.dart';
@@ -1269,6 +1271,12 @@ class _GroupPostScreenState extends State<GroupPostScreen> {
   /// 1 up posts fine.
   static const _maxPhotos = 15;
 
+  /// A video on this group post (explicit request, 2026-10-06). Either a
+  /// video or photos — a post is one or the other, so picking a clip
+  /// satisfies the "a photo" requirement below.
+  XFile? _video;
+  int? _videoMs;
+
   @override
   void initState() {
     super.initState();
@@ -1312,7 +1320,7 @@ class _GroupPostScreenState extends State<GroupPostScreen> {
   /// Everything a group post needs (group_post_requirements): photos,
   /// caption, note, place and date. Empty list = ready.
   List<String> get _missingFields => [
-        if (_photos.isEmpty) 'a photo',
+        if (_photos.isEmpty && _video == null) 'a photo or video',
         if (_caption.text.trim().isEmpty) 'a caption',
         if (_note.text.trim().isEmpty) 'a note',
         if (_place.text.trim().isEmpty) 'a location',
@@ -1383,6 +1391,26 @@ class _GroupPostScreenState extends State<GroupPostScreen> {
     setState(() => _photos.addAll(files.take(remaining)));
   }
 
+  Future<void> _pickVideo() async {
+    final file = await ImagePicker().pickVideo(
+      source: ImageSource.gallery,
+      maxDuration: const Duration(minutes: 2),
+    );
+    if (file == null || !mounted) return;
+    int? ms;
+    try {
+      final c = VideoPlayerController.file(File(file.path));
+      await c.initialize();
+      ms = c.value.duration.inMilliseconds;
+      await c.dispose();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _video = file;
+      _videoMs = ms;
+    });
+  }
+
   Future<void> _pickDualInset() async {
     final file = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -1411,6 +1439,8 @@ class _GroupPostScreenState extends State<GroupPostScreen> {
           .addPost(
             groupId: groupId,
             photoFiles: [for (final p in _photos) File(p.path)],
+            videoFile: _video == null ? null : File(_video!.path),
+            videoMs: _videoMs,
             secondaryPhoto:
                 _dualInset == null ? null : File(_dualInset!.path),
             caption: _caption.text.trim().isEmpty ? null : _caption.text.trim(),
@@ -1593,6 +1623,62 @@ class _GroupPostScreenState extends State<GroupPostScreen> {
           opacity: 0.35,
         ),
         const SizedBox(height: 10),
+        // Video, same post (2026-10-06).
+        Row(
+          children: [
+            GestureDetector(
+              onTap: _pickVideo,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(100),
+                  color: Colors.white.withValues(alpha: 0.06),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.videocam_rounded, size: 15, color: PV2.accent),
+                    const SizedBox(width: 6),
+                    Text(
+                      _video == null ? 'Add a video' : 'Video added',
+                      style: PV2.body(size: 12, color: PV2.accent),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_video != null) ...[
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 54,
+                height: 54,
+                child: AppVideo(
+                  file: File(_video!.path),
+                  durationMs: _videoMs,
+                  showDuration: false,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => setState(() {
+                  _video = null;
+                  _videoMs = null;
+                }),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: Colors.white.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 12),
         GridView.count(
           crossAxisCount: 3,
           // Same fix as FriendsPostScreen's own grid, same root cause:
@@ -2120,6 +2206,12 @@ class DuoPostScreen extends StatefulWidget {
 
 class _DuoPostScreenState extends State<DuoPostScreen> {
   XFile? _photo;
+
+  /// Set when the pick was a VIDEO (explicit request, 2026-10-06: "allow to
+  /// upload videos as well to duo and group posts just like normal posts").
+  /// [_photo] still holds the file; this is what makes it post as a clip.
+  bool _isVideo = false;
+  int? _videoMs;
   final _caption = TextEditingController();
 
   /// Mutual by default — matches this album's own historical default
@@ -2174,7 +2266,32 @@ class _DuoPostScreenState extends State<DuoPostScreen> {
       imageQuality: 90,
     );
     if (file == null || !mounted) return;
-    setState(() => _photo = file);
+    setState(() {
+      _photo = file;
+      _isVideo = false;
+      _videoMs = null;
+    });
+  }
+
+  Future<void> _pickVideo() async {
+    final file = await ImagePicker().pickVideo(
+      source: ImageSource.gallery,
+      maxDuration: const Duration(minutes: 2),
+    );
+    if (file == null || !mounted) return;
+    int? ms;
+    try {
+      final c = VideoPlayerController.file(File(file.path));
+      await c.initialize();
+      ms = c.value.duration.inMilliseconds;
+      await c.dispose();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _photo = file;
+      _isVideo = true;
+      _videoMs = ms;
+    });
   }
 
   bool get _canPost => !_posting && _photo != null;
@@ -2198,6 +2315,8 @@ class _DuoPostScreenState extends State<DuoPostScreen> {
             mutual: mutual,
             communityIds: communityIds,
             circleIds: circleIds,
+            isVideo: _isVideo,
+            videoMs: _videoMs,
           )
           .catchError((_) => _reportBackgroundPostFailure('photo')),
     );
@@ -2238,15 +2357,62 @@ class _DuoPostScreenState extends State<DuoPostScreen> {
                           color: PV2.accent.withValues(alpha: 0.8),
                         ),
                       )
+                    : _isVideo
+                    ? AppVideo(
+                        file: File(_photo!.path),
+                        durationMs: _videoMs,
+                        fit: BoxFit.cover,
+                      )
                     : Image.file(File(_photo!.path), fit: BoxFit.cover),
               ),
             ),
           ),
           const SizedBox(height: 10),
+          // Photo or video (explicit request, 2026-10-06) — the frame picks
+          // a photo, this picks a clip.
           Center(
-            child: Text(
-              'Tap the frame to change the photo',
-              style: PV2.body(size: 12, color: Colors.white.withValues(alpha: 0.4)),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 10,
+              children: [
+                Text(
+                  'Tap the frame for a photo',
+                  style: PV2.body(
+                    size: 12,
+                    color: Colors.white.withValues(alpha: 0.4),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: _pickVideo,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(100),
+                      color: Colors.white.withValues(alpha: 0.06),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.videocam_rounded,
+                          size: 15,
+                          color: PV2.accent,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _isVideo ? 'Change video' : 'Add a video',
+                          style: PV2.body(size: 12, color: PV2.accent),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),

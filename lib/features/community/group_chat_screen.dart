@@ -55,7 +55,115 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   /// Photos picked with "+" for the next message.
   final List<XFile> _picked = [];
 
+  /// Emoji reactions per message id (group_message_reactions). WhatsApp-style
+  /// (explicit request, 2026-10-04): long-press a bubble, pick an emoji; the
+  /// tally sits under the bubble and tapping it says who left what.
+  Map<String, List<MessageReaction>> _reactions = const {};
+
   String get _groupId => widget.chat.id;
+
+  /// "+" — photo or GIF (GIFs explicit request, 2026-10-04). Two entries
+  /// because they're picked differently: a photo is downscaled and
+  /// re-encoded on the way in, which would flatten a GIF into a still
+  /// frame, so GIFs are taken exactly as they are.
+  Future<void> _openAttachSheet() async {
+    HapticFeedback.selectionClick();
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF1B1B22),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: CommunityColors.cardBorder),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_rounded,
+                    color: CommunityColors.textSecondary,
+                  ),
+                  title: Text(
+                    'Photo',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: CommunityColors.textBody,
+                    ),
+                  ),
+                  onTap: () => Navigator.of(sheetCtx).pop('photo'),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.gif_box_rounded,
+                    color: CommunityColors.textSecondary,
+                  ),
+                  title: Text(
+                    'GIF',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: CommunityColors.textBody,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Keeps it moving',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      color: CommunityColors.textDim,
+                    ),
+                  ),
+                  onTap: () => Navigator.of(sheetCtx).pop('gif'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (choice == 'photo') await _pickPhotos();
+    if (choice == 'gif') await _pickGifs();
+  }
+
+  /// GIFs, picked raw — no maxWidth/imageQuality, which is exactly what
+  /// would strip the animation.
+  Future<void> _pickGifs() async {
+    final left = GroupChatService.maxPhotos - _picked.length;
+    if (left <= 0) {
+      showGlassToast(
+        context,
+        'Limit reached · ${GroupChatService.maxPhotos} per message',
+        isError: true,
+      );
+      return;
+    }
+    try {
+      final files = await ImagePicker().pickMultiImage(limit: left);
+      if (!mounted || files.isEmpty) return;
+      final gifs = [
+        for (final f in files)
+          if (f.path.toLowerCase().endsWith('.gif')) f,
+      ];
+      if (gifs.isEmpty) {
+        showGlassToast(
+          context,
+          'That wasn\'t a GIF — pick one from your GIFs album.',
+          isError: true,
+        );
+        return;
+      }
+      setState(() => _picked.addAll(gifs.take(left)));
+    } catch (_) {
+      if (mounted) {
+        showGlassToast(context, "Couldn't open your GIFs.", isError: true);
+      }
+    }
+  }
 
   Future<void> _pickPhotos() async {
     final left = GroupChatService.maxPhotos - _picked.length;
@@ -119,6 +227,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         _error = null;
         if (page.length < 50 && older.isEmpty) _hasMore = false;
       });
+      unawaited(_loadReactions());
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -126,6 +235,169 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         _error = "Couldn't load messages.";
       });
     }
+  }
+
+  Future<void> _loadReactions() async {
+    final ids = [
+      for (final m in _messages)
+        if (!m.pending) m.id,
+    ];
+    final map = await GroupChatService.instance.reactionsFor(ids);
+    if (!mounted) return;
+    setState(() => _reactions = map);
+  }
+
+  /// The long-press emoji row — six quick ones, the same set every chat app
+  /// opens with. Tapping the one I already left clears it (server-side, see
+  /// react_group_message).
+  static const _quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+  Future<void> _openReactionPicker(GroupMessage m) async {
+    if (m.pending) return;
+    HapticFeedback.selectionClick();
+    final mine = (_reactions[m.id] ?? const <MessageReaction>[])
+        .where((r) => r.mine)
+        .map((r) => r.emoji)
+        .toList();
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1B1B22),
+              borderRadius: BorderRadius.circular(40),
+              border: Border.all(color: CommunityColors.cardBorder),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (final e in _quickEmojis)
+                  GestureDetector(
+                    onTap: () => Navigator.of(sheetCtx).pop(e),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: mine.contains(e)
+                            ? CommunityColors.lime.withValues(alpha: .22)
+                            : Colors.transparent,
+                      ),
+                      child: Text(e, style: const TextStyle(fontSize: 26)),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (picked == null) return;
+    // Optimistic: the tally moves on the tap, the write follows. Same rule
+    // the server applies — my old reaction goes, and picking the one I
+    // already had just clears it.
+    setState(() {
+      final list = [...?_reactions[m.id]];
+      final hadSame = list.any((r) => r.mine && r.emoji == picked);
+      for (var i = list.length - 1; i >= 0; i--) {
+        if (!list[i].mine) continue;
+        final r = list[i];
+        if (r.count <= 1) {
+          list.removeAt(i);
+        } else {
+          list[i] = MessageReaction(
+            emoji: r.emoji,
+            count: r.count - 1,
+            mine: false,
+            who: r.who,
+          );
+        }
+      }
+      if (!hadSame) {
+        final i = list.indexWhere((r) => r.emoji == picked);
+        if (i >= 0) {
+          list[i] = MessageReaction(
+            emoji: picked,
+            count: list[i].count + 1,
+            mine: true,
+            who: list[i].who,
+          );
+        } else {
+          list.add(
+            MessageReaction(emoji: picked, count: 1, mine: true, who: 'You'),
+          );
+        }
+      }
+      _reactions = {..._reactions, m.id: list};
+    });
+    try {
+      await GroupChatService.instance.react(m.id, picked);
+    } catch (_) {
+      if (mounted) {
+        showGlassToast(context, "Couldn't react.", isError: true);
+      }
+    }
+    await _loadReactions();
+  }
+
+  /// The tally under a bubble; tapping it names everyone.
+  Widget _reactionBar(GroupMessage m, {required bool mine}) {
+    final list = _reactions[m.id] ?? const <MessageReaction>[];
+    if (list.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsets.only(
+        top: 3,
+        left: mine ? 0 : 36,
+        right: mine ? 2 : 0,
+        bottom: 2,
+      ),
+      child: Row(
+        mainAxisAlignment: mine
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () {
+              showGlassToast(
+                context,
+                list.map((r) => '${r.emoji} ${r.who}').join('  ·  '),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF23232B),
+                borderRadius: BorderRadius.circular(100),
+                border: Border.all(color: CommunityColors.cardBorder),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final r in list.take(4)) ...[
+                    Text(r.emoji, style: const TextStyle(fontSize: 12.5)),
+                    if (r.count > 1)
+                      Text(
+                        ' ${r.count}',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: r.mine
+                              ? CommunityColors.lime
+                              : CommunityColors.textDim,
+                        ),
+                      ),
+                    const SizedBox(width: 4),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _maybeLoadOlder() async {
@@ -470,134 +742,152 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     ),
   );
 
-  Widget _mine(GroupMessage m, bool endsRun) => Align(
-    alignment: Alignment.centerRight,
-    child: GestureDetector(
-      onLongPress: m.pending ? null : () => _confirmUnsend(m),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.76,
-        ),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(13, 9, 11, 7),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFFA2D64), Color(0xFFD1406E)],
+  Widget _mine(GroupMessage m, bool endsRun) => Column(
+    crossAxisAlignment: CrossAxisAlignment.end,
+    children: [
+      Align(
+        alignment: Alignment.centerRight,
+        child: GestureDetector(
+          // Long-press reacts (like every chat app); unsending my own message
+          // moved to a double-tap so both fit on the same bubble.
+          onLongPress: m.pending ? null : () => _openReactionPicker(m),
+          onDoubleTap: m.pending ? null : () => _confirmUnsend(m),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.76,
             ),
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(18),
-              topRight: const Radius.circular(18),
-              bottomLeft: const Radius.circular(18),
-              bottomRight: Radius.circular(endsRun ? 5 : 18),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (m.photoUrls.isNotEmpty || m.localPhotos.isNotEmpty) ...[
-                _photos(m),
-                const SizedBox(height: 6),
-              ],
-              if (m.body.trim().isNotEmpty)
-                Text(
-                  m.body,
-                  style: GoogleFonts.inter(
-                    fontSize: 14.5,
-                    color: Colors.white,
-                    height: 1.35,
-                  ),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(13, 9, 11, 7),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFA2D64), Color(0xFFD1406E)],
                 ),
-              const SizedBox(height: 3),
-              _time(m, mine: true),
-            ],
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(18),
+                  topRight: const Radius.circular(18),
+                  bottomLeft: const Radius.circular(18),
+                  bottomRight: Radius.circular(endsRun ? 5 : 18),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (m.photoUrls.isNotEmpty || m.localPhotos.isNotEmpty) ...[
+                    _photos(m),
+                    const SizedBox(height: 6),
+                  ],
+                  if (m.body.trim().isNotEmpty)
+                    Text(
+                      m.body,
+                      style: GoogleFonts.inter(
+                        fontSize: 14.5,
+                        color: Colors.white,
+                        height: 1.35,
+                      ),
+                    ),
+                  const SizedBox(height: 3),
+                  _time(m, mine: true),
+                ],
+              ),
+            ),
           ),
         ),
       ),
-    ),
+      _reactionBar(m, mine: true),
+    ],
   );
 
   Widget _theirs(GroupMessage m, bool startsRun, bool endsRun) {
     final url = m.senderAvatar;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 30,
-          child: endsRun
-              ? CircleAvatar(
-                  radius: 14,
-                  backgroundColor: const Color(0xFF26262F),
-                  backgroundImage: url == null || url.isEmpty
-                      ? null
-                      : CachedNetworkImageProvider(url),
-                  child: url == null || url.isEmpty
-                      ? Text(
-                          m.senderName.isEmpty
-                              ? '?'
-                              : m.senderName[0].toUpperCase(),
+        GestureDetector(
+          onLongPress: () => _openReactionPicker(m),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              SizedBox(
+                width: 30,
+                child: endsRun
+                    ? CircleAvatar(
+                        radius: 14,
+                        backgroundColor: const Color(0xFF26262F),
+                        backgroundImage: url == null || url.isEmpty
+                            ? null
+                            : CachedNetworkImageProvider(url),
+                        child: url == null || url.isEmpty
+                            ? Text(
+                                m.senderName.isEmpty
+                                    ? '?'
+                                    : m.senderName[0].toUpperCase(),
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 6),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.72,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 7),
+                  decoration: BoxDecoration(
+                    color: CommunityColors.cardBg2,
+                    border: Border.all(color: CommunityColors.cardBorder),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomRight: const Radius.circular(18),
+                      bottomLeft: Radius.circular(endsRun ? 5 : 18),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (startsRun) ...[
+                        Text(
+                          m.senderName,
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                            color: CommunityColors.lime,
                           ),
-                        )
-                      : null,
-                )
-              : null,
-        ),
-        const SizedBox(width: 6),
-        ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.72,
-          ),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 7),
-            decoration: BoxDecoration(
-              color: CommunityColors.cardBg2,
-              border: Border.all(color: CommunityColors.cardBorder),
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(18),
-                topRight: const Radius.circular(18),
-                bottomRight: const Radius.circular(18),
-                bottomLeft: Radius.circular(endsRun ? 5 : 18),
+                        ),
+                        const SizedBox(height: 2),
+                      ],
+                      if (m.photoUrls.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        _photos(m),
+                        const SizedBox(height: 6),
+                      ],
+                      if (m.body.trim().isNotEmpty)
+                        Text(
+                          m.body,
+                          style: GoogleFonts.inter(
+                            fontSize: 14.5,
+                            color: CommunityColors.textBody,
+                            height: 1.35,
+                          ),
+                        ),
+                      const SizedBox(height: 3),
+                      _time(m, mine: false),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (startsRun) ...[
-                  Text(
-                    m.senderName,
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: CommunityColors.lime,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                ],
-                if (m.photoUrls.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  _photos(m),
-                  const SizedBox(height: 6),
-                ],
-                if (m.body.trim().isNotEmpty)
-                  Text(
-                    m.body,
-                    style: GoogleFonts.inter(
-                      fontSize: 14.5,
-                      color: CommunityColors.textBody,
-                      height: 1.35,
-                    ),
-                  ),
-                const SizedBox(height: 3),
-                _time(m, mine: false),
-              ],
-            ),
+            ],
           ),
         ),
+        _reactionBar(m, mine: false),
       ],
     );
   }
@@ -670,9 +960,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      // "+" — add photos (explicit request, 2026-10-03).
+                      // "+" — photo or GIF.
                       IconButton(
-                        onPressed: _pickPhotos,
+                        onPressed: _openAttachSheet,
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(
                           Icons.add_rounded,

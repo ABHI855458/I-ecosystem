@@ -91,3 +91,59 @@ class PingRealmojiService {
         .toList();
   }
 }
+
+/// One of MY ping replies that somebody reacted to — the "reactions on your
+/// replies" row in the Ping page. Survives the ping itself: a ping expires 6
+/// hours after it's sent, which used to take the only view of its reactions
+/// with it (reported 2026-10-04).
+class MyReplyReactions {
+  const MyReplyReactions({
+    required this.replyId,
+    required this.kind,
+    required this.otherName,
+    required this.isGroup,
+    required this.reactions,
+    this.photoUrl,
+    this.body,
+  });
+
+  final String replyId;
+  final String kind;
+  final String otherName;
+  final bool isGroup;
+  final String? photoUrl;
+  final String? body;
+  final List<PingRealmoji> reactions;
+
+  bool get isPhoto => kind == 'photo';
+
+  factory MyReplyReactions.fromRow(Map<String, dynamic> r) => MyReplyReactions(
+    replyId: r['reply_id'] as String,
+    kind: (r['kind'] as String?) ?? 'text',
+    otherName: (r['other_name'] as String?) ?? 'Someone',
+    isGroup: r['is_group'] == true,
+    photoUrl: r['photo_url'] as String?,
+    body: r['body'] as String?,
+    reactions: [
+      for (final x in (r['reactions'] as List? ?? const []))
+        PingRealmoji.fromRow(Map<String, dynamic>.from(x as Map)),
+    ],
+  );
+}
+
+extension MyReplyReactionsApi on PingRealmojiService {
+  /// Reactions on the replies I sent, newest first (my_ping_reply_reactions).
+  Future<List<MyReplyReactions>> fetchMyReplyReactions() async {
+    try {
+      final rows = await supabase
+          .rpc('my_ping_reply_reactions')
+          .timeout(const Duration(seconds: 8)) as List;
+      return rows
+          .cast<Map<String, dynamic>>()
+          .map(MyReplyReactions.fromRow)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+}

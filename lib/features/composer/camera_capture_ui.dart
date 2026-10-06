@@ -42,6 +42,8 @@ class CaptureCard extends StatelessWidget {
     required this.usingRear,
     required this.swapping,
     required this.onCapture,
+    this.onStartVideo,
+    this.onStopVideo,
     required this.onGallery,
     required this.onSwap,
     required this.onClose,
@@ -68,6 +70,11 @@ class CaptureCard extends StatelessWidget {
   final bool usingRear;
   final bool swapping;
   final VoidCallback onCapture;
+
+  /// Hold-to-record video (PlainShutterButton's own doc). Null keeps the
+  /// shutter tap-only, which is every camera except the ping reply one.
+  final Future<bool> Function()? onStartVideo;
+  final VoidCallback? onStopVideo;
   /// Non-null only for the GROUP camera (explicit request, 2026-10-03:
   /// "include the duo qr scanner and group qr scanner in the group's camera
   /// only"). Opens the one scanner that detects BOTH kinds of code and does
@@ -348,7 +355,11 @@ class CaptureCard extends StatelessWidget {
               children: [
                 Opacity(
                   opacity: cameraReady ? 1 : 0.55,
-                  child: PlainShutterButton(onCapture: onCapture),
+                  child: PlainShutterButton(
+                    onCapture: onCapture,
+                    onStartVideo: onStartVideo,
+                    onStopVideo: onStopVideo,
+                  ),
                 ),
                 Positioned(
                   left: 24,

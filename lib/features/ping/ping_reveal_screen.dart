@@ -331,9 +331,19 @@ class _PingRevealScreenState extends State<PingRevealScreen>
 /// half of a dual capture — null for a gallery pick, or when the back shot
 /// sent but the front shot itself failed (see the class doc above).
 class PingCapture {
-  const PingCapture({required this.photo, this.selfie});
+  const PingCapture({required this.photo, this.selfie, this.video, this.videoMs});
+
+  /// For a VIDEO capture this is the first frame's stand-in: callers that
+  /// only handle photos still get something, and [video] is what actually
+  /// gets sent. Hold-to-record was an explicit request (2026-10-06).
   final XFile photo;
   final XFile? selfie;
+
+  /// The recorded clip, capped at [kHoldVideoLimit] by the shutter.
+  final XFile? video;
+  final int? videoMs;
+
+  bool get isVideo => video != null;
 }
 
 /// The ping reply camera.
@@ -372,6 +382,13 @@ class _PingCameraScreenState extends State<PingCameraScreen> {
   /// Dual takes the framed lens first, flips, and then WAITS for a second
   /// shutter tap rather than firing it automatically.
   bool _dualMode = false;
+
+  /// Hold-to-record state (explicit request, 2026-10-06: "holding to record
+  /// a video, set a limit just like Snap, and sending it to pinged people").
+  /// The shutter's ring enforces the 15s cap; this side only has to start
+  /// and stop the camera and hand back the file.
+  bool _recordingVideo = false;
+  DateTime? _recordStartedAt;
 
   /// The first half of a dual capture, held while the second is composed.
   /// Non-null means the shutter is armed for the second shot.
@@ -705,6 +722,58 @@ class _PingCameraScreenState extends State<PingCameraScreen> {
   /// caller (ping_page.dart's _openCamera) already gives its own feedback
   /// once the reply lands (PingSentAnchor), so this screen doesn't need a
   /// redundant send animation of its own.
+  /// Starts recording. Returns false when the camera can't take it, which
+  /// tells the shutter not to show the recording ring.
+  Future<bool> _startVideo() async {
+    final c = _controller;
+    if (_sending || _capturingSelfie || !_cameraReady || c == null) {
+      return false;
+    }
+    if (_recordingVideo) return false;
+    try {
+      // A live ML Kit stream and video recording can't share the camera —
+      // same conflict takePicture() hits (see _capture's own note).
+      if (_maskOn && _isFront) {
+        await _maskOverlayKey.currentState?.pauseStreamingForCapture();
+      }
+      await c.startVideoRecording();
+      _recordingVideo = true;
+      _recordStartedAt = DateTime.now();
+      return true;
+    } catch (e, st) {
+      debugPrint('[PingCameraScreen._startVideo] failed: $e\n$st');
+      return false;
+    }
+  }
+
+  Future<void> _stopVideo() async {
+    final c = _controller;
+    if (!_recordingVideo || c == null) return;
+    _recordingVideo = false;
+    final started = _recordStartedAt;
+    _recordStartedAt = null;
+    XFile clip;
+    try {
+      clip = await c.stopVideoRecording();
+    } catch (e, st) {
+      debugPrint('[PingCameraScreen._stopVideo] failed: $e\n$st');
+      return;
+    }
+    if (!mounted) return;
+    final ms = started == null
+        ? null
+        : DateTime.now().difference(started).inMilliseconds;
+    // Too short to be a deliberate clip — treat it as a mis-hold, not a
+    // send, so a slightly-long tap doesn't fire off a quarter-second video.
+    if (ms != null && ms < 700) return;
+    if (_sending) return;
+    _sending = true;
+    HapticFeedback.heavyImpact();
+    Navigator.of(context).pop(
+      PingCapture(photo: clip, video: clip, videoMs: ms),
+    );
+  }
+
   void _doSend(XFile photo, XFile? selfie) {
     if (_sending) return;
     _sending = true;
@@ -747,6 +816,8 @@ class _PingCameraScreenState extends State<PingCameraScreen> {
           usingRear: !_isFront,
           swapping: _capturingSelfie,
           onCapture: _capture,
+          onStartVideo: _startVideo,
+          onStopVideo: () => unawaited(_stopVideo()),
           onGallery: _pickGallery,
           onSwap: _flipCamera,
           onClose: () => Navigator.of(context).pop(),

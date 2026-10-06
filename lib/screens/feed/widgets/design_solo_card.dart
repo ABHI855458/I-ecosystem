@@ -64,6 +64,7 @@ class DesignSoloCard extends StatefulWidget {
     this.partnerName,
     this.partnerAvatarUrl,
     this.pairStreak,
+    this.showPairStreak = true,
     this.viewerSeen = false,
     this.caption,
     this.photoUrl,
@@ -147,6 +148,12 @@ class DesignSoloCard extends StatefulWidget {
   /// FeedService._attachAuthors' us_post_streaks RPC. Null (not 0) means
   /// "no streak to show", same convention PV2Icons.blueFlameStreak follows.
   final int? pairStreak;
+
+  /// Whether the pair's ping-streak flame is drawn on the fused avatar.
+  /// The Friends feed passes false — explicit request, 2026-10-06: "remove
+  /// the ping streak visible to everyone in friends feed". A streak is
+  /// between two people; the feed showed it to their whole audience.
+  final bool showPairStreak;
 
   /// True on a PROFILE screen (own or someone else's), false in a FEED.
   /// Swaps the live "here" pill (post_presence, 3h window) for the "seen"
@@ -516,6 +523,7 @@ class _DesignSoloCardState extends State<DesignSoloCard>
                             photoUrl: widget.avatarUrl,
                             partnerPhotoUrl: widget.partnerAvatarUrl,
                             pairStreak: widget.pairStreak,
+                            showStreak: widget.showPairStreak,
                           ),
                         )
                       else
@@ -924,7 +932,12 @@ class _FusedAvatar extends StatelessWidget {
     this.photoUrl,
     this.partnerPhotoUrl,
     this.pairStreak,
+    this.showStreak = true,
   });
+
+  /// False hides the flame badge — see DesignSoloCard.showPairStreak. The
+  /// box keeps its size either way, so the header doesn't shift.
+  final bool showStreak;
 
   final String seed;
   final String? photoUrl;
@@ -972,7 +985,8 @@ class _FusedAvatar extends StatelessWidget {
             top: 0,
             child: _ring('$seed-a', photoUrl),
           ),
-          Positioned(
+          if (showStreak)
+            Positioned(
               right: 0,
               bottom: 0,
               child: PV2Icons.blueFlameStreak(

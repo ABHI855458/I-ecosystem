@@ -1028,6 +1028,9 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
                           partnerName: item.partnerName,
                           partnerAvatarUrl: item.partnerAvatarUrl,
                           pairStreak: item.pairStreak,
+                          // No streak flame in the feed — see
+                          // DesignSoloCard.showPairStreak.
+                          showPairStreak: false,
                           caption: item.caption,
                           photoUrl: item.photoUrl,
                           photoUrls: item.photos,
