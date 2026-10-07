@@ -114,9 +114,11 @@ class PeopleService {
 
   /// People to suggest in the Friends feed (suggested_people RPC): share a
   /// community with me, not in ANY of my circles yet, not blocked either
-  /// way — newest accounts first, so the strip reads as people arriving.
+  /// way — most mutual friends first (2026-10-07), then newest accounts, so
+  /// people you probably know lead and the rest reads as people arriving.
   /// Rows: user_id, name, username, profile_photo_url, joined_at,
-  /// community_name. Empty on failure; suggestions are never critical.
+  /// community_name, mutual_count. Empty on failure; suggestions are never
+  /// critical.
   Future<List<Map<String, dynamic>>> suggestedPeople({int limit = 60}) async {
     try {
       final rows = await _client.rpc(
@@ -128,6 +130,47 @@ class PeopleService {
           .toList();
     } catch (_) {
       return const [];
+    }
+  }
+
+  // ── Mutual friends ──────────────────────────────────────────────────────
+  //
+  // "Mutual" = in MY Friends circle and also in THEIR Friends circle.
+  // Circles are private (creator-only under RLS), so both of these are
+  // SECURITY DEFINER RPCs that only ever return people already in the
+  // caller's own Friends circle — see 20261007020000_mutual_friends.sql.
+  // Blocks and deleted accounts are dropped server-side.
+
+  /// The friends I share with [otherUserId]. Rows: user_id, name, username,
+  /// profile_photo_url. Empty on failure — never worth failing a profile.
+  Future<List<Map<String, dynamic>>> mutualFriends(String otherUserId) async {
+    try {
+      final rows = await _client
+          .rpc('mutual_friends', params: {'p_other': otherUserId})
+          .timeout(const Duration(seconds: 10));
+      return (rows as List)
+          .map((r) => Map<String, dynamic>.from(r as Map))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// How many friends I share with each of [userIds] — one call for a whole
+  /// list (search rows, suggestions). Ids with none are simply absent.
+  Future<Map<String, int>> mutualCounts(Iterable<String> userIds) async {
+    final ids = userIds.toSet().take(200).toList();
+    if (ids.isEmpty) return const {};
+    try {
+      final rows = await _client
+          .rpc('mutual_friend_counts', params: {'p_ids': ids})
+          .timeout(const Duration(seconds: 10));
+      return {
+        for (final r in rows as List)
+          (r as Map)['user_id'] as String: (r['mutual_count'] as num).toInt(),
+      };
+    } catch (_) {
+      return const {};
     }
   }
 

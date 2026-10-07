@@ -22,7 +22,6 @@ import '../../../services/dip_service.dart';
 import '../../../services/group_service.dart';
 import '../../../services/post_author_pin_service.dart';
 import '../../../services/post_service.dart';
-import '../../../services/presence_service.dart';
 import '../../../services/reaction_preset_service.dart';
 import '../../../services/reaction_service.dart';
 import '../../../services/realmoji_service.dart';
@@ -57,8 +56,12 @@ import 'post_photo_carousel.dart';
 // ---------------------------------------------------------------------------
 
 class DesignGroupCard extends StatefulWidget {
-  const DesignGroupCard({super.key, required this.item});
+  const DesignGroupCard({super.key, required this.item, this.onDeleted});
   final FeedItem item;
+
+  /// Fired after the poster removes this post from its "..." menu, so the
+  /// host feed can drop the card.
+  final VoidCallback? onDeleted;
 
   @override
   State<DesignGroupCard> createState() => _DesignGroupCardState();
@@ -210,6 +213,7 @@ class _DesignGroupCardState extends State<DesignGroupCard> {
         // collage/deck layouts are gone (see _layoutBody).
         return _GroupCardBody(
           data: data,
+          onDeleted: widget.onDeleted,
           onOpenPost: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => SinglePostDetailScreen(item: widget.item),
@@ -222,8 +226,13 @@ class _DesignGroupCardState extends State<DesignGroupCard> {
 }
 
 class _GroupCardBody extends StatefulWidget {
-  const _GroupCardBody({required this.data, required this.onOpenPost});
+  const _GroupCardBody({
+    required this.data,
+    required this.onOpenPost,
+    this.onDeleted,
+  });
   final GroupCardData data;
+  final VoidCallback? onDeleted;
 
   /// Opens this post's own screen — what every tap on a LOCKED card does
   /// (no pop-up: the post opens like any other, photos 2+ still blurred).
@@ -238,7 +247,14 @@ class _GroupCardBodyState extends State<_GroupCardBody>
   bool _showLiveDropdown = false;
   bool _showMoreMenu = false;
   String? _mySelfieUrl;
-  List<PresenceUser> _present = const [];
+  /// Who has seen this post — loaded for MEMBERS only (group_post_viewers
+  /// refuses everyone else). The live "here" presence pill this replaced is
+  /// gone from the feed (explicit request, 2026-10-07: only a post's
+  /// owners — for a group post, the group's members — see who viewed it).
+  List<PostViewer> _viewers = const [];
+
+  /// I posted this one — its "..." offers Remove instead of Block / Report.
+  bool _isMine = false;
 
   /// Whether the VIEWER is already in this group. Null while resolving —
   /// the Accept pill stays hidden until we actually know, so a member never
@@ -267,7 +283,6 @@ class _GroupCardBodyState extends State<_GroupCardBody>
     if (gpid != null) {
       loadReactionSummary(null, groupPostId: gpid);
       unawaited(loadMyRealmojiReaction(null, groupPostId: gpid));
-      unawaited(PresenceService.instance.touch(groupPostId: gpid));
       // The PERMANENT view record, distinct from the heartbeat above —
       // same pairing DesignSoloCard already does for personal posts. Only
       // the group PROFILE card wrote these, so a group post seen in the
@@ -275,7 +290,6 @@ class _GroupCardBodyState extends State<_GroupCardBody>
       // presence pill had nothing to read, and (as of Phase 2) the
       // pinned-viewer notification could not fire either.
       unawaited(PostService.instance.recordGroupPostView(gpid));
-      unawaited(_loadPresence());
     }
   }
 
@@ -285,7 +299,14 @@ class _GroupCardBodyState extends State<_GroupCardBody>
     try {
       final me = await CurrentUserService.instance.resolveId();
       if (!mounted) return;
-      setState(() => _isMember = widget.data.members.any((m) => m.id == me));
+      setState(() {
+        _isMember = widget.data.members.any((m) => m.id == me);
+        _isMine =
+            me.isNotEmpty &&
+            widget.data.posts.isNotEmpty &&
+            widget.data.posts.first.userId == me;
+      });
+      if (_isMember == true) unawaited(_loadViewers());
     } catch (_) {
       // Unknown — leave null so the pill stays hidden rather than
       // offering "Accept" to someone who may already be a member.
@@ -319,14 +340,12 @@ class _GroupCardBodyState extends State<_GroupCardBody>
     }
   }
 
-  Future<void> _loadPresence() async {
+  Future<void> _loadViewers() async {
     final gpid = _groupPostId;
     if (gpid == null) return;
-    final entries = await PresenceService.instance.fetchPresence(
-      groupPostId: gpid,
-    );
+    final viewers = await PostService.instance.fetchGroupPostViewers(gpid);
     if (!mounted) return;
-    setState(() => _present = entries.map(PresenceUser.fromEntry).toList());
+    setState(() => _viewers = viewers);
   }
 
   @override
@@ -351,7 +370,9 @@ class _GroupCardBodyState extends State<_GroupCardBody>
   }
 
   void _onPinsChanged() {
-    if (mounted && _groupPostId != null) unawaited(_loadPresence());
+    if (mounted && _groupPostId != null && _isMember == true) {
+      unawaited(_loadViewers());
+    }
   }
 
   @override
@@ -409,6 +430,19 @@ class _GroupCardBodyState extends State<_GroupCardBody>
                 // Was toast-only on both actions, writing nothing — see
                 // design_solo_card.dart's note. Same real sheet now.
                 child: MoreMenuDropdown(
+                  // The poster: straight to "Remove this post?".
+                  onRemove: _isMine && _groupPostId != null
+                      ? () {
+                          _hideMoreMenuOverlay();
+                          unawaited(
+                            confirmRemoveGroupPost(
+                              context,
+                              groupPostId: _groupPostId!,
+                              onDeleted: widget.onDeleted,
+                            ),
+                          );
+                        }
+                      : null,
                   onBlock: () {
                     _hideMoreMenuOverlay();
                     _openRealMenu();
@@ -438,14 +472,24 @@ class _GroupCardBodyState extends State<_GroupCardBody>
   Future<void> _openRealMenu() async {
     final groupPostId = _groupPostId;
     if (groupPostId == null) return; // nothing concrete to report
+    final authorId = widget.data.posts.first.userId;
+    String? me;
+    try {
+      me = await CurrentUserService.instance.resolveId();
+    } catch (_) {
+      // Signed out — "not mine": Report rather than Remove, the safe way.
+    }
+    if (!mounted) return;
     await showGroupPostActionsMenu(
       context,
       groupPostId: groupPostId,
       // The poster of the group post being reported — Block targets the
       // person, not the group.
-      authorUsersId: widget.data.posts.first.userId.isEmpty
-          ? null
-          : widget.data.posts.first.userId,
+      authorUsersId: authorId.isEmpty ? null : authorId,
+      // The poster can take their own post down from the feed too
+      // (explicit request, 2026-10-07), not only from the group's page.
+      isOwnPost: me != null && authorId.isNotEmpty && authorId == me,
+      onDeleted: widget.onDeleted,
     );
   }
 
@@ -678,26 +722,11 @@ class _GroupCardBodyState extends State<_GroupCardBody>
           // button"). _acceptGroup/_isMember/_joining are kept (harmless if
           // unused) rather than ripped out, since _isMember also gates
           // nothing else risky here.
-          TapRegion(
-            groupId: _liveGroupId,
-            child: LivePresencePill(
-              present: _present,
-              maxAvatars: 2,
-              // Faces only, the same reduced pill Duo posts use — explicit
-              // request to shrink the "not seen yet" pill on group posts
-              // "same like how it's in duo album".
-              avatarsOnly: true,
-              onTap: () {
-                setState(() {
-                  final next = !_showLiveDropdown;
-                  _closeAllPanels();
-                  _showLiveDropdown = next;
-                });
-                if (_showLiveDropdown) unawaited(_loadPresence());
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
+          // No Seen pill on a group post IN THE FEED (explicit request,
+          // 2026-10-07: "remove the seen pill from the feed ... they can view
+          // it only in their own profile, only for their own posts"). The
+          // group's profile shows it to the post's author.
+
           GestureDetector(
             key: _moreMenuKey,
             onTap: _toggleMoreMenu,
@@ -717,21 +746,7 @@ class _GroupCardBodyState extends State<_GroupCardBody>
     // padding was covered by the card. Hoisted to the outer Stack below so
     // it paints last, on top of the whole card, same fix pattern as every
     // other dropdown/tray in this file.
-    final liveDropdownOverlay = _showLiveDropdown
-        ? Positioned(
-            top: 62,
-            right: 14,
-            child: TapRegion(
-              groupId: _liveGroupId,
-              onTapOutside: (_) => setState(() => _showLiveDropdown = false),
-              child: LivePresenceDropdown(
-                present: _present,
-                width: 180,
-                borderRadius: 14,
-              ),
-            ),
-          )
-        : null;
+    const Widget? liveDropdownOverlay = null;
 
     // Same NeuCard shell GroupProfilePostCard uses, so the feed card reads
     // as one rounded unit — neither this card nor DesignSoloCard had an

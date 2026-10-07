@@ -842,21 +842,12 @@ class PingService {
           .order('created_at', ascending: false)
           .timeout(const Duration(seconds: 8));
 
-      // Rows arrive newest-first. Walking oldest-first and keeping the
-      // first photo seen per (ping_id, replier_id) means "first" is the
-      // earliest one actually sent, not merely the earliest in this page.
-      final ascending = (rows as List).cast<Map<String, dynamic>>().reversed;
-      final seenPhotoKeys = <String>{};
-      final deduped = <Map<String, dynamic>>[];
-      for (final r in ascending) {
-        if (r['photo_url'] != null) {
-          final key = '${r['ping_id']}:${r['replier_id']}';
-          if (!seenPhotoKeys.add(key)) continue; // already delivered
-        }
-        deduped.add(r);
-      }
-
-      return deduped.reversed.map((r) {
+      // EVERY reply, newest first. This used to keep only the first photo
+      // per (ping_id, replier_id) — the read-side half of the old "one
+      // photo per ping" rule. That rule is gone (2026-10-06: someone you
+      // pinged can send several photos until the ping closes), and with
+      // the filter still here the sender only ever saw the first of them.
+      return (rows as List).cast<Map<String, dynamic>>().map((r) {
         final ping = r['pings'] as Map?;
         final replier = r['replier'] as Map?;
         final group = ping?['groups'] as Map?;

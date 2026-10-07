@@ -9,6 +9,7 @@ import '../../screens/feed/widgets/dual_photo_view.dart';
 import '../../screens/feed/widgets/post_photo_carousel.dart';
 import '../../screens/feed/widgets/group_post_cards/group_card_shared.dart'
     show groupCardClockTime, kGroupCardMonths, kGroupCardWeekdays;
+import '../../services/current_user_service.dart';
 import '../../services/post_author_pin_service.dart';
 import '../../services/post_service.dart' show PostService, PostViewer;
 import '../../services/post_size_prefs_service.dart';
@@ -45,7 +46,13 @@ class GroupProfilePostCard extends StatefulWidget {
     this.onShare,
     this.shareLabel,
     this.locked = false,
+    this.showSeen = true,
   });
+
+  /// False when the viewer is NOT a member of the group: only a group's
+  /// members see who viewed its posts (group_post_viewers refuses everyone
+  /// else), so there is no pill to draw.
+  final bool showSeen;
 
   /// A private group's post shown to a non-member on the group profile —
   /// photo 1 clear, the rest blurred (the server already sends photo 1 in
@@ -94,6 +101,11 @@ class _GroupProfilePostCardState extends State<GroupProfilePostCard> {
   List<PostViewer> _viewers = const [];
   bool _showLiveDropdown = false;
 
+  /// Only the post's AUTHOR sees who viewed it (explicit request,
+  /// 2026-10-07: "no pill can see the watchlist of other people's posts").
+  /// Every other member of the group gets no pill here at all.
+  bool _isAuthor = false;
+
   String get _id => widget.row['id'] as String;
   String get _liveGroupId => 'groupprofile-live-$_id';
 
@@ -102,14 +114,24 @@ class _GroupProfilePostCardState extends State<GroupProfilePostCard> {
     super.initState();
     unawaited(_load());
     unawaited(PostService.instance.recordGroupPostView(_id));
-    unawaited(_loadViewers());
+    unawaited(_resolveAuthor());
     // A pin change re-fetches the seen list, so an open dropdown's PINNED
     // section updates immediately (PostAuthorPinService.changes).
     PostAuthorPinService.instance.changes.addListener(_onPinsChanged);
   }
 
+  Future<void> _resolveAuthor() async {
+    try {
+      final me = await CurrentUserService.instance.resolveId();
+      final author = widget.row['user_id'] as String?;
+      if (!mounted || author == null || author != me) return;
+      setState(() => _isAuthor = true);
+      unawaited(_loadViewers());
+    } catch (_) {}
+  }
+
   void _onPinsChanged() {
-    if (mounted) unawaited(_loadViewers());
+    if (mounted && _isAuthor) unawaited(_loadViewers());
   }
 
   @override
@@ -484,7 +506,9 @@ class _GroupProfilePostCardState extends State<GroupProfilePostCard> {
     // profile is a "who's ever seen this" surface, not a "who's live right
     // now" one (that's the feed's job, with its own 3-hour presence
     // window — see DesignGroupCard).
-    final pillRow = Padding(
+    final Widget pillRow = (!widget.showSeen || !_isAuthor)
+        ? const SizedBox(height: 8)
+        : Padding(
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
       child: Align(
         alignment: Alignment.centerRight,

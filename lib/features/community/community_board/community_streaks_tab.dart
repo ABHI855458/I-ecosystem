@@ -5,6 +5,7 @@ import '../../../services/community_streaks_service.dart';
 import '../../../services/score_leaderboard_service.dart';
 import '../../../shared/score_tier.dart';
 import 'community_tokens.dart';
+import '../../profile_v2/profile_v2_icons.dart';
 
 // ---------------------------------------------------------------------------
 // STREAKS tab — STANDINGS (global score board), "Top Engaged This Week"
@@ -649,7 +650,7 @@ class _StreakRow extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('🔥', style: TextStyle(fontSize: 10, height: 1)),
+                  PV2Icons.iceFlame(10),
                   const SizedBox(width: 4),
                   Text('${entry.streak ?? 0}', style: entry.isTop ? CommunityType.streakRowFire : CommunityType.streakRowFireDim),
                 ],
@@ -777,7 +778,7 @@ class _AroundYouRow extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('🔥', style: TextStyle(fontSize: 10, height: 1)),
+              PV2Icons.iceFlame(10),
               const SizedBox(width: 4),
               Text(
                 '${entry.streak ?? 0}',

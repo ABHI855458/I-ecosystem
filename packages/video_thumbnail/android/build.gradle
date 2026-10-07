@@ -1,0 +1,28 @@
+group 'xyz.justsoft.video_thumbnail'
+version '1.0-SNAPSHOT'
+
+// VENDORED from video_thumbnail 0.5.6 — see ../VENDORED.md.
+//
+// The published file opened with its own `buildscript { ... jcenter() ...
+// classpath 'com.android.tools.build:gradle:4.1.0' }` and a
+// `rootProject.allprojects { repositories { jcenter() } }`. jcenter() no
+// longer exists in Gradle 9, so evaluating this file threw, and with it
+// every Android build of the app. A plugin module gets the Android Gradle
+// plugin and its repositories from the app's own settings, so neither block
+// is needed: they are simply gone. The rest is the same module, written in
+// the current DSL (compileSdk / minSdk / lint).
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'xyz.justsoft.video_thumbnail'
+    compileSdk = 35
+
+    defaultConfig {
+        minSdk = 21
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    lint {
+        disable 'InvalidPackage'
+    }
+}

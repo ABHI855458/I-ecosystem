@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/glass.dart' show showGlassToast;
 import '../../services/block_service.dart';
 import '../../services/comment_service.dart';
+import '../../services/group_service.dart';
 import '../../services/post_service.dart';
 import '../../services/report_service.dart';
 import '../../services/us_album_service.dart';
@@ -77,22 +78,27 @@ Future<void> showPostActionsMenu(
 
 /// The same menu for a `group_posts` row (the Friends feed's collage cards).
 ///
-/// No Remove, even on your own: `group_posts` has no `deleted_at` column and
-/// no moderator UPDATE policy, so nothing here could actually take one down —
-/// and a Remove that silently does nothing is worse than no Remove. Report
-/// and Block both work.
+/// Your own -> Remove (explicit request, 2026-10-07: "for the poster of the
+/// post, when clicked on three dots in the feed they can remove their own
+/// post from there also"). It goes through GroupService.deletePost — the
+/// remove_group_post RPC the group's own page already uses — so who may
+/// remove is decided on the server, not here. (This menu had no Remove at
+/// all while `group_posts` had no way to take a row down; it has had one
+/// for a while.) Someone else's -> Report and Block, as before.
 Future<void> showGroupPostActionsMenu(
   BuildContext context, {
   required String groupPostId,
   String? authorUsersId,
+  bool isOwnPost = false,
+  VoidCallback? onDeleted,
 }) async {
   final action = await showModalBottomSheet<_Action>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (_) => _MenuSheet(
-      isOwnPost: false,
-      canBlock: authorUsersId != null,
+      isOwnPost: isOwnPost,
+      canBlock: !isOwnPost && authorUsersId != null,
       title: 'THIS GROUP POST',
     ),
   );
@@ -106,7 +112,51 @@ Future<void> showGroupPostActionsMenu(
         await _confirmBlock(context, authorUsersId: authorUsersId);
       }
     case _Action.delete:
-      break; // unreachable: isOwnPost is false, so no Remove row is drawn
+      await confirmRemoveGroupPost(
+        context,
+        groupPostId: groupPostId,
+        onDeleted: onDeleted,
+      );
+  }
+}
+
+/// "Remove this post?" and, on yes, the removal — for a `posts` row that is
+/// yours (or your Duo's). The step the menu above ends in, on its own, so
+/// the feed's "..." can go straight to it on your own post instead of
+/// offering Block / Report first. [onDeleted] fires only once it is gone.
+Future<void> confirmRemovePost(
+  BuildContext context, {
+  required String postId,
+  VoidCallback? onDeleted,
+}) => _confirmDelete(context, postId: postId, onDeleted: onDeleted);
+
+/// The same for a `group_posts` row. Who may remove is decided by the
+/// server (remove_group_post), not by whoever calls this.
+Future<void> confirmRemoveGroupPost(
+  BuildContext context, {
+  required String groupPostId,
+  VoidCallback? onDeleted,
+}) async {
+  final confirmed = await _confirm(
+    context,
+    title: 'Remove this post?',
+    body: 'It comes down for the whole group and everyone it was shared '
+        'with. This cannot be undone.',
+    confirmLabel: 'Remove',
+  );
+  if (confirmed != true || !context.mounted) return;
+  try {
+    await GroupService.instance.deletePost(groupPostId);
+    if (context.mounted) showGlassToast(context, 'Post removed.');
+    onDeleted?.call();
+  } catch (_) {
+    if (context.mounted) {
+      showGlassToast(
+        context,
+        "Couldn't remove that — try again.",
+        isError: true,
+      );
+    }
   }
 }
 

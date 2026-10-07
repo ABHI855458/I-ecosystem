@@ -315,6 +315,18 @@ class FeedItem {
   );
 }
 
+/// Which anonymous posts the anon feed shows: ones that carry a prompt, plus
+/// promptless ones from 2026-10-06 on. That date is when the camera's Anon
+/// bubble started posting without a prompt on purpose; the promptless posts
+/// before it are the ones "remove the posts in the anon feed which do not
+/// have a peaking prompt" was about, and they stay hidden. Without this
+/// second half every Anon-bubble photo vanished from the feed it was posted
+/// to.
+///
+/// A PostgREST `or`: `prompt LIKE '_%'` (non-null AND non-empty, with no
+/// empty value for the filter parser to trip on) OR `created_at >= date`.
+const _kAnonPromptRule = 'prompt.like._*,created_at.gte.2026-10-06';
+
 // ---------------------------------------------------------------------------
 // FeedService
 // ---------------------------------------------------------------------------
@@ -1448,8 +1460,10 @@ class FeedService {
           // carry real prompt text from before prompts were properly
           // linked to daily_prompts, and hiding those too would have gutted
           // the feed from 49 posts down to 5.
-          .not('prompt', 'is', null)
-          .neq('prompt', '')
+          //
+          // EXCEPT the camera's Anon bubble (2026-10-06), which posts with
+          // no prompt on purpose — see [_kAnonPromptRule].
+          .or(_kAnonPromptRule)
           // Same two-stretch rule as the Everyone/Friends feed: fresh, or
           // resurfaced. See resurfaceAfter.
           .or('created_at.gt.${anonCutoff()},'
@@ -1486,8 +1500,7 @@ class FeedService {
           .from('posts_feed')
           .select()
           .eq('visibility', 'anonymous')
-          .not('prompt', 'is', null)
-          .neq('prompt', '')
+          .or(_kAnonPromptRule)
           // Older Dips, yes; ended Moments, never.
           .or('post_type.neq.moment,created_at.gt.${momentCutoff()}')
           .order('created_at', ascending: false)

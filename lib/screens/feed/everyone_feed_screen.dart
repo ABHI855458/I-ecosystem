@@ -25,6 +25,7 @@ import 'single_post_detail_screen.dart';
 import 'widgets/design_group_card.dart';
 import 'widgets/design_solo_card.dart';
 import 'widgets/everyone_post_card.dart';
+import 'widgets/feed_top_row.dart';
 import 'widgets/memory_feed_card.dart';
 import 'widgets/moment_card.dart';
 import 'widgets/people_suggestion_strip.dart';
@@ -727,6 +728,8 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
   }
 
   Future<void> _refresh() async {
+    // Pings and polaroids can have changed too.
+    if (_isFriends) FeedTopRow.refresh();
     // A scroll-triggered _loadPage may be in flight; it early-returns at
     // the _loadingMore guard, so clearing _pagedItems FIRST and then
     // calling _loadPage could leave the feed empty until the next scroll —
@@ -806,10 +809,25 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
 
     final slots = _slots;
     if (!slots.any((s) => s is FeedItem)) {
-      return _EmptyState(
+      final empty = _EmptyState(
         onOpenCamera: () => Navigator.of(context).push(openCameraRoute()),
       );
+      if (!_isFriends) return empty;
+      // No posts is exactly when the top row earns its place: someone may
+      // still be waiting on a photo, and the Wall is one tap away.
+      return Column(
+        children: [
+          SizedBox(height: widget.topInset + 14),
+          const FeedTopRow(),
+          Expanded(child: empty),
+        ],
+      );
     }
+    // Friends feed only: the one row under the pill — YOUR TURN faces and
+    // the polaroid pile (see FeedTopRow). It scrolls away with the posts.
+    final listSlots = _isFriends
+        ? <Object>[const _TopRowSlot(), ...slots]
+        : slots;
 
     // Real posts only — the DEMO Moment cards (kDemoMoments) that used to be
     // interleaved every 3rd post are gone. They were visual filler for
@@ -894,9 +912,12 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
             ),
             // +1 in friends mode for the post-size selector that leads the
             // list — "give option ... in friends posting section above".
-            itemCount: slots.length,
+            itemCount: listSlots.length,
             itemBuilder: (context, i) {
-              final slot = slots[i];
+              final slot = listSlots[i];
+              if (slot is _TopRowSlot) {
+                return const FeedTopRow();
+              }
               if (slot is _FeedDivider) return _FeedDividerView(label: slot.label);
               if (slot is _SuggestionSlot) {
                 return PeopleSuggestionStrip(
@@ -1014,7 +1035,20 @@ class _EveryoneFeedScreenState extends State<EveryoneFeedScreen> {
                   // EveryonePostCard's own card. Regular individual posts
                   // get DesignSoloCard.
                   child: item.groupName != null
-                      ? DesignGroupCard(item: item)
+                      ? DesignGroupCard(
+                          item: item,
+                          onDeleted: () {
+                            if (!mounted) return;
+                            setState(() {
+                              _localItems.removeWhere(
+                                (i) => i.postId == item.postId,
+                              );
+                              _pagedItems.removeWhere(
+                                (i) => i.postId == item.postId,
+                              );
+                            });
+                          },
+                        )
                       : item.type != 'memory'
                       ? DesignSoloCard(
                           postId: item.postId,
@@ -1203,6 +1237,11 @@ class _EmptyState extends StatelessWidget {
 class _SuggestionSlot {
   const _SuggestionSlot(this.people);
   final List<Map<String, dynamic>> people;
+}
+
+/// Marks where [FeedTopRow] sits in the Friends feed's list: first.
+class _TopRowSlot {
+  const _TopRowSlot();
 }
 
 /// A section label inside the Friends feed (see _sectionStarts).

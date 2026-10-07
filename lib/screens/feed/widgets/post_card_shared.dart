@@ -2364,9 +2364,16 @@ class MoreMenuDropdown extends StatelessWidget {
     super.key,
     required this.onBlock,
     required this.onReport,
+    this.onRemove,
   });
   final VoidCallback onBlock;
   final VoidCallback onReport;
+
+  /// Non-null on a post that is the viewer's own: the menu is then ONE row,
+  /// Remove — you don't block or report yourself (explicit request,
+  /// 2026-10-07: "for the poster of the post, when clicked on three dots
+  /// in the feed they can remove their own post from there also").
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -2392,20 +2399,30 @@ class MoreMenuDropdown extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _MoreMenuRow(
-                icon: Icons.block,
-                iconColor: Colors.white.withValues(alpha: 0.7),
-                label: 'Block',
-                labelColor: Colors.white.withValues(alpha: 0.85),
-                onTap: onBlock,
-              ),
-              _MoreMenuRow(
-                icon: Icons.outlined_flag,
-                iconColor: const Color(0xFFFF453A),
-                label: 'Report',
-                labelColor: const Color(0xFFFF453A),
-                onTap: onReport,
-              ),
+              if (onRemove != null)
+                _MoreMenuRow(
+                  icon: Icons.delete_outline_rounded,
+                  iconColor: const Color(0xFFFF453A),
+                  label: 'Remove',
+                  labelColor: const Color(0xFFFF453A),
+                  onTap: onRemove!,
+                )
+              else ...[
+                _MoreMenuRow(
+                  icon: Icons.block,
+                  iconColor: Colors.white.withValues(alpha: 0.7),
+                  label: 'Block',
+                  labelColor: Colors.white.withValues(alpha: 0.85),
+                  onTap: onBlock,
+                ),
+                _MoreMenuRow(
+                  icon: Icons.outlined_flag,
+                  iconColor: const Color(0xFFFF453A),
+                  label: 'Report',
+                  labelColor: const Color(0xFFFF453A),
+                  onTap: onReport,
+                ),
+              ],
             ],
           ),
         ),
@@ -4707,7 +4724,13 @@ class _CommentsSheetContentState extends State<_CommentsSheetContent> {
               ),
             ),
             const SizedBox(height: 14),
-            if (widget.reactionCount > 0)
+            // Only where the caller hands over WHO reacted — a profile. In
+            // the Friends feed reactor identity never reaches this sheet,
+            // and the bare "REALMOJIS · N" heading over an empty strip is
+            // what made the same sheet look like a different screen there
+            // (explicit report, 2026-10-07: "in friends feed opening
+            // comment section shall show only comments").
+            if (widget.reactionCount > 0 && widget.reactors.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Column(

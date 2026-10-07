@@ -16,6 +16,7 @@ import '../../services/us_album_service.dart';
 import '../../shared/time_ago.dart';
 import 'album_photo_viewer.dart';
 import 'my_anon_posts_screen.dart';
+import '../highlights/highlight_editor_screen.dart';
 import '../composer/composer_screen.dart' show openCameraRoute;
 import 'profile_v2_create_flows.dart';
 import 'profile_v2_data.dart';
@@ -549,9 +550,11 @@ class _DuoAlbumScreenState extends State<DuoAlbumScreen> {
     try {
       final results = await Future.wait([
         DuoService.instance.fetchPhotos(p.albumId),
-        DuoService.instance
-            .seenCounts(p.albumId)
-            .catchError((_) => <String, int>{}),
+        _isMember
+            ? DuoService.instance
+                  .seenCounts(p.albumId)
+                  .catchError((_) => <String, int>{})
+            : Future.value(<String, int>{}),
       ]);
       final rows = results[0] as List<DuoPhotoRow>;
       final urls = await Future.wait(
@@ -1249,7 +1252,9 @@ class _DuoAlbumScreenState extends State<DuoAlbumScreen> {
                     ),
                   ),
                   const Spacer(),
-                  if (!ph.isPrivate) ...[
+                  // How many people opened it — for the Duo's own two
+                  // people only (duo_photo_seen_counts answers nobody else).
+                  if (!ph.isPrivate && _isMember) ...[
                     Icon(
                       Icons.visibility_rounded,
                       size: 13,
@@ -1389,6 +1394,24 @@ class _CreateChooserScreenState extends State<CreateChooserScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         children: [
+          // Personal highlight (2026-10-07): photos from your phone, pinned
+          // to your profile as a polaroid and shown on your friends' Wall.
+          Expanded(
+            child: _bigChoice(
+              icon: Icons.photo_library_rounded,
+              title: 'Highlight',
+              subtitle: 'Pin photos to your profile',
+              colors: const [Color(0xFF4A3A1C), Color(0xFF1C160C)],
+              // The editor opens over this card; once something is pinned
+              // the card closes too, back to wherever "+" was tapped.
+              onTap: () async {
+                final nav = Navigator.of(context);
+                final saved = await openHighlightEditor(context);
+                if (saved && mounted) nav.pop();
+              },
+            ),
+          ),
+          const SizedBox(height: 14),
           Expanded(
             child: _bigChoice(
               icon: Icons.favorite_rounded,

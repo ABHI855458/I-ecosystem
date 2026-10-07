@@ -205,10 +205,9 @@ class _ProfileIconPainter extends CustomPainter {
       oldDelegate.color != color || oldDelegate.filled != filled;
 }
 
-// circle: cx9.2 cy9.4 r3.4 (fills when active)
-// M16.4 7.2a2.8 2.8 0 0 1 0 5.6
-// M3.2 19.4c.6-2.9 2.9-4.6 5.8-4.6s5.2 1.7 5.8 4.6
-// M17.2 15.2c2 .6 3.3 2.1 3.7 4.2
+// The Chat tab: a speech bubble with three dots (2026-10-07 — "redesign
+// the community logo to the message logo"; it used to be two people). The
+// enum value stays `community`: it names the tab, not the picture.
 class _CommunityIconPainter extends CustomPainter {
   const _CommunityIconPainter({required this.color, required this.filled});
   final Color color;
@@ -218,29 +217,41 @@ class _CommunityIconPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     canvas.save();
     canvas.scale(size.width / 24.0, size.height / 24.0);
-    final strokePaint = _strokePaint(color);
 
-    canvas.drawCircle(const Offset(9.2, 9.4), 3.4,
-        filled ? _fillPaint(color) : strokePaint);
+    const r = Radius.circular(4);
+    final bubble = Path()
+      ..moveTo(7.2, 4.4)
+      ..lineTo(16.8, 4.4)
+      ..arcToPoint(const Offset(20.8, 8.4), radius: r)
+      ..lineTo(20.8, 12.6)
+      ..arcToPoint(const Offset(16.8, 16.6), radius: r)
+      ..lineTo(10.6, 16.6)
+      // The tail, bottom-left.
+      ..lineTo(6.4, 20.0)
+      ..lineTo(6.6, 16.5)
+      ..arcToPoint(const Offset(3.2, 12.6), radius: r)
+      ..lineTo(3.2, 8.4)
+      ..arcToPoint(const Offset(7.2, 4.4), radius: r)
+      ..close();
+    const dots = [Offset(8.6, 10.5), Offset(12, 10.5), Offset(15.4, 10.5)];
 
-    final headArc = Path()..moveTo(16.4, 7.2);
-    headArc.arcToPoint(const Offset(16.4, 12.8),
-        radius: const Radius.circular(2.8), clockwise: true);
-    canvas.drawPath(headArc, strokePaint);
-
-    canvas.drawPath(
-      Path()
-        ..moveTo(3.2, 19.4)
-        ..cubicTo(3.8, 16.5, 6.1, 14.8, 9.0, 14.8)
-        ..cubicTo(11.9, 14.8, 14.2, 16.5, 14.8, 19.4),
-      strokePaint,
-    );
-    canvas.drawPath(
-      Path()
-        ..moveTo(17.2, 15.2)
-        ..cubicTo(19.2, 15.8, 20.5, 17.3, 20.9, 19.4),
-      strokePaint,
-    );
+    if (filled) {
+      // Active: a solid bubble with the dots punched out, so whatever the
+      // tab's pill colour is shows through them.
+      canvas.saveLayer(const Rect.fromLTWH(0, 0, 24, 24), Paint());
+      canvas.drawPath(bubble, _fillPaint(color));
+      final hole = Paint()..blendMode = BlendMode.clear;
+      for (final d in dots) {
+        canvas.drawCircle(d, 1.15, hole);
+      }
+      canvas.restore();
+    } else {
+      canvas.drawPath(bubble, _strokePaint(color));
+      final dot = _fillPaint(color);
+      for (final d in dots) {
+        canvas.drawCircle(d, 1.0, dot);
+      }
+    }
 
     canvas.restore();
   }

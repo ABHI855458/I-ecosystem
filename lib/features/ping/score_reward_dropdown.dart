@@ -8,6 +8,7 @@ import '../../services/score_gain_service.dart';
 import '../../shared/score_tier.dart';
 import '../../main_shell.dart' show kTabBarHeight, kTabBarBottomOffset;
 import '../profile_v2/profile_v2_menus.dart';
+import '../profile_v2/profile_v2_icons.dart';
 
 // ---------------------------------------------------------------------------
 // ScoreRewardAnchor — the reward that drops out of a button after an action
@@ -539,15 +540,25 @@ class _ScoreRewardBodyState extends State<ScoreRewardBody>
               ),
             ),
             const SizedBox(height: 11),
-            Text(
-              '🔥  $reason',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Colors.white.withValues(alpha: 0.90),
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Blue, like every flame in the app.
+                PV2Icons.iceFlame(13),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(
+                    reason,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white.withValues(alpha: 0.90),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 5),
             Text(

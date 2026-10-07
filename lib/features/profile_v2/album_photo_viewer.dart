@@ -10,7 +10,6 @@ import '../../screens/feed/widgets/post_card_shared.dart'
 import '../../services/reaction_service.dart' show ReactionService, ReactionSummary;
 import '../moderation/post_actions_menu.dart';
 import 'profile_v2_data.dart';
-import 'profile_v2_icons.dart';
 
 // ---------------------------------------------------------------------------
 // AlbumPhotoViewer — full-screen, swipeable viewer for a Duo's photos.
@@ -89,12 +88,6 @@ class _AlbumPhotoViewerState extends State<AlbumPhotoViewer> {
   /// the feed. Absent key = private photo (no post) or still loading.
   final _feedPostIds = <String, String?>{};
 
-  /// photo id -> the pair's ping streak, once resolved. Same lazy per-photo
-  /// resolution as [_feedPostIds], off the post id that lookup produces —
-  /// the streak is a property of the two people, but it is fetched through
-  /// the POST so the server can gate it on can_view_post().
-  final _pairStreaks = <String, int?>{};
-
   /// photo id -> everyone who has opened its post, all-time — the same
   /// post_viewers RPC every other post's SeenPill/SeenDropdown reads.
   /// Explicit request: "the us album photo... able to view... who all saw
@@ -134,16 +127,13 @@ class _AlbumPhotoViewerState extends State<AlbumPhotoViewer> {
     setState(() => _feedPostIds[id] = postId);
     if (postId == null) return;
     final results = await Future.wait([
-      DuoService.instance.pairStreakForPost(postId),
       PostService.instance.fetchPostViewers(postId),
       ReactionService.instance.fetchSummary(postId),
     ]);
     if (!mounted) return;
-    final streak = results[0] as int?;
     setState(() {
-      if (streak != null) _pairStreaks[id] = streak;
-      _viewers[id] = results[1] as List<PostViewer>;
-      _reactionSummaries[id] = results[2] as ReactionSummary;
+      _viewers[id] = results[0] as List<PostViewer>;
+      _reactionSummaries[id] = results[1] as ReactionSummary;
     });
   }
 
@@ -291,23 +281,20 @@ class _AlbumPhotoViewerState extends State<AlbumPhotoViewer> {
             // rather than cornered because both corners are already taken
             // (close left, "..." right), and it belongs to BOTH people here
             // rather than to one side of the screen.
-            if (photo.id != null && (_pairStreaks[photo.id] ?? 0) > 0)
-              Positioned(
-                top: 10,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: PV2Icons.blueFlameStreak(
-                    _pairStreaks[photo.id]!,
-                    flameSize: 34,
-                  ),
-                ),
-              ),
+            // No streak flame on a Duo photo any more (explicit request,
+            // 2026-10-07: "no streak flame on duo album post, but it shall
+            // be there on group posts").
             // Who has seen this photo's post, all-time — the same
             // SeenPill/SeenDropdown every other post uses. Explicit
             // request: "able to view... who all saw it" — reactions and
             // comments already existed here, a viewers list didn't.
-            if (photo.id != null)
+            // For the Duo's own two people only — never someone looking at
+            // a shared photo from outside. post_viewers answers owners
+            // only, so a non-empty list is itself the proof for the
+            // partner who didn't upload this one.
+            if (photo.id != null &&
+                ((photo.uploaderId != null && photo.uploaderId == _myUserId) ||
+                    (_viewers[photo.id!] ?? const []).isNotEmpty))
               Positioned(
                 top: 52,
                 right: 12,

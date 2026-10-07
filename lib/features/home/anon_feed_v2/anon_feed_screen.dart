@@ -513,11 +513,15 @@ class _AnonFeedScreenV2State extends State<AnonFeedScreenV2> {
           // id, so both copies share one reaction/comment state rather
           // than drifting apart.
           if (_remote.isNotEmpty) {
-            // No replay lap (explicit request, 2026-10-06: "remove the open
-            // loops"). Once the real rows are seen the feed says so, rather
-            // than reshuffling the same few posts. A pull-to-refresh starts
-            // over from the top.
-            _reachedEnd = true;
+            // (Restored 2026-10-07. This lap was removed for a day on a
+            // misread of "remove the open loops" — that meant the Ping
+            // page's OPEN LOOPS section, not this.)
+            final lap = List<AnonFeedPost>.from(_remote)..shuffle();
+            _remote.addAll(lap);
+            // Back to the top of the real rows, so the NEXT genuine fetch
+            // picks up anything posted since rather than staying parked
+            // past the end forever.
+            _offset = 0;
           } else {
             // Nothing at all. Before saying "you're all caught up", ask
             // once more after a beat: on a cold start the first query can
@@ -1757,7 +1761,14 @@ class _PromptBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final promptText = dailyPrompt?.text ?? post.prompt;
+    // A camera Anon-bubble post has no prompt of its own (see
+    // FeedService's _kAnonPromptRule) — with no live prompt either, fall
+    // back to the same line the empty feed uses rather than an empty bar.
+    final promptText =
+        dailyPrompt?.text ??
+        (post.prompt.trim().isEmpty
+            ? 'Post your view right now 👀'
+            : post.prompt);
     return GestureDetector(
       // The prompt shown on this bar is the one being answered, so it
       // travels with the capture and lands in the post's peek bar —

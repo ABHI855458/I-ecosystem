@@ -24,6 +24,7 @@ import '../face_filter/face_mask_overlay.dart';
 import '../../core/glass.dart';
 import '../qr/qr_scanner_screen.dart';
 import '../../core/ping_haptics.dart';
+import '../../services/anon_persona_service.dart';
 import '../../services/camera_prefs_service.dart';
 import '../../services/circle_service.dart';
 import '../../services/community_service.dart';
@@ -35,6 +36,8 @@ import '../../services/ping_service.dart';
 import '../../services/storage_service.dart';
 import '../../services/score_gain_service.dart';
 import '../../services/post_service.dart';
+import '../ping/ping_turns.dart';
+import '../profile_v2/profile_v2_icons.dart';
 import '../ping/score_reward_dropdown.dart';
 import '../../screens/feed/widgets/moment_card.dart'
     show MomentPalette, kMomentPalettes, kMomentCaptionMaxChars;
@@ -1580,6 +1583,8 @@ class _SendInterfaceState extends State<_SendInterface> {
   }
 
   Future<void> _loadTargets() async {
+    // The Anon tile wears the person's anon picture.
+    unawaited(AnonPersonaService.instance.load());
     // Last list shows instantly; the preload started when the camera
     // opened replaces it.
     _targets = _lastPhotoTargets;
@@ -1640,6 +1645,9 @@ class _SendInterfaceState extends State<_SendInterface> {
             videoMs: widget.videoMs,
           );
     final anonOk = anonFuture == null ? null : await anonFuture;
+    // Replies are written now (not when the screen closed): tell anything
+    // showing "whose turn" to look again — the Friends feed's YOUR TURN row.
+    if (sent > 0) pingInboxChanged.value++;
     if (!rootCtx.mounted) return;
     if (picked.isEmpty) {
       // Anon only.
@@ -2448,10 +2456,40 @@ class _SendInterfaceState extends State<_SendInterface> {
   }
 
   /// Plain-camera send screen: the shot, who to send it to, one button.
+  // ── Send to (people mode) ───────────────────────────────────────────────
+  //
+  // Third pass (2026-10-07). The 4-across grid of faces read as clutter
+  // ("too clumsy ... in one go they shall be able to send everyone easy ...
+  // anon shall be distinctively placed, not along the ping profiles"), so:
+  //
+  //  * QUICK PICKS at the top tick a whole set in one tap, no ticking by
+  //    hand: "Pinged you" = everyone whose ping is open (people, anonymous
+  //    senders AND groups); "Everyone" = every person and every group.
+  //  * a plain LIST underneath for picking by hand — name beside the face,
+  //    so it reads even when most people have no photo.
+  //  * ANON is its own bar above the button, in its own colour, never a
+  //    face among the people.
+  //  * ONE Send button sends to everything ticked.
+
+  /// Anon's own colour, so its bar can't be mistaken for one more person.
+  static const _kAnonTint = Color(0xFF9B83FF);
+
   Widget _buildPeopleSend() {
     final targets = _targets;
+    final all = targets ?? const <_PhotoTarget>[];
+    final pingers = [
+      for (final t in all)
+        if (t.pingedMe) t,
+    ];
     final n = _pickedTargets.length;
     final canSend = n > 0 || _pickedAnon;
+    final label = !canSend
+        ? 'Pick who gets it'
+        : n == 0
+        ? 'Post to Anon'
+        : _pickedAnon
+        ? 'Send to $n + Anon'
+        : 'Send to $n';
     return ClipRRect(
       borderRadius: const BorderRadius.all(Radius.circular(48)),
       child: Container(
@@ -2460,7 +2498,7 @@ class _SendInterfaceState extends State<_SendInterface> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(22, 26, 22, 12),
+              padding: const EdgeInsets.fromLTRB(22, 26, 22, 14),
               child: Text(
                 'Send to',
                 style: GoogleFonts.plusJakartaSans(
@@ -2470,36 +2508,18 @@ class _SendInterfaceState extends State<_SendInterface> {
                 ),
               ),
             ),
+            if (all.isNotEmpty) _quickPicks(all, pingers),
             Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  // Always first, always there — the one target that
-                  // doesn't depend on anyone having pinged you.
-                  _sendLabel('post'),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: SizedBox(
-                        width: (MediaQuery.sizeOf(context).width - 24 - 28 - 18) / 4,
-                        child: _anonBubble(),
-                      ),
-                    ),
-                  ),
-                  if (targets == null)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 36),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.4,
-                          color: Colors.white54,
-                        ),
+              child: targets == null
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white54,
                       ),
                     )
-                  else if (targets.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(22, 28, 22, 0),
+                  : targets.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 18, 22, 0),
                       child: Text(
                         'Nobody to send to yet.\n'
                         'Add friends to your circle and they\'ll show up here.',
@@ -2509,14 +2529,17 @@ class _SendInterfaceState extends State<_SendInterface> {
                         ),
                       ),
                     )
-                  else
-                    ..._targetSections(targets),
-                ],
-              ),
+                  : ListView.builder(
+                      padding: const EdgeInsets.only(top: 2, bottom: 6),
+                      itemCount: targets.length,
+                      itemBuilder: (context, i) => _targetRow(targets[i]),
+                    ),
             ),
+            _anonBar(),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
               child: GestureDetector(
+                key: const ValueKey('send-to-button'),
                 onTap: _sending || !canSend ? null : _sendToPeople,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
@@ -2552,13 +2575,7 @@ class _SendInterfaceState extends State<_SendInterface> {
                             ),
                             const SizedBox(width: 10),
                             Text(
-                              !canSend
-                                  ? 'Pick where it goes'
-                                  : n == 0
-                                  ? 'Post to Anon'
-                                  : _pickedAnon
-                                  ? 'Ping $n + Anon'
-                                  : 'Ping $n',
+                              label,
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
@@ -2578,135 +2595,227 @@ class _SendInterfaceState extends State<_SendInterface> {
     );
   }
 
-  Widget _sendLabel(String text) => Padding(
-    padding: const EdgeInsets.fromLTRB(22, 10, 22, 8),
-    child: Text(
-      text,
-      style: GoogleFonts.jetBrainsMono(
-        fontSize: 10.5,
-        color: Colors.white.withValues(alpha: 0.5),
-        letterSpacing: 0.8,
-      ),
-    ),
-  );
+  /// Ticks every one of [set] in one tap; tapping again when they are all
+  /// ticked unticks them.
+  void _toggleAll(List<_PhotoTarget> set) {
+    if (_sending || set.isEmpty) return;
+    HapticFeedback.selectionClick();
+    final keys = {for (final t in set) t.key};
+    setState(() {
+      if (_pickedTargets.containsAll(keys)) {
+        _pickedTargets.removeAll(keys);
+      } else {
+        _pickedTargets.addAll(keys);
+      }
+    });
+  }
 
-  /// The Anon bubble — same shape and tick as a person tile, so it reads
-  /// as one more place the photo can go.
-  Widget _anonBubble() {
-    final picked = _pickedAnon;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _sending
-          ? null
-          : () {
-              HapticFeedback.selectionClick();
-              setState(() => _pickedAnon = !_pickedAnon);
-            },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: picked
-                        ? _kAccent
-                        : Colors.white.withValues(alpha: 0.14),
-                    width: 2.5,
-                  ),
-                ),
-                child: CircleAvatar(
-                  radius: 27,
-                  backgroundColor: const Color(0xFF16161A),
-                  child: Icon(
-                    Icons.masks_rounded,
-                    size: 26,
-                    color: Colors.white.withValues(alpha: picked ? 1 : 0.8),
-                  ),
-                ),
+  /// "Pinged you" and "Everyone" — a whole set in one tap, groups included.
+  Widget _quickPicks(List<_PhotoTarget> all, List<_PhotoTarget> pingers) {
+    Widget chip({
+      required Key key,
+      required Widget lead,
+      required String label,
+      required List<_PhotoTarget> set,
+    }) {
+      final on =
+          set.isNotEmpty && set.every((t) => _pickedTargets.contains(t.key));
+      return Expanded(
+        child: GestureDetector(
+          key: key,
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _toggleAll(set),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            height: 46,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(23),
+              color: on
+                  ? _kAccent.withValues(alpha: 0.16)
+                  : Colors.white.withValues(alpha: 0.06),
+              border: Border.all(
+                color: on ? _kAccent : Colors.white.withValues(alpha: 0.12),
+                width: on ? 1.6 : 1,
               ),
-              if (picked)
-                Positioned(
-                  right: -1,
-                  bottom: -1,
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _kAccent,
-                      border: Border.all(
-                        color: const Color(0xFF0D0D0F),
-                        width: 2,
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.check_rounded,
-                      size: 13,
-                      color: Colors.black,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                lead,
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Anon',
-            maxLines: 1,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
-              fontWeight: picked ? FontWeight.w700 : FontWeight.w500,
-              color: Colors.white.withValues(alpha: picked ? 1 : 0.6),
+                const SizedBox(width: 6),
+                Text(
+                  '${set.length}',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: on ? _kAccent : Colors.white.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
             ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Row(
+        children: [
+          if (pingers.isNotEmpty) ...[
+            chip(
+              key: const ValueKey('pick-pinged'),
+              lead: const Text('👋', style: TextStyle(fontSize: 15)),
+              label: 'Pinged you',
+              set: pingers,
+            ),
+            const SizedBox(width: 10),
+          ],
+          chip(
+            key: const ValueKey('pick-everyone'),
+            lead: Icon(
+              Icons.groups_2_rounded,
+              size: 18,
+              color: Colors.white.withValues(alpha: 0.85),
+            ),
+            label: 'Everyone',
+            set: all,
           ),
         ],
       ),
     );
   }
 
-  /// "people who pinged you" and "groups" as two labelled grids — same
-  /// split as the Ping page's Send-to sheet.
-  List<Widget> _targetSections(List<_PhotoTarget> targets) {
-    final people = [
-      for (final t in targets)
-        if (!t.isGroup && t.groupId == null) t,
-    ];
-    final groups = [
-      for (final t in targets)
-        if (t.isGroup || t.groupId != null) t,
-    ];
-    Widget grid(List<_PhotoTarget> xs) => GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 6,
-        childAspectRatio: 0.72,
+  /// The round tick on the right of a row (and of the Anon bar).
+  Widget _tick(bool on, {Color color = _kAccent}) => AnimatedContainer(
+    duration: const Duration(milliseconds: 140),
+    width: 26,
+    height: 26,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: on ? color : Colors.transparent,
+      border: Border.all(
+        color: on ? color : Colors.white.withValues(alpha: 0.26),
+        width: 1.8,
       ),
-      itemCount: xs.length,
-      itemBuilder: (context, i) => _peopleTile(xs[i]),
+    ),
+    child: on
+        ? const Icon(Icons.check_rounded, size: 16, color: Colors.black)
+        : null,
+  );
+
+  /// Anon, apart from the people: its own bar, its own colour, the person's
+  /// own anon picture ("for anon post use the user's anon dp"; the mask
+  /// until they've set one).
+  Widget _anonBar() {
+    final on = _pickedAnon;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: GestureDetector(
+        key: const ValueKey('send-anon-bar'),
+        behavior: HitTestBehavior.opaque,
+        onTap: _sending
+            ? null
+            : () {
+                HapticFeedback.selectionClick();
+                setState(() => _pickedAnon = !_pickedAnon);
+              },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.fromLTRB(10, 9, 14, 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: on
+                ? _kAnonTint.withValues(alpha: 0.16)
+                : const Color(0xFF15151A),
+            border: Border.all(
+              color: on ? _kAnonTint : _kAnonTint.withValues(alpha: 0.28),
+              width: on ? 1.6 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              ListenableBuilder(
+                listenable: AnonPersonaService.instance,
+                builder: (context, _) {
+                  final url = AnonPersonaService.instance.photoUrl;
+                  final has = url != null && url.isNotEmpty;
+                  return CircleAvatar(
+                    radius: 19,
+                    backgroundColor: const Color(0xFF1F1B2E),
+                    backgroundImage: has ? NetworkImage(url) : null,
+                    child: has
+                        ? null
+                        : const Icon(
+                            Icons.masks_rounded,
+                            size: 20,
+                            color: _kAnonTint,
+                          ),
+                  );
+                },
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Also post to Anon',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      'the anon feed, without your name',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11.5,
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _tick(on, color: _kAnonTint),
+            ],
+          ),
+        ),
+      ),
     );
-    return [
-      if (people.isNotEmpty) ...[
-        _sendLabel('people'),
-        grid(people),
-      ],
-      if (groups.isNotEmpty) ...[
-        _sendLabel('groups'),
-        grid(groups),
-      ],
-    ];
   }
 
-  Widget _peopleTile(_PhotoTarget t) {
+  /// One person or group in the list: face (👋 if they pinged, blue flame
+  /// name, and the tick. The whole row is the tap target.
+  Widget _targetRow(_PhotoTarget t) {
     final picked = _pickedTargets.contains(t.key);
+    final isGroup = t.isGroup || t.groupId != null;
+    final sub = t.pingedMe
+        ? (t.isAnon
+              ? 'pinged you anonymously'
+              : isGroup
+              ? 'group · pinged you'
+              : 'pinged you')
+        : isGroup
+        ? 'group'
+        : null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _sending
@@ -2717,157 +2826,125 @@ class _SendInterfaceState extends State<_SendInterface> {
                 if (!_pickedTargets.remove(t.key)) _pickedTargets.add(t.key);
               });
             },
-      child: Column(
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: picked
-                        ? _kAccent
-                        : Colors.white.withValues(alpha: 0.14),
-                    width: 2.5,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 7, 20, 7),
+        child: Row(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: t.pingedMe
+                          ? _kAccent.withValues(alpha: picked ? 1 : 0.6)
+                          : Colors.white.withValues(alpha: 0.12),
+                      width: 2,
+                    ),
+                  ),
+                  child: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: const Color(0xFF16161A),
+                    backgroundImage: t.avatarUrl == null
+                        ? null
+                        : NetworkImage(t.avatarUrl!),
+                    child: t.avatarUrl == null
+                        ? t.isAnon
+                              // Masked: an anonymous pinger — nothing about
+                              // who.
+                              ? Icon(
+                                  Icons.masks_rounded,
+                                  size: 20,
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                )
+                              : isGroup
+                              ? Icon(
+                                  Icons.groups_rounded,
+                                  size: 21,
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                )
+                              : Text(
+                                  t.name.isEmpty
+                                      ? '?'
+                                      : t.name[0].toUpperCase(),
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                )
+                        : null,
                   ),
                 ),
-                child: CircleAvatar(
-                  radius: 27,
-                  backgroundColor: const Color(0xFF16161A),
-                  backgroundImage: t.avatarUrl == null
-                      ? null
-                      : NetworkImage(t.avatarUrl!),
-                  child: t.avatarUrl == null
-                      ? t.isAnon
-                            // Masked: an anonymous pinger — nothing about who.
-                            ? Icon(
-                                Icons.masks_rounded,
-                                size: 24,
-                                color: Colors.white.withValues(alpha: 0.8),
-                              )
-                            : (t.groupId != null || t.isGroup)
-                            ? Icon(
-                                Icons.groups_rounded,
-                                size: 26,
-                                color: Colors.white.withValues(alpha: 0.8),
-                              )
-                            : Text(
-                                t.name.isEmpty ? '?' : t.name[0].toUpperCase(),
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
-                              )
-                      : null,
-                ),
-              ),
-              // 👋 — pinged you and still open. Top-right of the DP so it
-              // never fights the picked tick or the streak.
-              if (t.pingedMe)
-                Positioned(
-                  right: -4,
-                  top: -4,
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFF1B1B22),
-                      border: Border.all(
-                        color: _kAccent.withValues(alpha: 0.85),
-                        width: 1.5,
+                // 👋 — pinged you and still open.
+                if (t.pingedMe)
+                  Positioned(
+                    right: -5,
+                    top: -5,
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF1B1B22),
+                        border: Border.all(
+                          color: _kAccent.withValues(alpha: 0.85),
+                          width: 1.4,
+                        ),
                       ),
+                      child: const Text('👋', style: TextStyle(fontSize: 10.5)),
                     ),
-                    child: const Text('👋', style: TextStyle(fontSize: 11.5)),
                   ),
-                ),
-              // 🔥 N — my streak with them, on their DP.
-              if (t.streak > 0)
-                Positioned(
-                  left: -6,
-                  bottom: -2,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 1.5,
+                // My streak with them, on their DP — the same blue flame
+                // the Ping page puts on a face (every streak flame in the
+                // app is blue; this was an orange 🔥 chip).
+                if (t.streak > 0)
+                  Positioned(
+                    left: -9,
+                    bottom: -6,
+                    child: PV2Icons.blueFlameStreak(t.streak, flameSize: 22),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    t.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: picked ? FontWeight.w800 : FontWeight.w600,
+                      color: Colors.white.withValues(alpha: picked ? 1 : 0.9),
                     ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(100),
-                      color: const Color(0xFF1B1B22),
-                      border: Border.all(
-                        color: const Color(0xFFFF8A3D).withValues(alpha: 0.8),
-                        width: 1,
-                      ),
-                    ),
-                    child: Text(
-                      '🔥${t.streak}',
+                  ),
+                  if (sub != null)
+                    Text(
+                      sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.plusJakartaSans(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: t.pingedMe
+                            ? _kAccent.withValues(alpha: 0.9)
+                            : Colors.white.withValues(alpha: 0.42),
                       ),
                     ),
-                  ),
-                ),
-              if (picked)
-                Positioned(
-                  right: -1,
-                  bottom: -1,
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _kAccent,
-                      border: Border.all(
-                        color: const Color(0xFF0D0D0F),
-                        width: 2,
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.check_rounded,
-                      size: 13,
-                      color: Colors.black,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          // Whole name, shrunk to fit rather than cut with "…" (explicit
-          // request, 2026-10-02: the username shall fit correctly).
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              t.name,
-              maxLines: 1,
-              softWrap: false,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 12,
-                fontWeight: picked ? FontWeight.w700 : FontWeight.w500,
-                color: Colors.white.withValues(alpha: picked ? 1 : 0.6),
+                ],
               ),
             ),
-          ),
-          if (t.pingedMe || t.groupId != null)
-            Text(
-              t.pingedMe
-                  ? (t.isAnon ? 'pinged you · anon' : 'pinged you')
-                  : 'group',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: t.pingedMe
-                    ? _kAccent.withValues(alpha: 0.85)
-                    : Colors.white.withValues(alpha: 0.4),
-              ),
-            ),
-        ],
+            const SizedBox(width: 10),
+            _tick(picked),
+          ],
+        ),
       ),
     );
   }
@@ -3480,14 +3557,18 @@ List<_PhotoTarget>? _lastPhotoTargets;
 /// users under a different category; keep the hand symbol on their DP;
 /// include the other members who haven't pinged; show each person's streak").
 ///
-///  * People who pinged me and are still open come FIRST, wearing a 👋. The
-///    photo answers that ping (PingService.reply). Anonymous pingers are in
-///    here as a masked "Someone" — answering goes by ping id, so nothing
-///    about who they are is revealed.
-///  * Everyone else in my Friends circle follows, and the photo reaches them
-///    as a NEW photo ping.
-///  * Groups: ones that pinged me first (one answer each — the wall enforces
-///    it server-side), then my other groups (a new group ping).
+/// ONE list, in the order the send screen shows it (2026-10-07 — the
+/// people / groups headings are gone):
+///
+///  1. Whoever pinged me and is still open — people, anonymous senders and
+///     groups together, newest first, each wearing a 👋. The photo answers
+///     that ping (PingService.reply). Anonymous pingers are a masked
+///     "Someone" — answering goes by ping id, so nothing about who they are
+///     is revealed. A group ping takes one answer (the wall enforces it
+///     server-side), so an answered one isn't here.
+///  2. Everyone else in my Friends circle, longest streak first. The photo
+///     reaches them as a NEW photo ping.
+///  3. My other groups — a new group ping.
 ///
 /// People I already have an open ping out to are left off, exactly as on the
 /// Ping page (send_ping would refuse them: PING_ALREADY_OPEN).
@@ -3515,44 +3596,46 @@ Future<List<_PhotoTarget>> _fetchPhotoTargets() async {
   final myGroups =
       (r[4] as List<Map<String, dynamic>>?) ?? const <Map<String, dynamic>>[];
 
-  final openSentTo = <String>{
-    for (final o in sent)
-      if (!o.isGroup && !o.replied) o.receiverId,
-  };
+  // Until the ping closes, replied or not — see openPingReceiverIds.
+  final openSentTo = openPingReceiverIds(sent);
   final openSentGroups = <String>{
     for (final o in sent)
       if (o.isGroup && o.groupId != null && !o.replied) o.groupId!,
   };
 
-  final people = <_PhotoTarget>[];
-  final groups = <_PhotoTarget>[];
+  final pingers = <_PhotoTarget>[];
+  final otherGroups = <_PhotoTarget>[];
   final seen = <String>{};
+  // A group's ping carries its ASKER's photo. Shown on the group's row it
+  // made two rows with one face — the person, and the group they asked in.
+  final groupIcons = <String, String?>{
+    for (final g in myGroups)
+      if (g['id'] is String) g['id'] as String: g['icon_url'] as String?,
+  };
 
   // 1. Pingers — newest open ping first (fetchToReply is newest-first).
-  for (final p in inbox) {
-    if (p.expired) continue;
-    // A PERSON who pinged me stays until their ping expires, however many
-    // photos I've sent back (2026-10-06). A GROUP ping is one answer each.
-    if (p.isGroup && p.myReplies.isNotEmpty) continue;
-    final who = p.isGroup
-        ? 'group:${p.groupId ?? p.threadId}'
-        : 'user:${p.senderId ?? p.id}';
-    if (!seen.add(who)) continue;
-    final t = _PhotoTarget(
-      key: 'ping:${p.id}',
-      name: p.isGroup
-          ? (p.groupName ?? p.senderName)
-          : (p.isAnon ? 'Someone' : p.senderName),
-      avatarUrl: p.isAnon ? null : p.senderAvatarUrl,
-      pingId: p.id,
-      isGroup: p.isGroup,
-      isAnon: p.isAnon && !p.isGroup,
-      pingedMe: true,
-      streak: (p.isGroup || p.isAnon || p.senderId == null)
-          ? 0
-          : (streaks[p.senderId] ?? 0),
+  // Which of a sender's open pings stands for them is sendScreenPingers'
+  // call: the one still waiting on a reply, so this photo answers it.
+  for (final p in sendScreenPingers(inbox)) {
+    seen.add(pingSenderKey(p));
+    pingers.add(
+      _PhotoTarget(
+        key: 'ping:${p.id}',
+        name: p.isGroup
+            ? (p.groupName ?? p.senderName)
+            : (p.isAnon ? 'Someone' : p.senderName),
+        avatarUrl: p.isGroup
+            ? groupIcons[p.groupId]
+            : (p.isAnon ? null : p.senderAvatarUrl),
+        pingId: p.id,
+        isGroup: p.isGroup,
+        isAnon: p.isAnon && !p.isGroup,
+        pingedMe: true,
+        streak: (p.isGroup || p.isAnon || p.senderId == null)
+            ? 0
+            : (streaks[p.senderId] ?? 0),
+      ),
     );
-    (p.isGroup ? groups : people).add(t);
   }
 
   // 2. Friends who haven't pinged me — a new photo ping, streak on the DP.
@@ -3578,7 +3661,6 @@ Future<List<_PhotoTarget>> _fetchPhotoTargets() async {
     final s = b.streak.compareTo(a.streak);
     return s != 0 ? s : a.name.toLowerCase().compareTo(b.name.toLowerCase());
   });
-  people.addAll(others);
 
   // 3. My other groups — a new group ping.
   for (final g in myGroups) {
@@ -3589,7 +3671,7 @@ Future<List<_PhotoTarget>> _fetchPhotoTargets() async {
       continue;
     }
     seen.add('group:$id');
-    groups.add(
+    otherGroups.add(
       _PhotoTarget(
         key: 'group:$id',
         name: (g['name'] as String?) ?? 'Group',
@@ -3600,7 +3682,7 @@ Future<List<_PhotoTarget>> _fetchPhotoTargets() async {
     );
   }
 
-  final out = [...people, ...groups];
+  final out = [...pingers, ...others, ...otherGroups];
   _lastPhotoTargets = out;
   return out;
 }

@@ -22,7 +22,11 @@ dependencies:
   # (added 2026-10-06 — nothing in the app played video before).
   video_player: ^2.9.2
   # Poster still for a recorded clip (posts require one — posts_video_needs_poster).
-  video_thumbnail: ^0.5.3
+  # A vendored copy of 0.5.6: the published package's Android build file
+  # calls jcenter(), which Gradle 9 removed, so the app could not be built
+  # for Android at all. See packages/video_thumbnail/VENDORED.md.
+  video_thumbnail:
+    path: packages/video_thumbnail
   camera: ^0.11.0
   gal: ^2.3.1
   flutter_staggered_grid_view: ^0.7.0

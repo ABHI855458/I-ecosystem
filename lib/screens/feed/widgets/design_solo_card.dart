@@ -20,7 +20,6 @@ import '../../../features/profile_v2/duo_highlights.dart' show openDuoAlbumBetwe
 import '../../../features/profile_v2/profile_v2_icons.dart';
 import '../../../services/post_author_pin_service.dart';
 import '../../../services/post_service.dart' show PostViewer, PostService;
-import '../../../services/presence_service.dart';
 import '../../../services/reaction_preset_service.dart';
 import '../../../services/reaction_service.dart';
 import '../../../services/realmoji_service.dart';
@@ -65,7 +64,7 @@ class DesignSoloCard extends StatefulWidget {
     this.partnerName,
     this.partnerAvatarUrl,
     this.pairStreak,
-    this.showPairStreak = true,
+    this.showPairStreak = false,
     this.viewerSeen = false,
     this.caption,
     this.photoUrl,
@@ -158,20 +157,21 @@ class DesignSoloCard extends StatefulWidget {
   final int? pairStreak;
 
   /// Whether the pair's ping-streak flame is drawn on the fused avatar.
-  /// The Friends feed passes false — explicit request, 2026-10-06: "remove
-  /// the ping streak visible to everyone in friends feed". A streak is
-  /// between two people; the feed showed it to their whole audience.
+  /// OFF by default, on every surface: first removed from the Friends feed
+  /// (2026-10-06: "remove the ping streak visible to everyone in friends
+  /// feed" — a streak is between two people; the feed showed it to their
+  /// whole audience), then from Duo posts altogether (2026-10-07: "no
+  /// streak flame on duo album post, but it shall be there on group
+  /// posts"). Group post cards keep their member flames.
   final bool showPairStreak;
 
   /// True on a PROFILE screen (own or someone else's), false in a FEED.
-  /// Swaps the live "here" pill (post_presence, 3h window) for the "seen"
-  /// pill (post_viewers, all-time) — same corner of the same card, same
-  /// underlying post. Explicit instruction: "the seen pill ... shall be on
-  /// each post the person has done, not on the profile [banner] ... it
-  /// replaces the here pill" — this is a per-surface swap, not tied to
-  /// [showActionRail]'s own-profile/other-profile distinction, since a
-  /// post shown on SOMEONE ELSE'S profile should also read "seen", not
-  /// "here" the way it does in the feed.
+  ///
+  /// It no longer decides which pill shows: since 2026-10-07 the seen pill
+  /// is for the post's OWNERS only, on every surface, and the "here"
+  /// presence pill is gone (see _iOwn). What it still means: on a profile
+  /// the reaction chip and the comment card may show WHO reacted, and
+  /// looking at a post there doesn't count as a feed view.
   final bool viewerSeen;
 
   bool get isShared => (partnerUserId ?? '').isNotEmpty;
@@ -221,15 +221,14 @@ class _DesignSoloCardState extends State<DesignSoloCard>
   bool _showLiveDropdown = false;
   bool _showMoreMenu = false;
   String? _mySelfieUrl;
-  List<PresenceUser> _present = const [];
-  /// False until the first [_loadPresence] resolves. Distinguishes "really
-  /// nobody's here" from "haven't asked the server yet" — both start as an
-  /// empty [_present] list, which otherwise renders as a confident "only
-  /// you" pill for one network round-trip and then FLIPS the instant real
-  /// presence arrives. Reported as the pill visibly changing right after
-  /// landing on the feed. The pill now stays invisible (not a skeleton —
-  /// its own size is reserved so nothing else reflows) until this is true.
-  bool _presenceLoaded = false;
+  /// The viewer is one of this post's OWNERS: the poster or, on a Duo post,
+  /// their partner. Only an owner sees who viewed it — the SEEN pill.
+  /// Everyone else gets no pill at all, here or in the feed: the "here"
+  /// presence pill that used to show them who else had looked is gone
+  /// (explicit request, 2026-10-07: "no seen or presence pill in the
+  /// friends feed; they can see their own posts' seen pill only, not
+  /// others'"). post_viewers enforces the same rule on the server.
+  bool _iOwn = false;
   List<PostViewer> _viewers = const [];
 
   /// Multi-photo list when the post has one, else the single cover photo.
@@ -253,11 +252,24 @@ class _DesignSoloCardState extends State<DesignSoloCard>
 
   ScrollPosition? _scrollPosition;
 
-  /// A pin change re-fetches the seen/"here" list, so an open dropdown's
-  /// PINNED section updates immediately (PostAuthorPinService.changes).
+  /// A pin change re-fetches the seen list, so an open dropdown's PINNED
+  /// section updates immediately (PostAuthorPinService.changes).
   void _onPinsChanged() {
-    if (!mounted) return;
-    unawaited(widget.viewerSeen ? _loadViewers() : _loadPresence());
+    if (!mounted || !_iOwn) return;
+    unawaited(_loadViewers());
+  }
+
+  Future<void> _resolveOwnership() async {
+    try {
+      final me = await CurrentUserService.instance.resolveId();
+      final own =
+          me.isNotEmpty && (me == widget.userId || me == widget.partnerUserId);
+      if (!mounted || !own) return;
+      setState(() => _iOwn = true);
+      unawaited(_loadViewers());
+    } catch (_) {
+      // Signed out / unknown: stays "not an owner", which shows no pill.
+    }
   }
 
   @override
@@ -267,32 +279,18 @@ class _DesignSoloCardState extends State<DesignSoloCard>
     loadReactionSummary(widget.postId);
     unawaited(loadMyRealmojiReaction(widget.postId));
     unawaited(_loadReactors());
-    if (widget.viewerSeen) {
-      unawaited(_loadViewers());
-    } else {
-      // touch() is a HERE-surface concern only — visiting a post on a
-      // PROFILE shouldn't mark you as live-present on it, it should just
-      // read who has ever seen it.
-      unawaited(PresenceService.instance.touch(postId: widget.postId));
-      unawaited(_loadPresence());
+    unawaited(_resolveOwnership());
+    if (!widget.viewerSeen) {
+      // The feed: this viewer has now seen the post. Nothing of that is
+      // shown to THEM any more, but it is what fills the owner's seen pill.
+      // (Visiting a post on a PROFILE doesn't mark you present on it.)
       // The PERMANENT view record, distinct from the live presence
       // heartbeat above. Only the anon feed ever wrote these, so on a
       // friends post post_views stayed empty forever — which silently
-      // disabled both the seen pill AND the "here" pill's pinned-viewer
-      // merge (a pinned person who viewed the post is supposed to show
-      // there whether or not they're currently around). Deduped and
-      // self-view-guarded server-side in record_post_view.
+      // emptied the seen pill. Deduped and self-view-guarded server-side
+      // in record_post_view.
       unawaited(PostService.instance.recordView(widget.postId));
     }
-  }
-
-  Future<void> _loadPresence() async {
-    final entries = await PresenceService.instance.fetchPresence(postId: widget.postId);
-    if (!mounted) return;
-    setState(() {
-      _present = entries.map(PresenceUser.fromEntry).toList();
-      _presenceLoaded = true;
-    });
   }
 
   Future<void> _loadViewers() async {
@@ -446,6 +444,19 @@ class _DesignSoloCardState extends State<DesignSoloCard>
                 // ReportService/BlockService calls, a reason step on
                 // Report, and Remove instead of Report on your own post.
                 child: MoreMenuDropdown(
+                  // Mine (or my Duo's): straight to "Remove this post?".
+                  onRemove: _iOwn
+                      ? () {
+                          _hideMoreMenuOverlay();
+                          unawaited(
+                            confirmRemovePost(
+                              context,
+                              postId: widget.postId,
+                              onDeleted: widget.onDeleted,
+                            ),
+                          );
+                        }
+                      : null,
                   onBlock: () {
                     _hideMoreMenuOverlay();
                     _openRealMenu();
@@ -482,7 +493,12 @@ class _DesignSoloCardState extends State<DesignSoloCard>
     await showPostActionsMenu(
       context,
       postId: widget.postId,
-      isOwnPost: widget.userId.isNotEmpty && widget.userId == me,
+      // A Duo post is jointly owned: either partner can take it down
+      // (posts_update_duo_partner), not only whoever uploaded it.
+      isOwnPost:
+          me != null &&
+          me.isNotEmpty &&
+          (widget.userId == me || widget.partnerUserId == me),
       isAnonymousPost: widget.userId.isEmpty,
       authorUsersId: widget.userId.isEmpty ? null : widget.userId,
       onDeleted: widget.onDeleted,
@@ -618,60 +634,39 @@ class _DesignSoloCardState extends State<DesignSoloCard>
               // (see _FusedAvatar's pairStreak param) — explicit
               // instruction: "place the blue flame on the users dp", not
               // floating beside the header as before.
-              const SizedBox(width: 10),
-              TapRegion(
-                groupId: _liveGroupId,
-                // maxAvatars/rightPadding trimmed from the pill's 3-face/13pt
-                // defaults — this header also carries the username, which
-                // needs to fit AppStrings.usernameMaxLength (15 chars)
-                // without ellipsis; see this card's own class-level doc for
-                // the full byline width budget.
-                child: widget.viewerSeen
-                    ? SeenPill(
-                        viewers: _viewers,
-                        maxAvatars: 2,
-                        rightPadding: 10,
-                        // Faces only on a Duo post, exactly like the feed's
-                        // pill for the same post — the two-name byline
-                        // needs the width ("like in friends feed, circles").
-                        avatarsOnly: widget.isShared,
-                        onTap: () {
-                          setState(() {
-                            final next = !_showLiveDropdown;
-                            _closeAllPanels();
-                            _showLiveDropdown = next;
-                          });
-                          if (_showLiveDropdown) unawaited(_loadViewers());
-                        },
-                      )
-                    : Opacity(
-                        // See _presenceLoaded's own doc: invisible rather
-                        // than absent, so the pill's real size is already
-                        // reserved and nothing around it reflows the
-                        // instant real data arrives — only the "only you"
-                        // -> real-count FLASH is what's being removed.
-                        opacity: _presenceLoaded ? 1 : 0,
-                        child: LivePresencePill(
-                          // Shared (Duo) posts drop the pill's label and
-                          // chrome down to just the faces — the byline has
-                          // TWO usernames to fit and the words cost more
-                          // width than they earn. See LivePresencePill's
-                          // avatarsOnly doc.
-                          avatarsOnly: widget.isShared,
-                          present: _present,
-                          maxAvatars: 2,
-                          rightPadding: 10,
-                          onTap: () {
-                            setState(() {
-                              final next = !_showLiveDropdown;
-                              _closeAllPanels();
-                              _showLiveDropdown = next;
-                            });
-                            if (_showLiveDropdown) unawaited(_loadPresence());
-                          },
-                        ),
-                      ),
-              ),
+              // Who has seen it — the post's OWNERS only, and only on a
+              // PROFILE (explicit request, 2026-10-07: "remove the seen pill
+              // from the friends feed ... they can view it only in their own
+              // profile, only for their own posts"). A feed card never shows
+              // it, not even to the author.
+              if (_iOwn && widget.viewerSeen) ...[
+                const SizedBox(width: 10),
+                TapRegion(
+                  groupId: _liveGroupId,
+                  // maxAvatars/rightPadding trimmed from the pill's
+                  // 3-face/13pt defaults — this header also carries the
+                  // username, which needs to fit
+                  // AppStrings.usernameMaxLength (15 chars) without
+                  // ellipsis; see this card's own class-level doc for the
+                  // full byline width budget.
+                  child: SeenPill(
+                    viewers: _viewers,
+                    maxAvatars: 2,
+                    rightPadding: 10,
+                    // Faces only on a Duo post — the two-name byline needs
+                    // the width ("like in friends feed, circles").
+                    avatarsOnly: widget.isShared,
+                    onTap: () {
+                      setState(() {
+                        final next = !_showLiveDropdown;
+                        _closeAllPanels();
+                        _showLiveDropdown = next;
+                      });
+                      if (_showLiveDropdown) unawaited(_loadViewers());
+                    },
+                  ),
+                ),
+              ],
               // See hideOwnOptionsButton's own doc — the caller (a profile
               // screen showing its own posts) draws its own "..." instead.
               if (!widget.hideOwnOptionsButton) ...[
@@ -765,7 +760,7 @@ class _DesignSoloCardState extends State<DesignSoloCard>
                     borderRadius: kFriendsPostRadius,
                   ),
 
-                if (_showLiveDropdown)
+                if (_showLiveDropdown && _iOwn && widget.viewerSeen)
                   Positioned(
                     top: 10,
                     right: 12,
@@ -773,9 +768,7 @@ class _DesignSoloCardState extends State<DesignSoloCard>
                       groupId: _liveGroupId,
                       onTapOutside: (_) =>
                           setState(() => _showLiveDropdown = false),
-                      child: widget.viewerSeen
-                          ? SeenDropdown(viewers: _viewers)
-                          : LivePresenceDropdown(present: _present),
+                      child: SeenDropdown(viewers: _viewers),
                     ),
                   ),
 

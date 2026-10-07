@@ -185,6 +185,10 @@ class _PersonCardState extends State<_PersonCard> {
     final shown = name.isEmpty ? 'someone' : name;
     final photo = p['profile_photo_url'] as String?;
     final community = (p['community_name'] as String?)?.trim();
+    // Friends we share (suggested_people.mutual_count, 2026-10-07). When
+    // there are any it is the more telling line, so it replaces the
+    // community one.
+    final mutual = (p['mutual_count'] as num?)?.toInt() ?? 0;
     final joined = DateTime.tryParse('${p['joined_at'] ?? ''}');
     final isNew = joined != null &&
         DateTime.now().toUtc().difference(joined.toUtc()).inDays < 7;
@@ -286,15 +290,22 @@ class _PersonCardState extends State<_PersonCard> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  community == null || community.isEmpty
+                  mutual > 0
+                      ? (mutual == 1
+                            ? '1 mutual friend'
+                            : '$mutual mutual friends')
+                      : community == null || community.isEmpty
                       ? 'on campus'
                       : 'in $community',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.45),
+                    color: mutual > 0
+                        ? _kCyan.withValues(alpha: 0.9)
+                        : Colors.white.withValues(alpha: 0.45),
                     fontSize: 11.5,
+                    fontWeight: mutual > 0 ? FontWeight.w600 : FontWeight.w400,
                     decoration: TextDecoration.none,
                   ),
                 ),
@@ -368,6 +379,37 @@ class _PersonCardState extends State<_PersonCard> {
 
 /// "Add `<name>` to…" — their photo and name on top, then one full-width row
 /// per circle. Tapping a row returns that circle.
+/// "Which circle?" — the same big-row sheet the suggestion cards use, for
+/// any other surface that adds a person (people search). Null when the
+/// sheet is dismissed or my circles can't be loaded (a toast says so).
+Future<CircleOption?> showCirclePicker(
+  BuildContext context, {
+  required String name,
+  String? photoUrl,
+}) async {
+  List<CircleOption> circles;
+  try {
+    circles = await CircleService.instance.fetchMyCircles();
+  } catch (_) {
+    circles = const [];
+  }
+  if (!context.mounted) return null;
+  if (circles.isEmpty) {
+    showGlassToast(context, "Couldn't load your circles.", isError: true);
+    return null;
+  }
+  return showModalBottomSheet<CircleOption>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (_) => _CirclePickerSheet(
+      name: name.trim().isEmpty ? 'them' : name.trim(),
+      photoUrl: photoUrl,
+      circles: circles,
+    ),
+  );
+}
+
 class _CirclePickerSheet extends StatelessWidget {
   const _CirclePickerSheet({
     required this.name,

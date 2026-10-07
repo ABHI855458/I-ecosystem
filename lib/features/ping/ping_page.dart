@@ -48,6 +48,7 @@ import 'package:supabase_flutter/supabase_flutter.dart'
 
 import '../../core/glass.dart' show showGlassToast, showPingToast;
 import '../../core/ping_haptics.dart';
+import 'ping_turns.dart';
 import '../../widgets/app_video.dart';
 import '../../core/supabase_config.dart';
 import '../../core/ui/immersive_chrome.dart';
@@ -167,7 +168,7 @@ const kPromptlessOutbound = 'Pinged 👋';
 /// A friendly, time-of-day greeting shown where a promptless ping has no
 /// words (explicit request: "hola, hello, what's up… based on time"). Picked
 /// by the ping's id so the same ping always reads the same; the stored
-/// prompt stays '' so promptless handling (one-tap ping back, open loops,
+/// prompt stays '' so promptless handling (one-tap ping back,
 /// notify_ping_reply wording) is untouched.
 String pingGreeting(String pingId, [DateTime? at]) {
   final h = (at ?? DateTime.now()).toLocal().hour;
@@ -211,12 +212,6 @@ String pingGreeting(String pingId, [DateTime? at]) {
 // No hand emoji here either — same rule as _cardLine (explicit request,
 // 2026-10-02: no 👋 in replies unless a photo came with it).
 const kPromptlessReplyTo = 'your ping';
-
-/// The one-tap "Ping back" answer to a promptless ping — an ordinary text
-/// reply (so it closes the ping and counts for the streak), which
-/// notify_ping_reply words as "X pinged you back 👋"
-/// (20260930010000_promptless_pings.sql).
-const kPingBackBody = '👋';
 
 class InboundPing {
   final String id, senderName, initial, prompt, time;
@@ -945,15 +940,6 @@ class _PingPageState extends State<PingPage>
   /// `_loadRealPingData`.
   int pingScore = 0;
 
-  /// My own `users.id`, kept from the last [_loadRealPingData]. Needed
-  /// because a GROUP ping deliberately includes the sender as one of its
-  /// recipients (see PingService.sendGroupPing), so replying on your own
-  /// group thread produces a reply row whose replier is you — and the
-  /// open-loop derivation below would otherwise offer to ping yourself
-  /// back. Null until the first load completes, which only means the
-  /// self-filter is inert for that first frame, never that it misfires.
-  String? _meId;
-
   /// My account's real campus label ('RVCE'/'RVU'), derived server-side from
   /// my own email domain — null for any non-institutional signup. Replaces
   /// the old hardcoded 'CAMPUS · BROWN' header, which showed a fake campus
@@ -1139,6 +1125,11 @@ class _PingPageState extends State<PingPage>
   void _scheduleReload() {
     _reloadDebounce?.cancel();
     _reloadDebounce = Timer(const Duration(milliseconds: 350), () {
+      // The Friends feed's top row (replies / your turn / who to ping)
+      // has no live channel of its own — this page is alive from launch,
+      // so its channel tells that row too. Without it a ping that arrived
+      // while you sat on the feed only showed up after a pull-to-refresh.
+      pingInboxChanged.value++;
       // Skip while Ping isn't the visible tab — see pingTabActive's own
       // doc. pingTabActive's own listener (initState below) fires a fresh
       // reload the moment the tab is opened again, so this is a deferral,
@@ -1269,7 +1260,7 @@ class _PingPageState extends State<PingPage>
         for (final sl in slots)
           if (sl.replyId != null) sl.replyId!,
       // MY OWN replies too — the photo I sent someone can be reacted to,
-      // and those faces show on its Open Loops row (reported 2026-10-04).
+      // and those faces show under REACTIONS TO YOU (reported 2026-10-04).
       for (final p in kToReply)
         for (final r in p.myReplies)
           if (r.id != null) r.id!,
@@ -1298,7 +1289,6 @@ class _PingPageState extends State<PingPage>
     int? realPingScore;
     try {
       final meId = await CurrentUserService.instance.resolveId();
-      _meId = meId;
       // Standalone, not in the Future.wait below (whose results are read
       // positionally everywhere below it — inserting a slot there would
       // mean renumbering every index). Fetched once; campus never changes.
@@ -1398,13 +1388,14 @@ class _PingPageState extends State<PingPage>
       //
       // A null `sent` means that one request failed — keep everyone rather
       // than hiding the whole strip on a dropped packet.
-      final blockedByOpenPing = <String>{
-        if (sent != null)
-          for (final o in sent)
-            if (!o.isGroup && !o.replied) o.receiverId,
-      };
-      // Also drives Open Loops (it already did) — one set, so the strip
-      // and the loop rows can never disagree about who is pingable.
+      // Blocked until the ping CLOSES, replied or not — that is what
+      // send_ping enforces since 2026-10-06 (see openPingReceiverIds). With
+      // `!o.replied` in this test someone who had answered came back to the
+      // strip, and tapping them failed with "already pinged".
+      final blockedByOpenPing = sent == null
+          ? <String>{}
+          : openPingReceiverIds(sent);
+      // One set for every "can I ping them right now?" check on the page.
       _openSentTo = blockedByOpenPing;
 
       // Same rule for GROUPS (explicit request, 2026-10-03: "the group
@@ -1641,6 +1632,21 @@ class _PingPageState extends State<PingPage>
 
       _firstLoadPending = false;
     });
+    _markVisiblePingsSeen();
+  }
+
+  /// Pings already reported as seen this session.
+  final _seenSent = <String>{};
+
+  /// An incoming ping has no reveal step any more, so being on screen in
+  /// the open Ping tab IS seeing it — which is what tells the sender it
+  /// was opened and starts its 6-hour window (pings.expires_at). The
+  /// hold-to-unblur used to do this (finishHold's ping branch).
+  void _markVisiblePingsSeen() {
+    if (!mounted || !pingTabActive.value) return;
+    for (final p in kToReply) {
+      if (_seenSent.add(p.id)) unawaited(PingService.instance.markSeen(p.id));
+    }
   }
 
   String _windowLeftLabel(DateTime expiresAt) {
@@ -1650,7 +1656,7 @@ class _PingPageState extends State<PingPage>
     return h > 0 ? '${h}h left to reply' : '${m}m left to reply';
   }
 
-  /// The pill on an OPEN LOOPS "Ping them back?" row — was a hardcoded
+  /// The "Ping them back?" countdown on a reply — was a hardcoded
   /// '24h' (the window's old fixed length, not a real countdown, so it
   /// stayed pinned at "24h" whether 1 minute or 23 hours were actually
   /// left). Now a real remaining-time readout for the 48h window (see
@@ -2144,7 +2150,6 @@ class _PingPageState extends State<PingPage>
           removed[i] = kFriends.removeAt(i);
         }
       }
-      // Its Open Loops row goes too — same reason.
       _openSentTo.add(receiverId);
     });
     showPingToast(context, pingBack ? 'Pinged $name back ✓' : 'Pinged $name ✓');
@@ -2285,9 +2290,11 @@ class _PingPageState extends State<PingPage>
     if (!mounted) return;
     final after = _streakWith(userId);
     final text = before <= 0 && after > 0
-        ? '🔥 Started a streak with $name'
+        // No 🔥 here: a text toast can only show the orange emoji, and
+        // every streak flame in the app is the blue one now.
+        ? 'Started a streak with $name'
         : after > before
-        ? '🔥 Streak with $name increased to $after'
+        ? 'Streak with $name is now $after'
         : fallback;
     if (text.isEmpty) return;
     showPingToast(context, text);
@@ -2588,175 +2595,10 @@ class _PingPageState extends State<PingPage>
     );
   }
 
-  // ---- derived: open loops (bidirectional, incl. anon + group) ----
-  //
-  // ONE ROW PER PERSON, not one per ping. These used to be keyed by ping id,
-  // so somebody who replied to three of your pings produced three identical
-  // "Ping <name> back?" rows stacked on top of each other — reported as
-  // "why am I seeing ping back of adithi still 3 times". Collapsing is done
-  // on a person key, and the surviving row carries EVERY collapsed ping id
-  // so that pinging back retires the whole group at once; marking only the
-  // one row's id would let the next ping from that person pop straight back
-  // into the list and look like the button did nothing.
-  //
-  // Anonymous inbound pings are deliberately NOT collapsed: their sender is
-  // hidden from us, so there is no person key to group by, and inventing one
-  // (say, by grouping on some shared attribute) is exactly the kind of thing
-  // that would let you infer "these two anonymous pings are the same person".
-  // They stay one row each, which is also the honest rendering.
-  /// Receivers I currently hold an open (unexpired) 1:1 ping to — see
-  /// [loops]' ping-back check. Filled from fetchSent on every load.
+  /// Receivers I currently hold an open (unexpired) 1:1 ping to — they
+  /// can't be pinged again until it closes. Filled from fetchSent on every
+  /// load.
   Set<String> _openSentTo = {};
-
-  List<_Loop> get loops {
-    final grouped = <String, List<_LoopSeed>>{};
-    void add(String key, _LoopSeed seed) =>
-        grouped.putIfAbsent(key, () => <_LoopSeed>[]).add(seed);
-
-    for (final p in kToReply) {
-      // "Did I reply?" from the SERVER (ping_inbox.my_replies) as well as
-      // this session — it used to read only the in-memory sentReplies, so
-      // after a restart (or on another phone) the "Ping them back?" row
-      // never appeared for a ping already answered.
-      final replied =
-          (sentReplies[p.id] ?? []).isNotEmpty || p.myReplies.isNotEmpty;
-      // A reply to a promptless ping IS the ping back — no second
-      // "Ping them back?" loop for it.
-      if (!replied || p.promptless || (pingedBack[p.id] ?? false)) continue;
-      // No Open Loops for anonymous pings (explicit request, 2026-10-03).
-      if (p.isAnon) continue;
-      final senderId = p.senderId;
-      // Already pinged them back (an open ping from me to them exists) —
-      // server truth, so it holds across restarts too.
-      if (!p.isAnon && senderId != null && _openSentTo.contains(senderId)) {
-        continue;
-      }
-      // Never offer to ping yourself back. sendGroupPing includes the
-      // asker as one of the group's own recipients, so a group ping YOU
-      // sent comes back to you in kToReply with senderId == you — and
-      // this rendered "Ping <your own name> back?" in Open Loops. Same
-      // root cause as the self-push (notify-ping-reply) and the
-      // self-reply rows (fetchReplies' group filter); this is the third
-      // and last surface it reached.
-      if (_meId != null && senderId == _meId) continue;
-      // Anon -> unique key (see above). Group -> key on the group, since you
-      // ping the group back once however many members replied.
-      final key = p.isAnon
-          ? 'anon:${p.id}'
-          : p.isGroup
-          ? 'group:${p.senderName}'
-          : 'person:${senderId ?? p.senderName}';
-      add(
-        key,
-        _LoopSeed(
-          myReplyIds: [
-            for (final r in p.myReplies)
-              if (r.id != null) r.id!,
-          ],
-          id: p.id,
-          initial: p.isAnon ? '?' : p.initial,
-          title: p.isAnon
-              // No "back" in Open Loops (explicit request, 2026-10-03:
-              // "use a different word other than back there, because it
-              // would confuse them") — "back" is the one-tap answer ON a
-              // ping; these rows start a NEW ping to someone whose turn it
-              // is with you.
-              ? 'Your turn with them'
-              : 'Your turn with ${p.isGroup ? p.senderName : p.senderName.split(' ').first}',
-          reason: p.isGroup
-              ? 'you replied to the group'
-              : 'you replied to theirs',
-          left: '24h left',
-          isAnon: p.isAnon,
-          tintIndex: p.tintIndex,
-          // Anonymous: the server resolves who to ping back — there is no
-          // real id on this side to send to. Named: target their real id
-          // directly rather than routing through a name-only send.
-          // Named: an instant, promptless ping back. Anonymous pings come
-          // from Dip, which keeps prompts — those still open the sheet.
-          open: () => (p.isAnon || p.senderId == null)
-              ? openPromptSheet(
-                  p.senderName,
-                  anon: p.isAnon,
-                  pingBackPingId: p.isAnon ? p.id : null,
-                  targetId: p.isAnon ? null : p.senderId,
-                )
-              : _pingNow(p.senderId!, p.senderName, pingBack: true),
-        ),
-      );
-    }
-
-    for (final r in kReplies) {
-      final v = viewed[r.id] ?? r.viewedInit;
-      if (!(v && r.pingBackLeft != null && !(pingedBack[r.id] ?? false))) {
-        continue;
-      }
-      // Never offer to ping yourself back. A group ping includes its own
-      // sender as a recipient, so replying on your own group thread lands
-      // here with replierId == me and used to render "Ping <my own name>
-      // back?" in Open Loops. Same root cause as the self-push that
-      // notify-ping-reply now guards against.
-      if (_meId != null && r.replierId == _meId) continue;
-      // No Open Loops for anonymous ones (explicit request, 2026-10-03).
-      if (r.isAnon) continue;
-      // Can't be pinged right now (my previous ping to them is still
-      // open) — no "Ping X back?" row either (explicit request,
-      // 2026-10-03: "if they can't be pinged then no need to show them in
-      // open loops"). It returns when the window closes.
-      if (!r.isAnon && _openSentTo.contains(r.replierId)) continue;
-      // r.replierId is real even when r.isAnon — see InboundReply.replierId:
-      // only a ping's SENDER is ever hidden, never its replier. So a reply
-      // row always has a person to group on.
-      final key = 'person:${r.replierId.isNotEmpty ? r.replierId : r.who}';
-      add(
-        key,
-        _LoopSeed(
-          id: r.id,
-          initial: r.isAnon ? '?' : r.who[0],
-          title: r.isAnon ? 'Your turn with them' : 'Your turn with ${r.who}',
-          reason: 'they replied to yours',
-          left: '${r.pingBackLeft} left',
-          isAnon: r.isAnon,
-          tintIndex: 0,
-          // Replying always identifies the replier to me — r.replierId is
-          // real even when r.isAnon (that only means MY original ping to
-          // them was anonymous). Ping them back the same way I first
-          // reached them: same anon flag, but a real target either way.
-          open: () => r.isAnon
-              ? openPromptSheet(r.who, anon: true, targetId: r.replierId)
-              : _pingNow(r.replierId, r.who, pingBack: true),
-        ),
-      );
-    }
-
-    final out = <_Loop>[];
-    for (final seeds in grouped.values) {
-      final head = seeds.first;
-      final ids = [for (final s in seeds) s.id];
-      out.add(
-        _Loop(
-          myReplyIds: [for (final s in seeds) ...s.myReplyIds],
-          id: head.id,
-          initial: head.initial,
-          title: head.title,
-          reason: head.reason,
-          left: head.left,
-          isAnon: head.isAnon,
-          tintIndex: head.tintIndex,
-          onTap: () {
-            setState(() {
-              _bumpScore();
-              for (final id in ids) {
-                pingedBack[id] = true;
-              }
-            });
-            head.open();
-          },
-        ),
-      );
-    }
-    return out;
-  }
 
   @override
   Widget build(BuildContext ctx) {
@@ -2831,7 +2673,6 @@ class _PingPageState extends State<PingPage>
                       ),
                     )
                   else ...[
-                    _openLoopsSection(s),
                     _toReplySection(s),
                     _repliesSection(s),
                     _myReplyReactionsSection(s),
@@ -3272,7 +3113,7 @@ class _PingPageState extends State<PingPage>
   /// Only pings still WAITING on a reply. Already-answered ones used to stay
   /// here as a collapsed "You replied" card ("why is the you-replied thing
   /// showing in To Reply"); they leave this section the moment you reply —
-  /// the conversation continues under Replies / Open loops.
+  /// the conversation continues under Replies.
   List<InboundPing> get _waitingToReply => [
     for (final p in kToReply)
       if (!_alreadyReplied(p)) p,
@@ -3343,125 +3184,6 @@ class _PingPageState extends State<PingPage>
     );
   }
 
-  /// OPEN LOOPS — "Your turn with X" rows (restored on request), above TO
-  /// REPLY. One row per person/group (see [loops]).
-  Widget _openLoopsSection(Scale s) {
-    final list = loops;
-    if (list.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: EdgeInsets.only(left: s(22), right: s(22), bottom: s(8)),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'OPEN LOOPS',
-                style: ts(s, weight: 500, size: 11, em: .18, color: txt(.72)),
-              ),
-              Text(
-                '${list.length} open',
-                style: ts(s, weight: 400, size: 11, color: txt(.3)),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.only(left: s(22), right: s(22), bottom: s(30)),
-          child: Column(
-            children: [
-              for (int i = 0; i < list.length; i++) ...[
-                _loopRow(s, list[i]),
-                if (i < list.length - 1) SizedBox(height: s(10)),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _loopRow(Scale s, _Loop l) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: s(16), vertical: s(12)),
-      decoration: BoxDecoration(
-        borderRadius: r4(s, 20, 10, 22, 12),
-        color: kSurface2,
-        border: Border.all(color: w(.05), width: 1),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: s(30),
-            height: s(30),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: l.isAnon ? clay(.18) : w(.07),
-              border: Border.all(color: w(.1), width: 1),
-            ),
-            child: Text(
-              l.initial.toUpperCase(),
-              style: ts(s, weight: 600, size: 11.5, color: txt(.75)),
-            ),
-          ),
-          SizedBox(width: s(12)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  l.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ts(s, weight: 600, size: 13.5, color: kText),
-                ),
-                SizedBox(height: s(2)),
-                Text(
-                  '${l.reason} · ${l.left}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ts(s, weight: 400, size: 10.5, color: txt(.36)),
-                ),
-              ],
-            ),
-          ),
-          // Who reacted to the photo/words I sent on this loop — tap for
-          // the full list with their selfies.
-          Builder(
-            builder: (context) {
-              final rx = [
-                for (final id in l.myReplyIds) ...?_pingRealmojis[id],
-              ];
-              if (rx.isEmpty) return const SizedBox.shrink();
-              return Padding(
-                padding: EdgeInsets.only(left: s(8)),
-                child: PingRealmojiStack(reactions: rx, size: s(20)),
-              );
-            },
-          ),
-          SizedBox(width: s(10)),
-          SpringTap(
-            onTap: l.onTap,
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: s(14), vertical: s(8)),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(100),
-                gradient: g180(kCyan, kCyanDeep),
-              ),
-              child: Text(
-                'Ping',
-                style: ts(s, weight: 600, size: 11.5, color: kGround),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// One box at a time — expanded REPLACES the row, never stacks below it.
   /// True the instant a reply is sent (this session) or was already sent
   /// per the server (myReplies, survives a restart) — a ping now takes
@@ -3478,139 +3200,13 @@ class _PingPageState extends State<PingPage>
     // _expandedCard's send handler's own "the flow ends on its now-open
     // wall" tail.
     if (_alreadyReplied(p)) return _repliedCollapsed(s, p);
-    // A promptless ping blurs and holds-to-reveal exactly like a prompted
-    // one now (explicit request, 2026-10-02: "shall be hold to deblur it
-    // ... anywhere in the box and then click ping back") — it used to skip
-    // straight to the revealed row.
-    if (revealed.containsKey(p.id)) {
-      return _revealedCollapsed(s, p);
-    }
-    return _blurredRow(s, p);
-  }
-
-  Widget _blurredRow(Scale s, InboundPing p) {
-    final active = holdId == p.id;
-    final pr = active ? holdP : 0.0;
-    final glow = active
-        ? [
-            BoxShadow(
-              color: blk(.45),
-              blurRadius: s(40),
-              offset: Offset(0, s(10)),
-            ),
-            BoxShadow(
-              color: kCyan.withValues(alpha: .1 + .25 * pr),
-              blurRadius: s(18 + 30 * pr),
-            ),
-          ]
-        : [
-            BoxShadow(
-              color: blk(.3),
-              blurRadius: s(24),
-              offset: Offset(0, s(6)),
-            ),
-          ];
-    // Hold anywhere on the card to deblur — no separate ring/hold-zone
-    // column any more (explicit request, 2026-10-02: "hold to deblur it
-    // anywhere in the box"). Progress now reads as a thin cyan hairline
-    // along the bottom edge instead, so the text gets the card's full
-    // width.
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => startHold(p.id, true),
-      onTapUp: (_) => endHold(),
-      onTapCancel: endHold,
-      child: Glass(
-        radius: r4(s, 26, 14, 30, 10),
-        gradient: g150(w(.07), w(.03)),
-        border: Border.all(
-          color: active ? kCyan.withValues(alpha: .2 + .5 * pr) : w(.1),
-          width: 1,
-        ),
-        blurSigma: 11,
-        shadow: glow,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: EdgeInsets.only(
-                left: s(18),
-                top: s(17),
-                right: s(18),
-                bottom: active ? s(10) : s(17),
-              ),
-              // Not blurred — explicit request, 2026-10-06: "don't blur the
-              // to reply section, let it be direct". The photo itself is
-              // still the hold-to-reveal; only the row is shown plainly.
-              child: Row(
-                  children: [
-                    avatarCircle(
-                      s,
-                      size: 36,
-                      fontSize: 13,
-                      initial: p.initial,
-                      tintIndex: p.tintIndex,
-                      isAnon: p.isAnon,
-                    ),
-                    SizedBox(width: s(13)),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            p.isGroup
-                                ? '${p.senderName} · ${p.groupCount} people'
-                                : p.senderName,
-                            maxLines: 1,
-                            style: ts(
-                              s,
-                              weight: 500,
-                              size: 13,
-                              color: p.isAnon ? clay(.85) : txt(.62),
-                            ),
-                          ),
-                          SizedBox(height: s(5)),
-                          Text(
-                            p.prompt,
-                            style: ts(
-                              s,
-                              weight: 500,
-                              size: 16,
-                              lh: 1.35,
-                              color: kText,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-            ),
-            if (active)
-              Padding(
-                padding: EdgeInsets.fromLTRB(s(18), 0, s(18), s(14)),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(100),
-                  child: SizedBox(
-                    height: s(3),
-                    child: Stack(
-                      children: [
-                        DecoratedBox(decoration: BoxDecoration(color: w(.08))),
-                        FractionallySizedBox(
-                          widthFactor: pr,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(color: kCyan),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
+    // No hold-to-unblur on an incoming ping any more (explicit request,
+    // 2026-10-07: "when someone pings no need of unblurring, it shall be
+    // visible, and when clicked on it they can view the image"). Every ping
+    // shows as its plain card straight away; a photo it carries opens from
+    // the card's own photo button (see _pingPhotoButton). The blurred,
+    // hold-anywhere row this used to start as is gone.
+    return _revealedCollapsed(s, p);
   }
 
   /// The sender's name is already the line above, so a promptless card
@@ -3745,6 +3341,12 @@ class _PingPageState extends State<PingPage>
               ),
             ),
             SizedBox(width: s(8)),
+            // The photo they sent with the ping: a tap opens it. (It used
+            // to open by itself at the end of the hold-to-unblur.)
+            if ((p.photoUrl ?? '').isNotEmpty) ...[
+              _pingPhotoButton(s, p),
+              SizedBox(width: s(7)),
+            ],
             // PING BACK on every kind of ping — prompted, promptless,
             // group, anonymous. An anonymous ping has no real id on this
             // side, so it routes through ping_back_anonymous; the button
@@ -3779,6 +3381,53 @@ class _PingPageState extends State<PingPage>
       ),
     ),
   );
+
+  /// "Photo" on a ping that came with one — tap to see it full screen.
+  /// It is still a one-time view (mark_ping_photo_opened burns it on the
+  /// server the moment it opens), so afterwards this reads "Viewed" and
+  /// does nothing.
+  Widget _pingPhotoButton(Scale s, InboundPing p) {
+    final viewed = p.photoOpenedAt != null;
+    return SpringTap(
+      onTap: viewed
+          ? () => showPingToast(context, 'You already viewed this photo.')
+          : () {
+              unawaited(pingThud());
+              setState(() => _openPingPhoto(p.id));
+            },
+      child: Container(
+        height: s(32),
+        padding: EdgeInsets.symmetric(horizontal: s(10)),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(s(11)),
+          gradient: viewed ? null : g180(kCyan, kCyanDeep),
+          color: viewed ? w(.04) : null,
+          border: viewed ? Border.all(color: w(.12), width: 1) : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              viewed ? Icons.check_rounded : Icons.image_rounded,
+              size: s(14),
+              color: viewed ? txt(.4) : kGround,
+            ),
+            SizedBox(width: s(5)),
+            Text(
+              viewed ? 'Viewed' : 'Photo',
+              style: ts(
+                s,
+                weight: 600,
+                size: 11.5,
+                color: viewed ? txt(.4) : kGround,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   /// The line under the name: time, then "anon" if it is one, then the
   /// message itself in quotes — "1h left · anon · \"hey! how was your
@@ -3881,9 +3530,9 @@ class _PingPageState extends State<PingPage>
   // ---------- REPLIES ----------
   /// REPLIES only ever lists replies you haven't opened yet. The moment one
   /// is revealed you see the photo (see [_photoView]) and the row is gone for
-  /// good — the photo is not re-openable from here. Anything still owed to
-  /// that person surfaces once, above, as an OPEN LOOPS "Ping X back?" row,
-  /// so a given reply is never represented in two places at the same time.
+  /// good — the photo is not re-openable from here. (The OPEN LOOPS rows
+  /// that used to offer "Your turn with X" afterwards were removed on
+  /// request, 2026-10-07; pinging them again starts from Ping Someone.)
   // Every reply for the whole reply window stays listed here, revealed or
   // not — someone can send several photos before the window closes (see
   // PingService.fetchToReply's own doc on why the ping stays answerable the
@@ -4014,10 +3663,9 @@ class _PingPageState extends State<PingPage>
     // PingService.markViewed the instant it's revealed), so a reply opened
     // in a previous session never comes back either.
     //
-    // Nothing is lost by this: if the reply still has an open ping-back
-    // window, it resurfaces in OPEN LOOPS as a "Ping them back?" row (see
-    // the kReplies pass in _loops), which is the only thing left to DO
-    // with a reply you've already seen.
+    // OPEN LOOPS ("Your turn with X" rows for an already-seen reply) was
+    // removed on request, 2026-10-07 — pinging that person again starts
+    // from the Ping Someone strip.
     final multi = _multiThreadIds;
     final unseen = kReplies
         .where((r) => !(viewed[r.id] ?? r.viewedInit))
@@ -4031,6 +3679,16 @@ class _PingPageState extends State<PingPage>
     final walls = _visibleWalls;
     if (unseen.isEmpty && walls.isEmpty) return const SizedBox.shrink();
     final unreadCount = unseen.length;
+    // UNBLUR ONCE (explicit request, 2026-10-07): the first reply a person
+    // sends on a ping is the hold-to-unblur moment; once one of theirs on
+    // that ping has been opened, the rest are plain "X replied" rows that
+    // open on a tap. See unlockedReplyGroups.
+    final unlocked = unlockedReplyGroups<InboundReply>(
+      kReplies,
+      pingIdOf: (r) => r.pingId,
+      replierIdOf: (r) => r.replierId,
+      isViewed: (r) => viewed[r.id] ?? r.viewedInit,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -4061,7 +3719,11 @@ class _PingPageState extends State<PingPage>
             child: Column(
               children: [
                 for (int i = 0; i < unseen.length; i++) ...[
-                  _unviewedReply(s, unseen[i]),
+                  unlocked.contains(
+                        replyGroupKey(unseen[i].pingId, unseen[i].replierId),
+                      )
+                      ? _openableReply(s, unseen[i])
+                      : _unviewedReply(s, unseen[i]),
                   if (i < unseen.length - 1) SizedBox(height: s(12)),
                 ],
               ],
@@ -4072,19 +3734,28 @@ class _PingPageState extends State<PingPage>
     );
   }
 
-  /// An already-revealed reply as a flat row.
-  ///
-  /// Unreferenced now: a reply vanishes from REPLIES the moment it is
-  /// opened (see _repliesSection's own doc), so the list has no
-  /// already-seen state left to render. Kept rather than deleted, in case
-  /// a "history" surface wants it later.
-  // ignore: unused_element
-  Widget _revealedReplyRow(Scale s, InboundReply r) => GestureDetector(
-    onTap: () => _openPhoto(r.id),
+  /// Opens a reply that no longer needs the hold (see _openableReply): a
+  /// thud under the finger, then the same viewer the hold lands on.
+  void _openReplyByTap(InboundReply r) {
+    unawaited(pingThud());
+    setState(() {
+      viewed[r.id] = true;
+      _openPhoto(r.id);
+    });
+    unawaited(PingService.instance.markViewed(r.id));
+  }
+
+  /// A new reply from someone whose first reply on this ping I've already
+  /// unblurred: their name, a "replied" mark, and a tap opens it — no hold.
+  /// (The replier is always a real, named person, even on a ping that was
+  /// sent anonymously: only a ping's SENDER is ever hidden.)
+  Widget _openableReply(Scale s, InboundReply r) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: () => _openReplyByTap(r),
     child: Glass(
       radius: r4(s, 26, 14, 30, 10),
-      gradient: g150(kCyan.withValues(alpha: .06), w(.03)),
-      border: Border.all(color: w(.1), width: 1),
+      gradient: g150(kCyan.withValues(alpha: .09), w(.03)),
+      border: Border.all(color: kCyan.withValues(alpha: .3), width: 1),
       shadow: [
         BoxShadow(color: blk(.3), blurRadius: s(24), offset: Offset(0, s(6))),
       ],
@@ -4092,36 +3763,65 @@ class _PingPageState extends State<PingPage>
         padding: EdgeInsets.symmetric(horizontal: s(18), vertical: s(15)),
         child: Row(
           children: [
-            avatarCircle(
-              s,
-              size: 36,
-              fontSize: 13,
-              initial: r.isAnon ? '?' : r.who[0],
-              tintIndex: 0,
-              isAnon: r.isAnon,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                avatarCircle(
+                  s,
+                  size: 36,
+                  fontSize: 13,
+                  initial: r.who.isNotEmpty ? r.who[0].toUpperCase() : '?',
+                  tintIndex: r.replierId.hashCode.abs() % kEarth.length,
+                  isAnon: false,
+                ),
+                // The "they replied" mark.
+                Positioned(
+                  right: -s(4),
+                  bottom: -s(3),
+                  child: Container(
+                    width: s(16),
+                    height: s(16),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: g180(kCyan, kCyanDeep),
+                      border: Border.all(color: kGround, width: 1.5),
+                    ),
+                    child: Icon(
+                      Icons.reply_rounded,
+                      size: s(10),
+                      color: kGround,
+                    ),
+                  ),
+                ),
+              ],
             ),
             SizedBox(width: s(13)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '${r.isAnon ? 'Someone' : r.who} replied',
-                    style: ts(s, weight: 500, size: 13, color: txt(.75)),
+                    '${r.who} replied',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts(s, weight: 600, size: 14, color: kText),
                   ),
                   SizedBox(height: s(3)),
                   Text(
-                    r.prompt,
+                    (r.photoUrl ?? '').isNotEmpty || (r.videoUrl ?? '').isNotEmpty
+                        ? 'Tap to open'
+                        : 'Tap to read',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: ts(s, weight: 400, size: 12.5, color: txt(.4)),
+                    style: ts(s, weight: 400, size: 12, color: txt(.45)),
                   ),
                 ],
               ),
             ),
             Text(
               r.when,
-              style: ts(s, weight: 400, size: 10.5, color: txt(.28)),
+              style: ts(s, weight: 400, size: 10.5, color: txt(.32)),
             ),
           ],
         ),
@@ -7598,55 +7298,6 @@ class _PingPageState extends State<PingPage>
       ),
     );
   }
-}
-
-// ---- helper value type ----
-/// One candidate loop row before same-person rows are collapsed — see the
-/// `loops` getter. Separate from [_Loop] because a seed carries only the
-/// prompt-sheet call ([open]); the "mark pinged back" half can't be written
-/// until the group is known, since it has to retire every collapsed id.
-class _LoopSeed {
-  final String id, initial, title, reason, left;
-  final bool isAnon;
-  final int tintIndex;
-  final VoidCallback open;
-
-  /// `ping_replies.id` of MY replies on this loop — what the reactor faces
-  /// on the row are looked up by (reported 2026-10-04: reactions on a photo
-  /// sent via ping couldn't be seen).
-  final List<String> myReplyIds;
-  _LoopSeed({
-    this.myReplyIds = const [],
-    required this.id,
-    required this.initial,
-    required this.title,
-    required this.reason,
-    required this.left,
-    required this.isAnon,
-    required this.tintIndex,
-    required this.open,
-  });
-}
-
-class _Loop {
-  final String id, initial, title, reason, left;
-  final bool isAnon;
-  final int tintIndex;
-  final VoidCallback onTap;
-
-  /// See [_LoopSeed.myReplyIds].
-  final List<String> myReplyIds;
-  _Loop({
-    this.myReplyIds = const [],
-    required this.id,
-    required this.initial,
-    required this.title,
-    required this.reason,
-    required this.left,
-    required this.isAnon,
-    required this.tintIndex,
-    required this.onTap,
-  });
 }
 
 // ---- ambient background: three slow drifting radial blobs ----

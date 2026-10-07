@@ -17,6 +17,8 @@ import 'community_board/community_join_sheet.dart'
 import 'community_board/community_streaks_tab.dart';
 import 'community_board/community_tokens.dart';
 import 'community_chat_list.dart';
+import '../people/find_people_screen.dart';
+import '../profile_v2/profile_v2_icons.dart';
 import 'group_chat_screen.dart';
 
 // ---------------------------------------------------------------------------
@@ -377,6 +379,26 @@ class _CommunityScreenState extends State<CommunityScreen> {
                             Expanded(
                               child: Text('Socio', style: CommunityType.wordmark),
                             ),
+                            // Find people (2026-10-07: "in chat section
+                            // include a search section to search people and
+                            // add them or visit their profile").
+                            GestureDetector(
+                              key: const ValueKey('chat-find-people'),
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const FindPeopleScreen(),
+                                ),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
+                                child: Icon(
+                                  Icons.search_rounded,
+                                  size: 24,
+                                  color: CommunityColors.textPrimary,
+                                ),
+                              ),
+                            ),
                             CommunityJoinButton(
                               onTap: () => setState(() => _joinOpen = !_joinOpen),
                             ),
@@ -635,7 +657,7 @@ class _CommunityHeader extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('🔥', style: TextStyle(fontSize: 11, height: 1)),
+                      PV2Icons.iceFlame(11),
                       const SizedBox(width: 6),
                       Text('${me!.streak}', style: CommunityType.streakBig.copyWith(fontSize: 13, letterSpacing: -0.3)),
                       const SizedBox(width: 4),

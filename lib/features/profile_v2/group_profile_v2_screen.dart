@@ -1222,6 +1222,8 @@ class _GroupProfileV2ScreenState extends State<GroupProfileV2Screen> {
                         row: data.posts[i],
                         groupName: data.name,
                         canDelete: false,
+                        // A visitor, not a member: no seen pill.
+                        showSeen: false,
                         menuOpen: false,
                         onToggleMenu: () {},
                         onDismissMenu: () {},

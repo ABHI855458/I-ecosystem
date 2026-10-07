@@ -87,6 +87,17 @@ class _SinglePostDetailScreenState extends State<SinglePostDetailScreen> {
   /// (properly masked), which this comparison naturally treats as false.
   bool get _isOwnPost => _myUserId != null && _myUserId == item.userId;
 
+  /// A Duo post belongs to both partners.
+  bool get _isMyDuoPost =>
+      _myUserId != null && _myUserId == item.partnerUserId;
+
+  /// Who sees the seen pill (2026-10-07): the poster, their Duo partner,
+  /// or — on a group post — the group's members. Nobody else. Membership
+  /// isn't on the feed item, but group_post_viewers only answers members,
+  /// so a non-empty list is itself the proof.
+  bool get _canSeeViewers =>
+      _isOwnPost || _isMyDuoPost || (_isGroupPost && _viewers.isNotEmpty);
+
   /// Non-null userId means "render as anonymous" — see FeedItem.anonName's
   /// own doc.
   bool get _isAnonymousPost => item.anonName != null;
@@ -128,10 +139,9 @@ class _SinglePostDetailScreenState extends State<SinglePostDetailScreen> {
     });
   }
 
-  /// The "..." menu — Remove on your own post, Report/Block on someone
-  /// else's. Group posts route through their own menu (no Remove there;
-  /// `group_posts` has no soft-delete column — see showGroupPostActionsMenu's
-  /// own doc).
+  /// The "..." menu — Remove on your own post (a Duo post is both
+  /// partners'), Report/Block on someone else's. Group posts route through
+  /// their own menu, which removes via remove_group_post.
   Future<void> _openMenu() async {
     final authorId = item.userId.isEmpty ? null : item.userId;
     if (_isGroupPost) {
@@ -139,13 +149,17 @@ class _SinglePostDetailScreenState extends State<SinglePostDetailScreen> {
         context,
         groupPostId: item.postId,
         authorUsersId: authorId,
+        isOwnPost: _isOwnPost,
+        onDeleted: () {
+          if (mounted) Navigator.of(context).pop();
+        },
       );
       return;
     }
     await showPostActionsMenu(
       context,
       postId: item.postId,
-      isOwnPost: _isOwnPost,
+      isOwnPost: _isOwnPost || _isMyDuoPost,
       isAnonymousPost: _isAnonymousPost,
       authorUsersId: authorId,
       onDeleted: () {
@@ -218,11 +232,11 @@ class _SinglePostDetailScreenState extends State<SinglePostDetailScreen> {
               ),
             ),
           ),
-          // Who's seen this — only for your own post, real names, the same
-          // SeenPill/SeenDropdown every other post surface uses. Explicit
-          // request: "the seen pill... shall be actually working... same
-          // data as in the anon page".
-          if (_isOwnPost)
+          // Who's seen this — only for the post's owners (see
+          // _canSeeViewers), the same SeenPill/SeenDropdown every other
+          // post surface uses. Explicit request: "the seen pill... shall be
+          // actually working... same data as in the anon page".
+          if (_canSeeViewers)
             Positioned(
               top: 60,
               right: 56,
@@ -232,7 +246,7 @@ class _SinglePostDetailScreenState extends State<SinglePostDetailScreen> {
                 onTap: () => setState(() => _showSeenDropdown = !_showSeenDropdown),
               ),
             ),
-          if (_isOwnPost && _showSeenDropdown)
+          if (_canSeeViewers && _showSeenDropdown)
             Positioned(
               top: 100,
               right: 12,

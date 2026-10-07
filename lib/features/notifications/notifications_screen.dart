@@ -558,7 +558,7 @@ class NotifState extends ChangeNotifier {
       AppNotif(
         id: 'score_${DateTime.now().millisecondsSinceEpoch}',
         type: NotifType.bigScore,
-        title: '🔥 You earned +$amount score!',
+        title: 'You earned +$amount score!',
         body: amount >= 30 ? 'Rare event — you\'re on fire' : 'Keep it going',
         time: 'just now',
         priority: NotifPriority.high,
@@ -811,7 +811,7 @@ class NotifState extends ChangeNotifier {
     showGlass(AppNotif(
       id: 'sd_${DateTime.now().millisecondsSinceEpoch}',
       type: NotifType.milestone,
-      title: '🔥 $currentStreak-day streak at risk!',
+      title: '$currentStreak-day streak at risk!',
       body: 'Post before midnight to keep it alive',
       time: 'just now',
       priority: NotifPriority.high,
@@ -890,7 +890,7 @@ class NotifState extends ChangeNotifier {
     showGlass(AppNotif(
       id: 'sa_${DateTime.now().millisecondsSinceEpoch}',
       type: NotifType.milestone,
-      title: '🔥 $days-day streak! You\'re on fire',
+      title: '$days-day streak! You\'re on fire',
       body: days >= 7 ? 'One week strong!' : 'Keep it going',
       time: 'just now',
       priority: NotifPriority.high,
@@ -1448,7 +1448,11 @@ class _NotifIcon extends StatelessWidget {
       NotifType.discussion => (Icons.forum_outlined, AppColors.primary),
       NotifType.digest => (Icons.summarize_outlined, AppColors.textMuted),
       NotifType.batchedWatch => (Icons.remove_red_eye_outlined, AppColors.primary),
-      NotifType.bigScore => (Icons.local_fire_department_rounded, AppColors.coral),
+      // Blue (PV2.streakBlue), like every flame in the app — was coral.
+      NotifType.bigScore => (
+        Icons.local_fire_department_rounded,
+        const Color(0xFF4DA6FF),
+      ),
       NotifType.milestone => (Icons.emoji_events_outlined, const Color(0xFFE0A020)),
       NotifType.mystery => (Icons.help_outline_rounded, const Color(0xFF9B8FD4)),
       NotifType.rank => (Icons.leaderboard_outlined, const Color(0xFFE0A020)),

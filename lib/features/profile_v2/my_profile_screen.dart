@@ -34,6 +34,8 @@ import 'profile_v2_sections.dart';
 import 'profile_v2_tokens.dart';
 import 'profile_v2_widgets.dart';
 import 'duo_highlights.dart';
+import 'circle_people_screen.dart';
+import '../highlights/highlights_row.dart';
 import 'viewed_by_section.dart' show ViewedByBannerButton;
 
 /// The signed-in user's own profile.
@@ -245,6 +247,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   Future<void> _loadMe() async {
     try {
       final id = await CurrentUserService.instance.resolveId();
+      // The polaroid row needs this; don't make it wait for the Duo load.
+      if (mounted && _myUserId == null) setState(() => _myUserId = id);
       final row = await supabase
           .from('users')
           .select(
@@ -400,21 +404,18 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     }
   }
 
-  /// Circles preview for this screen's own section — see [_circlesSection].
-  /// Null while loading; the section renders nothing (not an empty state)
-  /// until this actually resolves, same convention [_myAlbums] follows.
-
-  /// Circles preview for this screen's own section — see [_circlesSection].
-  /// Null while loading; the section renders nothing (not an empty state)
-  /// until this actually resolves, same convention [_myAlbums] follows.
-  List<CircleOption>? _circles;
+  /// Everyone I've put in any of my circles — the "N in your circle" line
+  /// under the name (see [_circleCountLine]). Null while loading; the line
+  /// renders nothing (not a "0") until this actually resolves, same
+  /// convention [_myAlbums] follows.
+  List<Map<String, dynamic>>? _circlePeople;
 
   Future<void> _loadCircles() async {
     try {
-      final circles = await CircleService.instance.fetchMyCircles();
-      if (mounted) setState(() => _circles = circles);
+      final people = await CircleService.instance.fetchPeopleInMyCircles();
+      if (mounted) setState(() => _circlePeople = people);
     } catch (_) {
-      // No session or a failed read — the section just stays hidden.
+      // No session or a failed read — the line just stays hidden.
     }
   }
 
@@ -648,6 +649,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) action();
     });
+    // With no menu open, _closeMenus changes nothing, so no frame is on its
+    // way and the callback above would sit waiting for one: a tap that did
+    // nothing until something else repainted the screen (found on the
+    // circle count, which is tapped with no menu open). Ask for the frame.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   Future<void> _push(Widget screen) async {
@@ -836,11 +842,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         // fetchBestCommunityStanding() is now unreferenced app-wide and
         // can be deleted whenever that file is next touched.
         // Two sections only (explicit request, 2026-10-01): Duos and Groups
-        // as highlight cards. No anon identity, circles or post feed here.
-        const SizedBox(height: 19),
-        // Circles sit between the name card and Duos | Groups (explicit
-        // request, 2026-10-01).
-        _circlesSection(),
+        // as highlight cards. No anon identity or post feed here.
+        //
+        // Personal highlights — the polaroid row — sit between the name
+        // card and Duos | Groups (2026-10-07). The Circles card that used
+        // to be here is gone: the "N in your circle" line under the name
+        // opens the people list that replaces it (CirclePeopleScreen).
+        HighlightsRow(userId: _myUserId, isMe: true),
         const SizedBox(height: 19),
         _tabs(),
         const SizedBox(height: 16),
@@ -1118,6 +1126,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                         : '${me.handle} · ${me.campus}',
                     style: PV2.mono(size: 12.5),
                   ),
+                  if (_circlePeople != null) ...[
+                    const SizedBox(height: 10),
+                    _circleCountLine(_circlePeople!),
+                  ],
                 ],
               ),
             ),
@@ -1207,104 +1219,79 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     );
   }
 
-  // --- "Us" albums --------------------------------------------------------
-
-  Widget _cappedList({required int visible, required List<Widget> children}) {
-    const rowExtent = 68.0;
-    final list = ListView.separated(
-      padding: EdgeInsets.zero,
-      shrinkWrap: children.length <= visible,
-      physics: children.length <= visible
-          ? const NeverScrollableScrollPhysics()
-          : const ClampingScrollPhysics(),
-      itemCount: children.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 7),
-      itemBuilder: (_, i) => children[i],
-    );
-    if (children.length <= visible) return list;
-    return SizedBox(height: rowExtent * visible - 7 + 18, child: list);
-  }
-
-  Widget _circlesSection() {
-    final circles = _circles;
-    if (circles == null) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(PV2.pad, 0, PV2.pad, 11),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: SectionTitle(
-                  title: 'Circles',
-                  count: '${circles.length}',
-                  subtitle: 'your people — you decide who sees what',
-                ),
-              ),
-              PillButton(
-                label: circles.isEmpty ? 'Create' : 'Manage',
-                icon: PV2Icons.plus(12, Colors.white),
-                onTap: () => _pick(() => _push(const ManageCirclesScreen())),
-              ),
-            ],
-          ),
+  /// The circle count, BOLD — a number you can read at a glance, in its own
+  /// tappable pill with three faces ("in profile show the circles good and
+  /// bold", 2026-10-07; the first version was one thin grey line). Tap for
+  /// the people list. Like a followers count, except these are the people
+  /// YOU chose ("show how many in circle below the name ... clicking, the
+  /// circles UI shall open just like followers are shown").
+  Widget _circleCountLine(List<Map<String, dynamic>> people) {
+    final n = people.length;
+    final faces = people.take(3).toList();
+    return GestureDetector(
+      key: const ValueKey('circle-count-line'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _pick(() => _push(const CirclePeopleScreen())),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(8, 7, 10, 7),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          color: PV2.accent.withValues(alpha: 0.10),
+          border: Border.all(color: PV2.accent.withValues(alpha: 0.38)),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: PV2.pad),
-          child: Column(
-            children: [
-              if (circles.isEmpty)
-                _createCircleRow()
-              else
-                // Only 2 visible (was 3 — "too many circles visible, reduce
-                // it a little"); the rest scroll inside the section, and
-                // Manage lists them all.
-                _cappedList(
-                  visible: 2,
-                  children: [for (final c in circles) _circleRow(c)],
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Mirrors [_createGroupRow]'s dashed-empty-state geometry so the two
-  /// sections read as the same family when a person has neither yet.
-  Widget _createCircleRow() {
-    return DashedBox(
-      radius: 18,
-      color: PV2.accent.withValues(alpha: 0.32),
-      child: NeuWell(
-        radius: 18,
-        shadows: PV2.insetDeep,
-        border: Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        onTap: () => _pick(() => _push(const ManageCirclesScreen())),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: PV2.accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
+            if (faces.isNotEmpty) ...[
+              SizedBox(
+                width: 26.0 + (faces.length - 1) * 16,
+                height: 26,
+                child: Stack(
+                  children: [
+                    for (var i = 0; i < faces.length; i++)
+                      Positioned(
+                        left: i * 16.0,
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: PV2.recessed,
+                            border: Border.all(color: PV2.raised, width: 1.6),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: _circleFace(faces[i]),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-              child: PV2Icons.plus(18, PV2.accent),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
+              const SizedBox(width: 9),
+            ],
+            if (n > 0) ...[
+              Text(
+                '$n',
+                style: PV2.display(size: 21, letterSpacing: -0.4, height: 1),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Flexible(
               child: Text(
-                'Create your first circle',
+                n == 0 ? 'Add people to your circle' : 'in your circle',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: PV2.body(
                   size: 13.5,
                   weight: FontWeight.w700,
-                  color: PV2.accent.withValues(alpha: 0.85),
+                  color: n == 0 ? PV2.accent : PV2.ink,
                 ),
               ),
+            ),
+            const SizedBox(width: 2),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 19,
+              color: PV2.accent,
             ),
           ],
         ),
@@ -1312,52 +1299,21 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     );
   }
 
-  Widget _circleRow(CircleOption circle) {
-    return NeuCard(
-      radius: 18,
-      shadows: PV2.raisedMd,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      // Opens THIS circle's own members (explicit request) — not the list
-      // of all circles; "Manage" above still opens that list.
-      onTap: () => _pick(() async {
-        await _push(CircleMembersScreen(circle: circle));
-        _loadCircles();
-      }),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: PV2.accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.workspaces_outline,
-              size: 18,
-              color: PV2.accent,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              circle.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: PV2.body(size: 13.5, weight: FontWeight.w700),
-            ),
-          ),
-          Text(
-            circle.memberCount == 1
-                ? '1 person'
-                : '${circle.memberCount} people',
-            style: PV2.body(size: 11.5, color: PV2.inkStamp),
-          ),
-        ],
+  Widget _circleFace(Map<String, dynamic> person) {
+    final url = person['profile_photo_url'] as String?;
+    if (url != null && url.isNotEmpty) {
+      return CachedNetworkImage(imageUrl: url, fit: BoxFit.cover);
+    }
+    final name = ((person['name'] as String?) ?? '').trim();
+    return Center(
+      child: Text(
+        name.isEmpty ? '?' : name[0].toUpperCase(),
+        style: PV2.body(size: 11.5, weight: FontWeight.w800),
       ),
     );
   }
+
+  // --- "Us" albums --------------------------------------------------------
 
   /// The dashed row that heads the group list. It mirrors a real group row's
   /// geometry so the list reads as one column, but is recessed and dashed so

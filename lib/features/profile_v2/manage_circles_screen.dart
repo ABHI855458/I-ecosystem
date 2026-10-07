@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../core/glass.dart' show showGlassToast;
 import '../../services/circle_service.dart';
 import '../../services/people_service.dart';
+import '../people/find_people_screen.dart' show sortByMutuals;
 import 'profile_v2_icons.dart';
 import 'profile_v2_tokens.dart';
 import 'profile_v2_widgets.dart';
@@ -316,8 +317,22 @@ class CircleMembersScreenState extends State<CircleMembersScreen> {
     // Future as its "return value" and trips Flutter's assertion against
     // a setState callback that returns one.
     setState(() {
-      _searchFuture = PeopleService.instance.searchPeople(query);
+      _searchFuture = _searchWithMutuals(query);
     });
+  }
+
+  /// Search results with how many friends I share with each ("2 mutual"),
+  /// the ones I share friends with first (2026-10-07). The count rides on
+  /// the row as `mutual_count` so [_addPersonRow] can show it.
+  Future<List<Map<String, dynamic>>> _searchWithMutuals(String query) async {
+    final rows = await PeopleService.instance.searchPeople(query);
+    final counts = await PeopleService.instance.mutualCounts([
+      for (final r in rows)
+        if (r['id'] is String) r['id'] as String,
+    ]);
+    return sortByMutuals([
+      for (final r in rows) {...r, 'mutual_count': counts[r['id']] ?? 0},
+    ], counts);
   }
 
   Future<void> _load() async {
@@ -469,10 +484,12 @@ class CircleMembersScreenState extends State<CircleMembersScreen> {
   }
 
   Widget _addPersonRow(Map<String, dynamic> p) {
+    final mutual = (p['mutual_count'] as num?)?.toInt() ?? 0;
     return _PersonRow(
       userId: p['id'] as String?,
       name: (p['name'] as String?) ?? 'someone',
       avatarUrl: p['profile_photo_url'] as String?,
+      subtitle: mutual > 0 ? '$mutual mutual' : null,
       trailing: NeuWell(
         width: 30,
         height: 30,
@@ -708,11 +725,15 @@ class _PersonRow extends StatelessWidget {
     required this.avatarUrl,
     required this.trailing,
     this.userId,
+    this.subtitle,
   });
 
   final String name;
   final String? avatarUrl;
   final Widget trailing;
+
+  /// A second line under the name — "2 mutual" on a search result.
+  final String? subtitle;
 
   /// When set, tapping the photo or name opens this person's profile.
   final String? userId;
@@ -743,11 +764,28 @@ class _PersonRow extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: PV2.body(size: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: PV2.body(size: 14),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: PV2.body(
+                      size: 11.5,
+                      weight: FontWeight.w600,
+                      color: PV2.accentSoft,
+                    ),
+                  ),
+              ],
             ),
           ),
                 ],

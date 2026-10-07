@@ -15,11 +15,14 @@ import '../../services/current_user_service.dart';
 import '../../services/feed_service.dart';
 import '../../services/circle_service.dart';
 import '../../services/group_service.dart';
+import '../../services/people_service.dart';
 import '../../services/ping_service.dart';
 import '../../services/profile_view_service.dart';
 import '../../services/storage_service.dart';
 import '../../services/us_album_service.dart';
+import '../highlights/highlights_row.dart';
 import 'group_profile_v2_screen.dart';
+import 'profile_navigation.dart' show openProfile;
 import 'profile_posts_list.dart';
 import 'locked_preview.dart';
 import 'profile_v2_data.dart';
@@ -144,6 +147,7 @@ class _TheirProfileScreenState extends State<TheirProfileScreen> {
     // fetches only once the answer is known, and never when it is 'locked'.
     _loadAccess().then((_) => _loadGated());
     _loadMyCircleIds();
+    _loadMutuals();
     _loadPersonDuos();
     _loadPostCount();
     _recordView();
@@ -601,12 +605,226 @@ class _TheirProfileScreenState extends State<TheirProfileScreen> {
       ],
       children: [
         IdentityPanel(child: _identity(person)),
+        // Their polaroids — only when they have some this viewer may see
+        // (they put you in their Friends circle); otherwise no space at all.
+        HighlightsRow(userId: person.userId, isMe: false),
         _bento(person),
         const SizedBox(height: 19),
         _duoGroupSection(),
         const SizedBox(height: 19),
         _contentSection(),
       ],
+    );
+  }
+
+  // --- mutual friends -----------------------------------------------------
+  //
+  // The friends you share: in YOUR Friends circle and also in THEIRS
+  // (PeopleService.mutualFriends). Their circle itself stays private — this
+  // only ever names people already in your own.
+
+  List<Map<String, dynamic>> _mutuals = const [];
+
+  Future<void> _loadMutuals() async {
+    final otherId = widget.person.userId;
+    if (otherId == null) return;
+    final rows = await PeopleService.instance.mutualFriends(otherId);
+    if (mounted && rows.isNotEmpty) setState(() => _mutuals = rows);
+  }
+
+  Widget _mutualFace(Map<String, dynamic> m) {
+    final url = m['profile_photo_url'] as String?;
+    if (url != null && url.isNotEmpty) {
+      return CachedNetworkImage(imageUrl: url, fit: BoxFit.cover);
+    }
+    final name = ((m['name'] as String?) ?? '').trim();
+    return Center(
+      child: Text(
+        name.isEmpty ? '?' : name[0].toUpperCase(),
+        style: PV2.body(size: 10, weight: FontWeight.w800),
+      ),
+    );
+  }
+
+  /// "3 mutual friends" — the number bold, in the same pill your own
+  /// profile uses for its circle count. Tap for the list.
+  Widget _mutualLine() {
+    final n = _mutuals.length;
+    final faces = _mutuals.take(3).toList();
+    return GestureDetector(
+      key: const ValueKey('mutual-friends-line'),
+      behavior: HitTestBehavior.opaque,
+      onTap: _showMutuals,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(8, 7, 10, 7),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          color: PV2.accent.withValues(alpha: 0.10),
+          border: Border.all(color: PV2.accent.withValues(alpha: 0.38)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 26.0 + (faces.length - 1) * 16,
+              height: 26,
+              child: Stack(
+                children: [
+                  for (var i = 0; i < faces.length; i++)
+                    Positioned(
+                      left: i * 16.0,
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: PV2.recessed,
+                          border: Border.all(color: PV2.raised, width: 1.6),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: _mutualFace(faces[i]),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 9),
+            Text(
+              '$n',
+              style: PV2.display(size: 21, letterSpacing: -0.4, height: 1),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                n == 1 ? 'mutual friend' : 'mutual friends',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: PV2.body(
+                  size: 13.5,
+                  weight: FontWeight.w700,
+                  color: PV2.ink,
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 19,
+              color: PV2.accent,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMutuals() {
+    HapticFeedback.selectionClick();
+    final mutuals = _mutuals;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.7,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xFF151518),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          18,
+          20,
+          MediaQuery.paddingOf(sheetContext).bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              mutuals.length == 1
+                  ? '1 mutual friend'
+                  : '${mutuals.length} mutual friends',
+              style: PV2.display(size: 18),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'In your circle and in theirs.',
+              style: PV2.body(size: 12.5, color: PV2.inkMember),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: mutuals.length,
+                itemBuilder: (_, i) {
+                  final m = mutuals[i];
+                  final id = m['user_id'] as String?;
+                  final name = ((m['name'] as String?) ?? '').trim();
+                  final username = ((m['username'] as String?) ?? '').trim();
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: id == null
+                        ? null
+                        : () {
+                            Navigator.of(sheetContext).pop();
+                            unawaited(openProfile(context, id));
+                          },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: PV2.raised,
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: _mutualFace(m),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  name.isEmpty ? 'someone' : name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: PV2.body(
+                                    size: 14.5,
+                                    weight: FontWeight.w700,
+                                  ),
+                                ),
+                                if (username.isNotEmpty)
+                                  Text(
+                                    '@$username',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: PV2.body(
+                                      size: 12,
+                                      color: PV2.inkMember,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -648,6 +866,10 @@ class _TheirProfileScreenState extends State<TheirProfileScreen> {
                         : '${person.handle} · ${person.campus}',
                     style: PV2.mono(size: 12.5),
                   ),
+                  if (_mutuals.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    _mutualLine(),
+                  ],
                 ],
               ),
             ),
@@ -1280,7 +1502,10 @@ class _PairStreakBadge extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 7),
-          const Text('🔥', style: TextStyle(fontSize: 13, height: 1)),
+          // The BLUE flame, like every other streak (2026-10-07: "blue
+          // flame everywhere, not red"). The orange emoji read as a
+          // different kind of streak from the one on the Ping page.
+          PV2Icons.iceFlame(13),
           const SizedBox(width: 4),
           Text(
             '$days',
